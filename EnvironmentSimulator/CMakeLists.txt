@@ -19,7 +19,7 @@ set ( COMMON_MINI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/CommonMini")
 set ( OSG_VERSION "osg161" )
 set ( OSG_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../externals/OpenSceneGraph" )
 
-set( CMAKE_VERBOSE_MAKEFILE false )
+set( CMAKE_VERBOSE_MAKEFILE true )
 
 if (APPLE)
   set ( TIME_LIB "" )
@@ -98,20 +98,20 @@ elseif(UNIX)
   link_directories(${OSG_LIBRARIES_PATH})
   
   set ( OSG_LIBRARIES
-	osgdb_serializers_osgsim
-	osgdb_serializers_osg
-	osgdb_osg
-    osgdb_jpeg
-	osgAnimation
-	osgText
-	osgSim
-	osgViewer
-	osgUtil
-	osgDB
-	osgGA
-	osg
-	OpenThreads
-    jpeg
+	optimized osgdb_serializers_osgsim debug osgdb_serializers_osgsimd 
+	optimized osgdb_serializers_osg debug osgdb_serializers_osgd
+	optimized osgdb_osg debug osgdb_osgd 
+    optimized osgdb_jpeg debug osgdb_jpegd
+	optimized osgAnimation debug osgAnimationd
+	optimized osgText debug osgTextd
+	optimized osgSim debug osgSimd
+	optimized osgViewer debug osgViewerd
+	optimized osgUtil debug osgUtild
+	optimized osgDB debug osgDBd
+	optimized osgGA debug osgGAd
+	optimized osg debug osgd
+	optimized OpenThreads debug OpenThreadsd
+    optimized jpeg debug jpegd
 
 	GL
 	X11
