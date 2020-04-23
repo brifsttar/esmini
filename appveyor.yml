@@ -17,6 +17,8 @@ cache:
     
 before_build:
   - cmd: gitversion /l console /output buildserver
+  
+  - ps: echo "const char* ESMINI_BUILD_VERSION=`"$env:APPVEYOR_BUILD_VERSION`";"  | Out-File ../EnvironmentSimulator/CommonMini/buildnr.cpp
 
 # publish package on tag build
 deploy:
@@ -78,6 +80,12 @@ for:
           cd build
           
           xcodebuild -scheme install -configuration Release build
+          
+      - ps: |
+          echo Content of version.cpp:
+          type ../EnvironmentSimulator/CommonMini/version.cpp
+          echo Content of buildnr.cpp:
+          type ../EnvironmentSimulator/CommonMini/buildnr.cpp
 
     after_build:
       - sh: >-
@@ -114,7 +122,9 @@ for:
           cmake.exe -G "Visual Studio 15 Win64" -D USE_OSG=True ..
           
       - ps: |
-          echo "const char* ESMINI_BUILD_VERSION=`"$env:APPVEYOR_BUILD_VERSION`";"  | Out-File ../EnvironmentSimulator/CommonMini/buildnr.cpp
+          echo Content of version.cpp:
+          type ../EnvironmentSimulator/CommonMini/version.cpp
+          echo Content of buildnr.cpp:
           type ../EnvironmentSimulator/CommonMini/buildnr.cpp
           
       - cmd: 
@@ -151,8 +161,10 @@ for:
           cmake -G "Visual Studio 15" -D USE_OSG=True ..
 
       - ps: |
-          ((Get-Content -path ../EnvironmentSimulator/CommonMini/version.cpp -Raw) -replace 'TBD',"$env:APPVEYOR_BUILD_VERSION") | Set-Content -Path ../EnvironmentSimulator/CommonMini/version.cpp
+          echo Content of version.cpp:
           type ../EnvironmentSimulator/CommonMini/version.cpp
+          echo Content of buildnr.cpp:
+          type ../EnvironmentSimulator/CommonMini/buildnr.cpp
 
       - cmd:
           msbuild /m /property:Configuration=Release /p:Platform=win32 EnvironmentSimulator.sln
@@ -182,8 +194,10 @@ for:
           cmake -G "Visual Studio 14 2015 Win64" -T "Windows7.1SDK" -D WINSDK7_1=True -D USE_OSG=True ..
 
       - ps: |
-          ((Get-Content -path ../EnvironmentSimulator/CommonMini/version.cpp -Raw) -replace 'TBD',"$env:APPVEYOR_BUILD_VERSION") | Set-Content -Path ../EnvironmentSimulator/CommonMini/version.cpp
+          echo Content of version.cpp:
           type ../EnvironmentSimulator/CommonMini/version.cpp
+          echo Content of buildnr.cpp:
+          type ../EnvironmentSimulator/CommonMini/buildnr.cpp
 
       - cmd:
           msbuild /m /property:Configuration=Release EnvironmentSimulator.sln
