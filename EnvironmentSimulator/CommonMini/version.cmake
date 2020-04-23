@@ -20,7 +20,6 @@ else()
         COMMAND git describe --exact-match --tags
         OUTPUT_VARIABLE GIT_TAG ERROR_QUIET)
     execute_process(
-#        COMMAND git rev-parse --abbrev-ref HEAD
         COMMAND git name-rev --name-only HEAD
         OUTPUT_VARIABLE GIT_BRANCH)
 
@@ -52,13 +51,7 @@ endif()
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/version.cpp VERSION_TO_FILE_)
 STRING(REGEX REPLACE "const char\\* " "" VERSION_TO_FILE_ ${VERSION_TO_FILE_})
 
-if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/buildnr.cpp)
-    message("Build nr Not existing")
-else()
-    file(READ ${CMAKE_CURRENT_SOURCE_DIR}/buildnr.cpp BUILD_NR_TO_FILE_)
-    message(${BUILD_NR_TO_FILE_})
-    STRING(REGEX REPLACE "const char\\* " "" BUILD_NR_TO_FILE_ ${BUILD_NR_TO_FILE_})
-    message(${BUILD_NR_TO_FILE_})
-endif()
-message("${VERSION_TO_FILE_}\n${BUILD_NR_TO_FILE_}\n")
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/buildnr.cpp BUILD_NR_TO_FILE_)
+STRING(REGEX REPLACE "const char\\* " "" BUILD_NR_TO_FILE_ ${BUILD_NR_TO_FILE_})
+
 file(WRITE ${CMAKE_CURRENT_SOURCE_DIR}/../../version.txt "${VERSION_TO_FILE_}\n${BUILD_NR_TO_FILE_}\n")

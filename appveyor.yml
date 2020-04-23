@@ -1,8 +1,8 @@
 image:
-#- Visual Studio 2017
+- Visual Studio 2017
 - Visual Studio 2015
-#- Ubuntu1804
-#- macos
+- Ubuntu1804
+- macos
 
 
 configuration: Release
@@ -20,7 +20,6 @@ before_build:
   
   - ps: |
         echo "const char* ESMINI_BUILD_VERSION=`"$env:APPVEYOR_BUILD_VERSION`";"  | Out-File -Encoding "UTF8" EnvironmentSimulator/CommonMini/buildnr.cpp
-        echo "buildnr created:"
         type EnvironmentSimulator/CommonMini/buildnr.cpp
 
 # publish package on tag build
@@ -83,12 +82,6 @@ for:
           cd build
           
           xcodebuild -scheme install -configuration Release build
-          
-      - ps: |
-          echo Content of version.cpp:
-          type ../EnvironmentSimulator/CommonMini/version.cpp
-          echo Content of buildnr.cpp:
-          type ../EnvironmentSimulator/CommonMini/buildnr.cpp
 
     after_build:
       - sh: >-
@@ -124,12 +117,6 @@ for:
           
           cmake.exe -G "Visual Studio 15 Win64" -D USE_OSG=True ..
           
-      - ps: |
-          echo Content of version.cpp:
-          type ../EnvironmentSimulator/CommonMini/version.cpp
-          echo Content of buildnr.cpp:
-          type ../EnvironmentSimulator/CommonMini/buildnr.cpp
-          
       - cmd: 
 
           msbuild /m /property:Configuration=Release EnvironmentSimulator.sln
@@ -163,12 +150,6 @@ for:
 
           cmake -G "Visual Studio 15" -D USE_OSG=True ..
 
-      - ps: |
-          echo Content of version.cpp:
-          type ../EnvironmentSimulator/CommonMini/version.cpp
-          echo Content of buildnr.cpp:
-          type ../EnvironmentSimulator/CommonMini/buildnr.cpp
-
       - cmd:
           msbuild /m /property:Configuration=Release /p:Platform=win32 EnvironmentSimulator.sln
 
@@ -195,12 +176,6 @@ for:
           cd buildVS14_winsdk71_64
 
           cmake -G "Visual Studio 14 2015 Win64" -T "Windows7.1SDK" -D WINSDK7_1=True -D USE_OSG=True ..
-
-      - ps: |
-          echo Content of version.cpp:
-          type ../EnvironmentSimulator/CommonMini/version.cpp
-          echo Content of buildnr.cpp:
-          type ../EnvironmentSimulator/CommonMini/buildnr.cpp
 
       - cmd:
           msbuild /m /property:Configuration=Release EnvironmentSimulator.sln
