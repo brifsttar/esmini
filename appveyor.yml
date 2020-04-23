@@ -18,7 +18,7 @@ cache:
 before_build:
   - cmd: gitversion /l console /output buildserver
   
-  - ps: echo "const char* ESMINI_BUILD_VERSION=`"$env:APPVEYOR_BUILD_VERSION`";"  | Out-File ../EnvironmentSimulator/CommonMini/buildnr.cpp
+  - ps: echo "const char* ESMINI_BUILD_VERSION=`"$env:APPVEYOR_BUILD_VERSION`";"  | Out-File EnvironmentSimulator/CommonMini/buildnr.cpp
 
 # publish package on tag build
 deploy:
