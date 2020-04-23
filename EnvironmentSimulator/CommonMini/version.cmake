@@ -54,5 +54,7 @@ STRING(REGEX REPLACE "const char\\* " "" VERSION_TO_FILE_ ${VERSION_TO_FILE_})
 
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/buildnr.cpp BUILD_NR_TO_FILE_)
 STRING(REGEX REPLACE "const char\\* " "" BUILD_NR_TO_FILE_ ${BUILD_NR_TO_FILE_})
-
+message("${VERSION_TO_FILE_}\n${BUILD_NR_TO_FILE_}\n")
+message("${BUILD_NR_TO_FILE_}")
+message(${BUILD_NR_TO_FILE_})
 file(WRITE ${CMAKE_CURRENT_SOURCE_DIR}/../../version.txt "${VERSION_TO_FILE_}\n${BUILD_NR_TO_FILE_}\n")
