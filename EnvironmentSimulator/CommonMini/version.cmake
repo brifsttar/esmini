@@ -49,8 +49,10 @@ if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/buildnr.cpp)
     file(WRITE buildnr.cpp "const char* ESMINI_BUILD_VERSION=\"N/A - client build\";")
 endif()
 
-STRING(REGEX REPLACE "const char\\* " "" VERSION_TO_FILE ${VERSION_})
-message(${VERSION_TO_FILE})
-file(READ buildnr.cpp BUILD_NR_)
-STRING(REGEX REPLACE "const char\\* " "" BUILD_NR_TO_FILE ${BUILD_NR_})
-file(WRITE ../../version.txt "${VERSION_TO_FILE}\n${BUILD_NR_TO_FILE}\n")
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/version.cpp VERSION_TO_FILE_)
+STRING(REGEX REPLACE "const char\\* " "" VERSION_TO_FILE_ ${VERSION_TO_FILE_})
+
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/buildnr.cpp BUILD_NR_TO_FILE_)
+STRING(REGEX REPLACE "const char\\* " "" BUILD_NR_TO_FILE_ ${BUILD_NR_TO_FILE_})
+
+file(WRITE ${CMAKE_CURRENT_SOURCE_DIR}/../../version.txt "${VERSION_TO_FILE_}\n${BUILD_NR_TO_FILE_}\n")
