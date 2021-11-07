@@ -1205,8 +1205,11 @@ namespace roadmanager
 	public:
 		typedef enum
 		{
-			RANDOM,
-			SELECTOR_ANGLE,  // choose road which heading (relative incoming road) is closest to specified angle
+			LEFT_SECOND = -2,
+			LEFT_FIRST = -1,
+			STRAIGHT = 0,
+			RIGHT_FIRST = 1,
+			RIGHT_SECOND = 2
 		} JunctionStrategyType;
 
 		Junction(int id, std::string name) : id_(id), name_(name) {SetGlobalId();}
@@ -1453,6 +1456,11 @@ namespace roadmanager
 			LOOKAHEADMODE_AT_CURRENT_LATERAL_OFFSET,
 		};
 
+		struct NextJunction {
+			Junction* junction;
+			double distance;
+		};
+
 		enum class ErrorCode
 		{
 			ERROR_NO_ERROR = 0,
@@ -1556,7 +1564,7 @@ namespace roadmanager
 		*/
 		ErrorCode XYZH2TrackPos(double x, double y, double z, double h, bool connectedOnly = false, int roadId = -1);
 
-		int MoveToConnectingRoad(RoadLink *road_link, ContactPointType &contact_point_type, double junctionSelectorAngle = -1.0);
+		int MoveToConnectingRoad(RoadLink *road_link, ContactPointType &contact_point_type, Junction::JunctionStrategyType strategy = Junction::STRAIGHT);
 
 		void SetRelativePosition(Position* rel_pos, PositionType type)
 		{
@@ -1655,7 +1663,17 @@ namespace roadmanager
 		double getRelativeDistance(double targetX, double targetY, double &x, double &y) const;
 
 		/**
-		Find out the difference between two position objects, in effect subtracting the values
+		Returns the distance left on the current road
+		*/
+		double GetDistanceLeftOnRoad() const;
+
+		/**
+		Returns the distance to the next junction
+		*/
+		NextJunction GetNextJunction() const;
+
+		/**
+		Find out the difference between two position objects, in effect subtracting the values 
 		It can be used to calculate the distance from current position to another one (pos_b)
 		@param pos_b The position from which to subtract the current position (this position object)
 		@param bothDirections Set to true in order to search also backwards from object
@@ -1727,28 +1745,23 @@ namespace roadmanager
 		/**
 		Move position along the road network, forward or backward, from the current position
 		It will automatically follow connecting lanes between connected roads
-		If reaching a junction, choose way according to specified junctionSelectorAngle
-		@param ds distance to move from current position
-		@param dLaneOffset delta lane offset (adding to current position lane offset)
-		@param junctionSelectorAngle Desired direction [0:2pi] from incoming road direction (angle = 0), set -1 to randomize
-		@return 0 if successful, other codes see Position::ErrorCode
-		*/
-		ErrorCode MoveAlongS(double ds, double dLaneOffset, double junctionSelectorAngle);
-
-		/**
-		Move position along the road network, forward or backward, from the current position
-		It will automatically follow connecting lanes between connected roads
 		If multiple options (only possible in junctions) it will choose randomly
 		@param ds distance to move from current position
 		@return 0 if successful, other codes see Position::ErrorCode
 		*/
-		ErrorCode MoveAlongS(double ds) { return MoveAlongS(ds, 0.0, -1.0); }
+		Position::ErrorCode MoveAlongS(double ds, double dLaneOffset = 0, Junction::JunctionStrategyType strategy = Junction::JunctionStrategyType::STRAIGHT);
 
 		/**
 		Retrieve the track/road ID from the position object
 		@return track/road ID
 		*/
 		int GetTrackId() const;
+
+		/**
+		Retrieve the road from the position object
+		@return road
+		*/
+		Road *GetRoad() const { return GetRoadById(GetTrackId()); }
 
 		/**
 		Retrieve the junction ID from the position object
@@ -1766,6 +1779,12 @@ namespace roadmanager
 		@return lane ID
 		*/
 		int GetLaneGlobalId();
+
+		/**
+		Retrieve the lane from the position object
+		@return lane
+		*/
+		Lane* GetLane() const;
 
 		/**
 		Retrieve a road segment specified by road ID
@@ -1889,6 +1908,8 @@ namespace roadmanager
 		Retrieve the road heading/direction at current position, and in the direction given by current lane
 		*/
 		double GetDrivingDirection() const;
+
+		int Side() const;
 
 		PositionType GetType() { return type_; }
 

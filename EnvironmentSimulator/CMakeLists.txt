@@ -352,20 +352,20 @@ else() #not UNIX
 endif() #Endif UNIX
 
 add_subdirectory(Modules/CommonMini)
-add_subdirectory(Modules/Controllers)
-add_subdirectory(Modules/PlayerBase)
+# add_subdirectory(Modules/Controllers)
+# add_subdirectory(Modules/PlayerBase)
 add_subdirectory(Modules/RoadManager)
-add_subdirectory(Modules/ScenarioEngine)
-add_subdirectory(Libraries/esminiLib)
-add_subdirectory(Libraries/esminiRMLib)
-add_subdirectory(Applications/esmini)
-add_subdirectory(Applications/esmini-dyn)
+# add_subdirectory(Modules/ScenarioEngine)
+# add_subdirectory(Libraries/esminiLib)
+# add_subdirectory(Libraries/esminiRMLib)
+# add_subdirectory(Applications/esmini)
+# add_subdirectory(Applications/esmini-dyn)
 
 # Add unittest folder
 if (APPLE)
   message ("Not available yet")
 elseif (USE_GTEST)
-  add_subdirectory(Unittest)
+  # add_subdirectory(Unittest)
 endif()
 
 set ( ModulesFolder Modules )
@@ -375,9 +375,9 @@ set ( CodeExamplesFolder code-examples )
 
 set_target_properties (RoadManager PROPERTIES FOLDER ${ModulesFolder} )
 set_target_properties (CommonMini PROPERTIES FOLDER ${ModulesFolder} )
-set_target_properties (ScenarioEngine PROPERTIES FOLDER ${ModulesFolder} )
-set_target_properties (RoadManager PROPERTIES FOLDER ${ModulesFolder} )
-set_target_properties (ScenarioEngine PROPERTIES FOLDER ${ModulesFolder} )
+# set_target_properties (ScenarioEngine PROPERTIES FOLDER ${ModulesFolder} )
+# set_target_properties (RoadManager PROPERTIES FOLDER ${ModulesFolder} )
+# set_target_properties (ScenarioEngine PROPERTIES FOLDER ${ModulesFolder} )
 
 
 # Add all projects under code-examples folder using a macro
@@ -400,22 +400,22 @@ ENDMACRO()
 
 SUBDIRLIST(SUBDIRS ${CMAKE_CURRENT_SOURCE_DIR}/code-examples)
 
-FOREACH(subdir ${SUBDIRS})
-    add_subdirectory(code-examples/${subdir})
-    set_target_properties (${subdir} PROPERTIES FOLDER ${CodeExamplesFolder} )
-ENDFOREACH()
+# FOREACH(subdir ${SUBDIRS})
+    # add_subdirectory(code-examples/${subdir})
+    # set_target_properties (${subdir} PROPERTIES FOLDER ${CodeExamplesFolder} )
+# ENDFOREACH()
 
 
 #
 # Download library and content binary packets
 #
 function (download_and_extract url target_folder target_filename)
-    message (STATUS "downloading ${target_filename} ...")
-    file (DOWNLOAD ${url} ${target_folder}/${target_filename})
+    # message (STATUS "downloading ${target_filename} ...")
+    # file (DOWNLOAD ${url} ${target_folder}/${target_filename})
 
-    message (STATUS "extracting ${target_filename} ... ")
-    execute_process (COMMAND ${CMAKE_COMMAND} -E tar xfz ${target_filename} WORKING_DIRECTORY ${target_folder})
-    file (REMOVE ${target_folder}/${target_filename})
+    # message (STATUS "extracting ${target_filename} ... ")
+    # execute_process (COMMAND ${CMAKE_COMMAND} -E tar xfz ${target_filename} WORKING_DIRECTORY ${target_folder})
+    # file (REMOVE ${target_folder}/${target_filename})
 endfunction (download_and_extract)
 
 # download OpenSceneGraph
@@ -457,28 +457,31 @@ if (FORCE_DOWNLOAD_BINARIES OR NOT EXISTS ${MODELS_DIR} )
 endif()
 
 
-  add_subdirectory(Applications/odrplot)
-  add_subdirectory(Applications/replayer)
+  # add_subdirectory(Applications/odrplot)
+  # add_subdirectory(Applications/replayer)
 if (USE_OSG)
-  add_subdirectory(Applications/odrviewer)
-  add_subdirectory(Modules/ViewerBase)
+  if (NOT USE_ENVSIM_ADAPT)
+    # add_subdirectory(Applications/replayer)
+    # add_subdirectory(Applications/odrviewer)
+    # add_subdirectory(Applications/odrplot)
+  endif (NOT USE_ENVSIM_ADAPT)
+  # add_subdirectory(Applications/odrviewer)
+  # add_subdirectory(Modules/ViewerBase)
 endif (USE_OSG)
 
 if (USE_OSI)
-  set_target_properties (osireceiver PROPERTIES FOLDER ${ApplicationsFolder} )
+  # set_target_properties (osireceiver PROPERTIES FOLDER ${ApplicationsFolder} )
 endif ()
-  set_target_properties (PlayerBase PROPERTIES FOLDER ${ModulesFolder} )
-  set_target_properties (Controllers PROPERTIES FOLDER ${ModulesFolder} )
-  set_target_properties (esminiLib PROPERTIES FOLDER ${LibrariesFolder} )
-  set_target_properties (esminiRMLib PROPERTIES FOLDER ${LibrariesFolder} )
-  set_target_properties (esmini PROPERTIES FOLDER ${ApplicationsFolder} )
-  set_target_properties (esmini-dyn PROPERTIES FOLDER ${ApplicationsFolder} )
-  set_target_properties (dat2csv PROPERTIES FOLDER ${ApplicationsFolder} )
-  set_target_properties (odrplot PROPERTIES FOLDER ${ApplicationsFolder} )
+  # set_target_properties (PlayerBase PROPERTIES FOLDER ${ModulesFolder} )
+  # set_target_properties (Controllers PROPERTIES FOLDER ${ModulesFolder} )
+  # set_target_properties (esminiLib PROPERTIES FOLDER ${LibrariesFolder} )
+  # set_target_properties (esminiRMLib PROPERTIES FOLDER ${LibrariesFolder} )
+  # set_target_properties (esmini PROPERTIES FOLDER ${ApplicationsFolder} )
+  # set_target_properties (esmini-dyn PROPERTIES FOLDER ${ApplicationsFolder} )
+  # set_target_properties (dat2csv PROPERTIES FOLDER ${ApplicationsFolder} )
+  # set_target_properties (odrplot PROPERTIES FOLDER ${ApplicationsFolder} )
 if (USE_OSG)
-  set_target_properties (replayer PROPERTIES FOLDER ${ApplicationsFolder} )
-  set_target_properties (odrviewer PROPERTIES FOLDER ${ApplicationsFolder} )
-  set_target_properties (ViewerBase PROPERTIES FOLDER ${ModulesFolder} )
+  # set_target_properties (replayer PROPERTIES FOLDER ${ApplicationsFolder} )
+  # set_target_properties (odrviewer PROPERTIES FOLDER ${ApplicationsFolder} )
+  # set_target_properties (ViewerBase PROPERTIES FOLDER ${ModulesFolder} )
 endif (USE_OSG)
-
-

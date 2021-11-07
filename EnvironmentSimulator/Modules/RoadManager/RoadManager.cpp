@@ -47,6 +47,7 @@
 #include <iostream>
 #include <cstring>
 #include <random>
+#include <map>
 #include <time.h>
 #include <limits>
 #include <algorithm>
@@ -6466,7 +6467,7 @@ std::string OpenDrive::ElementType2Str(RoadLink::ElementType type)
 	}
 }
 
-int Position::MoveToConnectingRoad(RoadLink *road_link, ContactPointType &contact_point_type, double junctionSelectorAngle)
+int Position::MoveToConnectingRoad(RoadLink *road_link, ContactPointType &contact_point_type, Junction::JunctionStrategyType strategy)
 {
 	Road *road = GetOpenDrive()->GetRoadByIdx(track_idx_);
 	Road *next_road = 0;
@@ -6544,50 +6545,76 @@ int Position::MoveToConnectingRoad(RoadLink *road_link, ContactPointType &contac
 		}
 		else
 		{
-			// find valid connecting road, if multiple choices choose either most straight one OR by random
-			if (junctionSelectorAngle >= 0.0)
+			// Map all outgoing roads to their angles with the current one
+			std::map<double, int> roads_angles;
+			for (int i = 0; i < n_connections; i++)
 			{
-				// Find the straighest link
-				int best_road_index = 0;
-				double min_heading_diff = 1E10; // set huge number
-				for (int i = 0; i < n_connections; i++)
+				LaneRoadLaneConnection lane_road_lane_connection =
+					junction->GetRoadConnectionByIdx(road->GetId(), lane->GetId(), i, snapToLaneTypes_);
+				next_road = GetOpenDrive()->GetRoadById(lane_road_lane_connection.GetConnectingRoadId());
+				new_lane_id = lane_road_lane_connection.GetConnectinglaneId();
+
+				Position test_pos;
+				if (lane_road_lane_connection.contact_point_ == CONTACT_POINT_START)
 				{
-					LaneRoadLaneConnection lane_road_lane_connection =
-						junction->GetRoadConnectionByIdx(road->GetId(), lane->GetId(), i, snapToLaneTypes_);
-					next_road = GetOpenDrive()->GetRoadById(lane_road_lane_connection.GetConnectingRoadId());
-
-					// Get a position at end of the connecting road
-					Position test_pos;
-					double outHeading = 0.0;
-					if (lane_road_lane_connection.contact_point_ == CONTACT_POINT_START)
-					{
-						test_pos.SetLanePos(next_road->GetId(), new_lane_id, next_road->GetLength(), 0);
-						outHeading = test_pos.GetHRoad();
-					}
-					else if (lane_road_lane_connection.contact_point_ == CONTACT_POINT_END)
-					{
-						test_pos.SetLanePos(next_road->GetId(), new_lane_id, 0, 0);
-						outHeading = GetAngleSum(test_pos.GetHRoad(), M_PI);
-					}
-					else
-					{
-						LOG("Unexpected contact point type: %d", road_link->GetContactPointType());
-					}
-
-					// Compare heading angle difference, find smallest
-					double deltaHeading = GetAngleInInterval2PI(GetAngleDifference(outHeading, GetHRoadInDrivingDirection()));
-					double heading_diff = GetAbsAngleDifference(deltaHeading, junctionSelectorAngle);
-					if (heading_diff < min_heading_diff)
-					{
-						min_heading_diff = heading_diff;
-						best_road_index = i;
-					}
+					// Inspect heading at the connecting road
+					test_pos.SetLanePos(next_road->GetId(), new_lane_id, next_road->GetLength(), 0);
 				}
-				connection_idx = best_road_index;
+				else if (lane_road_lane_connection.contact_point_ == CONTACT_POINT_END)
+				{
+					test_pos.SetLanePos(next_road->GetId(), new_lane_id, 0, 0);
+				}
+				else
+				{
+					LOG("Unexpected contact point type: %d", road_link->GetContactPointType());
+				}
+
+				// We want an angle in the [-PI..PI] range
+				double heading = atan2(test_pos.GetY() - GetY(), test_pos.GetX() - GetX());
+				double heading_diff = fmod(GetHRoadInDrivingDirection() - heading, 2 * M_PI);
+
+				if(heading_diff > M_PI) {
+					heading_diff -= 2 * M_PI;
+				}
+				if(heading_diff < -M_PI) {
+					heading_diff += 2 * M_PI;
+				}
+				roads_angles.emplace(heading_diff, i);
 			}
-			else  // randomize
-			{
-				connection_idx = (int)(n_connections * (double)(SE_Env::Inst().GetGenerator())() / (SE_Env::Inst().GetGenerator()).max());
+
+			if(strategy == Junction::JunctionStrategyType::STRAIGHT) {
+				// Finding angle closest to 0°
+				// First we find closest over 0°
+				auto it = roads_angles.lower_bound(0.);
+				if(it == roads_angles.cend()) {
+					// No roads over 0�, so we take the last (i.e. highest negative angle)
+					connection_idx = roads_angles.rbegin()->second;
+				} else {
+					// Found closest road over 0°
+					// But could the closest under 0° be actually closer?
+					auto it_closest = it;
+					auto it_prev = std::prev(it);
+					if(it_prev != roads_angles.cend()) {
+						// Also found one road under 0°
+						// Check if it's actually closer
+						if(std::abs(it_prev->first) < it->first) {
+							it_closest = it_prev;
+						}
+					}
+					connection_idx = it_closest->second;
+				}
+			} else {
+				// We get the n-th road, either starting from left or right
+				int n = std::min((int)roads_angles.size(), std::abs(strategy)) - 1;
+				if(strategy > 0) {
+					auto it = roads_angles.rbegin();
+					std::advance(it, n);
+					connection_idx = it->second;
+				} else {
+					auto it = roads_angles.begin();
+					std::advance(it, n);
+					connection_idx = it->second;
+				}
 			}
 		}
 
@@ -6666,7 +6693,7 @@ int Position::MoveToConnectingRoad(RoadLink *road_link, ContactPointType &contac
 	return 0;
 }
 
-Position::ErrorCode Position::MoveAlongS(double ds, double dLaneOffset, double junctionSelectorAngle)
+Position::ErrorCode Position::MoveAlongS(double ds, double dLaneOffset, Junction::JunctionStrategyType strategy)
 {
 	RoadLink *link;
 	double ds_signed = ds;
@@ -6731,7 +6758,7 @@ Position::ErrorCode Position::MoveAlongS(double ds, double dLaneOffset, double j
 		}
 
 		// If link is OK then move to the start- or endpoint of the connected road, depending on contact point
-		if (!link || link->GetElementId() == -1 || MoveToConnectingRoad(link, contact_point_type, junctionSelectorAngle) != 0)
+		if (!link || link->GetElementId() == -1 || MoveToConnectingRoad(link, contact_point_type, strategy) != 0)
 		{
 			// Failed to find a connection, stay at end of current road
 			SetLanePos(track_id_, lane_id_, s_stop, offset_);
@@ -6779,6 +6806,10 @@ Position::ErrorCode Position::MoveAlongS(double ds, double dLaneOffset, double j
 	}
 
 	return Position::ErrorCode::ERROR_NO_ERROR;
+}
+
+Lane* roadmanager::Position::GetLane() const {
+	return GetRoad()->GetDrivingLaneByIdx(GetS(), GetLaneId());
 }
 
 Position::ErrorCode Position::SetLanePos(int track_id, int lane_id, double s, double offset, int lane_section_idx)
@@ -7486,6 +7517,47 @@ double Position::getRelativeDistance(double targetX, double targetY, double &x, 
 	return sign * sqrt((x * x) + (y * y));
 }
 
+double roadmanager::Position::GetDistanceLeftOnRoad() const
+{
+	if(SIGN(GetLaneId()) < 0) {
+		return GetRoad()->GetLength() - GetS();
+	} else {
+		return GetS();
+	}
+}
+
+roadmanager::Position::NextJunction roadmanager::Position::GetNextJunction() const
+{
+	roadmanager::Position::NextJunction next;
+	next.distance = GetDistanceLeftOnRoad();
+	LinkType lt = SIGN(GetLaneId()) < 0 ? SUCCESSOR : PREDECESSOR;
+	ContactPointType cpt;
+	Road* r = GetRoad();
+	while(true) {
+		if (!r->GetLink(lt)) {
+			break;
+		}
+		if (r->GetLink(lt)->GetElementType() == RoadLink::ElementType::ELEMENT_TYPE_JUNCTION) {
+			next.junction = GetOpenDrive()->GetJunctionById(r->GetLink(lt)->GetElementId());
+			break;
+		}
+		cpt = r->GetLink(lt)->GetContactPointType();
+		if (cpt == ContactPointType::CONTACT_POINT_START) {
+			lt = SUCCESSOR;
+		} else if (cpt == ContactPointType::CONTACT_POINT_END) {
+			lt = PREDECESSOR;
+		} else {
+			break;
+		}
+		r = GetOpenDrive()->GetRoadById(r->GetLink(lt)->GetElementId());
+		if (!r) {
+			break;
+		}
+		next.distance += r->GetLength();
+	}
+	return next;
+}
+
 int Position::CalcRoutePosition()
 {
 	if (route_ == 0)
@@ -7801,7 +7873,7 @@ int Position::GetRoadLaneInfo(double lookahead_distance, RoadLaneInfo *data, Loo
 
 	if (fabs(lookahead_distance) > SMALL_NUMBER)
 	{
-		if (target.MoveAlongS(lookahead_distance, 0.0, 0.0) != Position::ErrorCode::ERROR_NO_ERROR)
+		if (target.MoveAlongS(lookahead_distance, 0.0) != Position::ErrorCode::ERROR_NO_ERROR)
 		{
 			return -1;
 		}
@@ -7882,7 +7954,7 @@ Position::ErrorCode Position::GetProbeInfo(double lookahead_distance, RoadProbeI
 		}
 		else
 		{
-			retval = target.MoveAlongS(lookahead_distance, 0.0, 0.0);
+			retval = target.MoveAlongS(lookahead_distance, 0.0);
 		}
 	}
 
@@ -9436,6 +9508,10 @@ void Route::setName(std::string name)
 std::string Route::getName()
 {
 	return name_;
+}
+
+int Position::Side() const {
+	return (lane_id_ < 0) - (lane_id_ > 0);
 }
 
 void RMTrajectory::Freeze()
