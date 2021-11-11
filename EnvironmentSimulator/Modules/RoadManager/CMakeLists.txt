@@ -23,6 +23,6 @@ if(MSVC)
 	add_definitions("/wd4482")
 endif()
 
-add_library ( RoadManager STATIC ${SOURCES} ${SRC_ADDITIONAL} ${INCLUDES} )
-
+add_library ( RoadManager SHARED ${SOURCES} ${SRC_ADDITIONAL} ${INCLUDES} )
+add_compile_definitions( ROADMANAGER_EXPORT )
 target_link_libraries ( RoadManager CommonMini )

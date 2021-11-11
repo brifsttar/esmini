@@ -20,6 +20,12 @@
 #include "pugixml.hpp"
 #include "CommonMini.hpp"
 
+#ifdef ROADMANAGER_EXPORT
+#define ROADMANAGER_API __declspec(dllexport)
+#else
+#define ROADMANAGER_API __declspec(dllimport)
+#endif
+
 #define PARAMPOLY3_STEPS 100
 
 namespace roadmanager
@@ -497,7 +503,7 @@ namespace roadmanager
 		double length_;
 	};
 
-	class Lane
+	class ROADMANAGER_API Lane
 	{
 	public:
 		enum LanePosition
@@ -602,7 +608,7 @@ namespace roadmanager
 		LaneBoundaryOSI* lane_boundary_;
 	};
 
-	class LaneSection
+	class ROADMANAGER_API LaneSection
 	{
 	public:
 		LaneSection(double s) : s_(s), length_(0) {}
@@ -973,7 +979,7 @@ namespace roadmanager
 		Repeat* repeat_;
 	};
 
-	class Road
+	class ROADMANAGER_API Road
 	{
 	public:
 
@@ -1265,7 +1271,7 @@ namespace roadmanager
 		int towgs84_;
 	} GeoReference;
 
-	class OpenDrive
+	class ROADMANAGER_API OpenDrive
 	{
 	public:
 		OpenDrive() {};
@@ -1429,7 +1435,7 @@ namespace roadmanager
 	class Route;
 	class RMTrajectory;
 
-	class Position
+	class ROADMANAGER_API Position
 	{
 	public:
 
@@ -1646,7 +1652,7 @@ namespace roadmanager
 		@param trajectory_t Lateral distance from trajectory at current s-value
 		@return Non zero return value indicates error of some kind
 		*/
-		int SetTrajectoryT(double trajectory_t) { t_trajectory_ = trajectory_t; }
+		int SetTrajectoryT(double trajectory_t) { t_trajectory_ = trajectory_t; return 0; }
 
 		/**
 		Retrieve the T-value of the current trajectory position
