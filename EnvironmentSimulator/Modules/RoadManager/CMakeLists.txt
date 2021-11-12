@@ -26,3 +26,9 @@ endif()
 add_library ( RoadManager SHARED ${SOURCES} ${SRC_ADDITIONAL} ${INCLUDES} )
 add_compile_definitions( ROADMANAGER_EXPORT )
 target_link_libraries ( RoadManager CommonMini )
+set_target_properties( RoadManager
+    PROPERTIES
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}../../../../lib"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}../../../../lib"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}../../../../bin"
+)
