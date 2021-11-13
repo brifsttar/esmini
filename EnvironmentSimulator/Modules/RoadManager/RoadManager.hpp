@@ -1286,6 +1286,14 @@ namespace roadmanager
 		bool LoadOpenDriveFile(const char *filename, bool replace = true);
 
 		/**
+			Load a road network, specified in the OpenDRIVE file format
+			@param content OpenDRIVE file content
+			@param replace If true any old road data will be erased, else new will be added to the old
+		*/
+		bool LoadOpenDriveContent(const char *content, bool replace = true);
+		bool LoadOpenDrive(const pugi::xml_document &doc, bool replace = true);
+
+		/**
 			Initialize the global ids for lanes
 		*/
 		void InitGlobalLaneIds();

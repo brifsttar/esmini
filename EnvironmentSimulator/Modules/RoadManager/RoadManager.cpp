@@ -2155,6 +2155,34 @@ OpenDrive::OpenDrive(const char *filename)
 	}
 }
 
+bool OpenDrive::LoadOpenDriveContent(const char *content, bool replace) {
+	pugi::xml_document doc;
+	pugi::xml_parse_result result = doc.load_string(content);
+	if (!result) {
+		LOG("%s at offset (character position): %d", result.description(), result.offset);
+		return false;
+	}
+	return LoadOpenDrive(doc, replace);
+}
+
+bool OpenDrive::LoadOpenDriveFile(const char *filename, bool replace) {
+	odr_filename_ = filename;
+
+	if (odr_filename_ == "") {
+		return false;
+	}
+
+	pugi::xml_document doc;
+
+	// First assume absolute path
+	pugi::xml_parse_result result = doc.load_file(filename);
+	if (!result) {
+		LOG("%s at offset (character position): %d", result.description(), result.offset);
+		return false;
+	}
+	return LoadOpenDrive(doc, replace);
+}
+
 void OpenDrive::InitGlobalLaneIds()
 {
 	g_Lane_id = 0;
@@ -2213,7 +2241,7 @@ std::string ReadAttribute(pugi::xml_node node, std::string attribute_name, bool 
 	return "";
 }
 
-bool OpenDrive::LoadOpenDriveFile(const char *filename, bool replace)
+bool OpenDrive::LoadOpenDrive(const pugi::xml_document &doc, bool replace)
 {
 	if (replace)
 	{
@@ -2230,23 +2258,6 @@ bool OpenDrive::LoadOpenDriveFile(const char *filename, bool replace)
 			delete junction_[i];
 		}
 		junction_.clear();
-	}
-
-	odr_filename_ = filename;
-
-	if (odr_filename_ == "")
-	{
-		return false;
-	}
-
-	pugi::xml_document doc;
-
-	// First assume absolute path
-	pugi::xml_parse_result result = doc.load_file(filename);
-	if (!result)
-	{
-		LOG("%s at offset (character position): %d", result.description(), result.offset);
-		return false;
 	}
 
 	pugi::xml_node node = doc.child("OpenDRIVE");
