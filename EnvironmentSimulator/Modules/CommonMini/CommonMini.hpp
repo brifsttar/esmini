@@ -19,13 +19,15 @@
 #include <string>
 #define _USE_MATH_DEFINES
 #include <math.h>
+#include <condition_variable>
+#include <cstring>
+#include <map>
 
-#ifdef _WIN32
-	#include <sdkddkver.h>
-#else
-	#include <cstring>
+#ifndef _WIN32
 	#include <inttypes.h>
 	typedef int64_t __int64;
+#else
+	#include <sdkddkver.h>
 #endif
 
 
@@ -42,40 +44,74 @@
 #define SMALL_NUMBER (1E-10)
 #define LARGE_NUMBER (1E+10)
 #define SIGN(X) ((X<0)?-1:1)
-#define MAX(x, y) (y > x ? y : x)
-#define MIN(x, y) (y < x ? y : x)
+#define MAX(x, y) ((y) > (x) ? (y) : (x))
+#define MIN(x, y) ((y) < (x) ? (y) : (x))
+#define ABS_LIMIT(x, y) (abs(x) > abs(y) ? (SIGN(x) * abs(y)) : x)  // limit abs value but keep sign
+#define ABS_FLOOR(x, y) (abs(x) < abs(y) ? (SIGN(x) * abs(y)) : x)  // limit abs value but keep sign
 #define CLAMP(x, lo, hi) MIN(hi, MAX(lo, x))
+#define AVOID_ZERO(x) (SIGN(x)*MAX(SMALL_NUMBER, fabs(x)))
+#define NEAR_ZERO(x) (abs(x) < SMALL_NUMBER)
+#define NEAR_NUMBERS(x, y) (abs(x - y) < SMALL_NUMBER)
 #define OSI_MAX_LONGITUDINAL_DISTANCE 50
 #define OSI_MAX_LATERAL_DEVIATION 0.05
 #define LOG_FILENAME "log.txt"
+#define GHOST_TRAIL_SAMPLE_TIME 0.2
+
 
 #define LOG(Format_, ...)  Logger::Inst().Log(false, false, __FILENAME__, __FUNCTION__, __LINE__, Format_, ##__VA_ARGS__)
 #define LOG_TRACE(Format_, ...)  Logger::Inst().Log(false, true, __FILENAME__, __FUNCTION__, __LINE__, Format_, ##__VA_ARGS__)
 #define LOG_ONCE(Format_, ...)  { \
-	static bool firstTime = true; \
-	if (firstTime) \
-	{ \
-		Logger::Inst().Log(false, false, __FILENAME__, __FUNCTION__, __LINE__, Format_, ##__VA_ARGS__); \
-		firstTime = false; \
-	} \
-}
+		static bool firstTime = true; \
+		if (firstTime) \
+		{ \
+			Logger::Inst().Log(false, false, __FILENAME__, __FUNCTION__, __LINE__, Format_, ##__VA_ARGS__); \
+			firstTime = false; \
+		} \
+	}
 #define LOG_TRACE_ONCE(Format_, ...)  { \
-	static bool firstTime = true; \
-	if (firstTime) \
-	{ \
-		Logger::Inst().Log(false, true, __FILENAME__, __FUNCTION__, __LINE__, Format_, ##__VA_ARGS__); \
-		firstTime = false; \
-	} \
-}
+		static bool firstTime = true; \
+		if (firstTime) \
+		{ \
+			Logger::Inst().Log(false, true, __FILENAME__, __FUNCTION__, __LINE__, Format_, ##__VA_ARGS__); \
+			firstTime = false; \
+		} \
+	}
 #define LOG_AND_QUIT(Format_, ...)  Logger::Inst().Log(true, false, __FILENAME__, __FUNCTION__, __LINE__, Format_, ##__VA_ARGS__)
 #define LOG_TRACE_AND_QUIT(Format_, ...)  Logger::Inst().Log(true, true, __FILENAME__, __FUNCTION__, __LINE__, Format_, ##__VA_ARGS__)
+
 
 // Time functions
 __int64 SE_getSystemTime();
 void SE_sleep(unsigned int msec);
-double SE_getSimTimeStep(__int64 &time_stamp, double min_time_step, double max_time_step);
+double SE_getSimTimeStep(__int64& time_stamp, double min_time_step, double max_time_step);
 
 // Useful types
+enum class KeyType // copy key enums from OSG GUIEventAdapter
+{
+	KEY_Left = 0xFF51,        /* Left arrow */
+	KEY_Up = 0xFF52,          /* Up arrow */
+	KEY_Right = 0xFF53,       /* Right arrow */
+	KEY_Down = 0xFF54,        /* Down arrow */
+	KEY_Space = 0x20,         /* Space */
+	KEY_Return = 0xFF0D,      /* Return, enter */
+	KEY_Escape = 0xFF1B,      /* Escape */
+
+	// Mod key types
+	KEY_Shift_L = 0xFFE1,     /* Left shift */
+	KEY_Shift_R = 0xFFE2,     /* Right shift */
+	KEY_Control_L = 0xFFE3,   /* Left control */
+	KEY_Control_R = 0xFFE4,   /* Right control */
+};
+
+enum class ModKeyMask
+{
+	MODKEY_LEFT_SHIFT = 0x0001,
+	MODKEY_RIGHT_SHIFT = 0x0002,
+	MODKEY_LEFT_CTRL = 0x0004,
+	MODKEY_RIGHT_CTRL = 0x0008,
+	MODKEY_CTRL = (MODKEY_LEFT_CTRL | MODKEY_RIGHT_CTRL),
+	MODKEY_SHIFT = (MODKEY_LEFT_SHIFT | MODKEY_RIGHT_SHIFT),
+};
 
 enum class ControlDomains
 {
@@ -94,214 +130,329 @@ enum class EntityScaleMode
 
 std::string ControlDomain2Str(ControlDomains domains);
 
+enum class PixelFormat
+{
+	UNSPECIFIED = 0,
+	RGB = 0x1907,   // GL_RGB
+	BGR = 0x80E0    // GL_BGR
+};
+
+struct OffScreenImage
+{
+	int width;
+	int height;
+	int pixelSize;
+	int pixelFormat;  // According to enum class PixelFormat
+	unsigned char* data;
+};
+
+class SE_Vector
+{
+public:
+	SE_Vector() : x_(0.0), y_(0.0) {}
+	SE_Vector(double x, double y) : x_(x), y_(y) {}
+
+	void SetX(double x) { x_ = x; }
+	void SetY(double y) { y_ = y; }
+	void Set(double x, double y) { x_ = x, y_ = y; }
+
+	SE_Vector operator + (SE_Vector const& p) const {
+		SE_Vector res;
+		res.x_ = x_ + p.x_;
+		res.y_ = y_ + p.y_;
+		return res;
+	}
+
+	SE_Vector operator - (SE_Vector const& p) const {
+		SE_Vector res;
+		res.x_ = x_ - p.x_;
+		res.y_ = y_ - p.y_;
+		return res;
+	}
+
+	SE_Vector Rotate(double angle) {
+		SE_Vector res;
+		res.x_ = x_ * cos(angle) - y_ * sin(angle);
+		res.y_ = x_ * sin(angle) + y_ * cos(angle);
+		return res;
+	}
+
+	double Dot(const SE_Vector& corner) const {
+		return x_ * corner.x_ + y_ * corner.y_;
+	}
+
+	double Cross(const SE_Vector& vec) const {
+		return x_ * vec.y_ - vec.x_ * y_;
+	}
+
+	double GetLength() {
+		double l2 = x_ * x_ + y_ * y_;
+		if (l2 > SMALL_NUMBER)
+		{
+			return sqrt(l2);
+		}
+
+		return 0.0;
+	}
+
+	void SetLength(double length) {
+		double current_length = GetLength();
+		if (current_length > SMALL_NUMBER)
+		{
+			x_ *= length / current_length;
+			y_ *= length / current_length;
+		}
+		else
+		{
+			x_ = 0.0;
+			y_ = 0.0;
+		}
+	}
+
+	void Normalize()
+	{
+		double len = GetLength();
+		if (len < SMALL_NUMBER)
+		{
+			len = SMALL_NUMBER;
+		}
+		x_ = x_ / len;
+		y_ = y_ / len;
+	}
+
+	double x() const { return x_; }
+	double y() const { return y_; }
+
+private:
+	double x_;
+	double y_;
+};
+
 // Useful operations
 
+/**
+	Get model filename from model_id.
+*/
+std::string GetModelFilenameById(int model_id);
 
 /**
-  Checks whether file with given path exists or not
+	Checks whether file with given path exists or not
 */
 bool FileExists(const char* fileName);
 
 /**
-  Concatenate a directory path and a file path
+	Concatenate a directory path and a file path
 */
-std::string CombineDirectoryPathAndFilepath(std::string dir_path,  std::string file_path);
+std::string CombineDirectoryPathAndFilepath(std::string dir_path, std::string file_path);
 
 /**
-  Retrieve the angle of a vector
+	Retrieve the angle of a vector
 */
 double GetAngleOfVector(double x, double y);
 
 /**
-  Retrieve the absolute value of difference between two angles (angle1 - angle2)
+	Retrieve the absolute value of difference between two angles (angle1 - angle2)
 */
 double GetAbsAngleDifference(double angle1, double angle2);
 
 /**
-  Retrieve the sum of two angles
+	Retrieve the sum of two angles
 */
 double GetAngleSum(double angle1, double angle2);
 
 /**
-  Retrieve the angle in the interval [0, 2xPI]
+	Retrieve the angle in the interval [0, 2xPI]
 */
 double GetAngleInInterval2PI(double angle);
 
 /**
-  Retrieve the angle in the interval [-PI, PI]
+	Retrieve the angle in the interval [-PI, PI]
 */
 double GetAngleInIntervalMinusPIPlusPI(double angle);
 
 /**
-  Retrieve difference between two angles
+	Retrieve difference between two angles
 */
 double GetAngleDifference(double angle1, double angle2);
 
 /**
-  This function checks if the angle is in the interval of [-pi/2, +pi/2]
+	This function checks if the angle is in quad 1 or 4, i.e. not in range [pi/2, 3pi/3]
 */
-bool IsAngleStraight(double teta);
+bool IsAngleForward(double teta);
 
 /**
-  Retrieve the cross product of two vectors where z=0
+	Retrieve the cross product of two vectors where z=0
 */
 double GetCrossProduct2D(double x1, double y1, double x2, double y2);
 
 /**
-  Retrieve the dot product of two vectors where z=0
+	Retrieve the dot product of two vectors where z=0
 */
 double GetDotProduct2D(double x1, double y1, double x2, double y2);
 
 /**
-  Retrieve the intersection between two line segments/vectors a and b
-  if found, x3 and x4 is the intersection point
-  returns 0 if intersection exists, else -1
-  Note: does not (yet) calculate whether point is within one of the line segments or not
+	Retrieve the intersection between two line segments/vectors a and b
+	if found, x3 and x4 is the intersection point
+	returns 0 if intersection exists, else -1
+	Note: does not (yet) calculate whether point is within one of the line segments or not
 */
-int GetIntersectionOfTwoLineSegments(double ax1, double ay1, double ax2, double ay2, double bx1, double by1, double bx2, double by2, double &x3, double &y3);
+int GetIntersectionOfTwoLineSegments(double ax1, double ay1, double ax2, double ay2, double bx1, double by1, double bx2, double by2, double& x3, double& y3);
 
 /**
-  Calculate distance between two 2D points
+	Calculate distance between two 2D points
 */
 double PointDistance2D(double x0, double y0, double x1, double y1);
 
 /**
- Calculate (shortest) distance between a point to a line, in 2D
- Inspiration: https://www.geeksforgeeks.org/shortest-distance-between-a-line-and-a-point-in-a-3-d-plane/
- But modified so that negtive distance means point is on right side of the line and vice versa
- @param px X-coordinate of the point
- @param py Y-coordinate of the point
- @param lx0 X-coordinate of the first endpoint of the line
- @param ly0 Y-coordinate of the first endpoint of the line
- @param lx1 X-coordinate of the second endpoint of the line
- @param ly1 Y-coordinate of the second endpoint of the line
- @return Signed distance (negative on the right, positive to the left)
+	Calculate (shortest) distance between a point to a line, in 2D
+	Inspiration: https://www.geeksforgeeks.org/shortest-distance-between-a-line-and-a-point-in-a-3-d-plane/
+	But modified so that negtive distance means point is on right side of the line and vice versa
+	@param px X-coordinate of the point
+	@param py Y-coordinate of the point
+	@param lx0 X-coordinate of the first endpoint of the line
+	@param ly0 Y-coordinate of the first endpoint of the line
+	@param lx1 X-coordinate of the second endpoint of the line
+	@param ly1 Y-coordinate of the second endpoint of the line
+	@return Signed distance (negative on the right, positive to the left)
 */
 double PointToLineDistance2DSigned(double px, double py, double lx0, double ly0, double lx1, double ly1);
 
 /**
-  Calculate distance between two 2D points, return square value - avoiding square root operation
+	Calculate distance between two 2D points, return square value - avoiding square root operation
 */
 double PointSquareDistance2D(double x0, double y0, double x1, double y1);
 
 /**
-  Project a 2D point on a 2D vector
+	Project a 2D point on a 2D vector
 */
-void ProjectPointOnVector2D(double x, double y, double vx1, double vy1, double vx2, double vy2, double &px, double &py);
+void ProjectPointOnVector2D(double x, double y, double vx1, double vy1, double vx2, double vy2, double& px, double& py);
 
 /**
- Check whether projected point is in between vector endpoints, or outside
- @param x3 X-coordinate of the point to check
- @param y3 Y-coordinate of the point to check
- @param x1 X-coordinate of the first endpoint of the line
- @param y1 Y-coordinate of the first endpoint of the line
- @param x2 X-coordinate of the second endpoint of the line
- @param y2 Y-coordinate of the second endpoint of the line
- @param sNorm Reference parameter will contain normalized s value (0:1) in case of point inside line
-  else the distance to point projected on extended line behind (negative) or in front (positive)
- @return true if projected point is inside line segment, else false
+	Check whether projected point is in area formed by the two given vectors
+	@param p Point to check
+	@param l0p0 First point of the first vector
+	@param l0p1 Second point of the first vector
+	@param l1p0 First point of the second vector
+	@param l1p1 Second point of the second vector
+	@param sNorm Reference parameter will contain normalized s value (0:1) in case of point inside the area, positive
+	if the point is on the right hemisphere from the first vector, else negative. If point is not between vectors
+	the distance to closest vector. Negative if closer to first vector, positive if closer to the second vector.
+	@return true if projected point is inside the area, else false
 */
-bool PointInBetweenVectorEndpoints(double x3, double y3, double x1, double y1, double x2, double y2, double &sNorm);
+bool IsPointWithinSectorBetweenTwoLines(SE_Vector p, SE_Vector l0p0, SE_Vector l0p1, SE_Vector l1p0, SE_Vector l1p1, double& sNorm);
 
 /**
- Measure distance from point to edge. Strategy: Project the point on the edge interior or closest endpoint
- @param x3 X-coordinate of the point to check
- @param y3 Y-coordinate of the point to check
- @param x1 X-coordinate of the first endpoint of the edge
- @param y1 Y-coordinate of the first endpoint of the edge
- @param x2 X-coordinate of the second endpoint of the edge
- @param y2 Y-coordinate of the second endpoint of the edge
- @param x Return the X-coordinate of closest point on edge
- @param y Return the Y-coordinate of closest point on edge
- @return the distance
+	Check whether projected point is in between vector endpoints, or outside
+	@param x3 X-coordinate of the point to check
+	@param y3 Y-coordinate of the point to check
+	@param x1 X-coordinate of the first endpoint of the line
+	@param y1 Y-coordinate of the first endpoint of the line
+	@param x2 X-coordinate of the second endpoint of the line
+	@param y2 Y-coordinate of the second endpoint of the line
+	@param sNorm Reference parameter will contain normalized s value (0:1) in case of point inside line
+	else the distance to point projected on extended line behind (negative) or in front (positive)
+	@return true if projected point is inside line segment, else false
+*/
+bool PointInBetweenVectorEndpoints(double x3, double y3, double x1, double y1, double x2, double y2, double& sNorm);
+
+/**
+	Measure distance from point to edge. Strategy: Project the point on the edge interior or closest endpoint
+	@param x3 X-coordinate of the point to check
+	@param y3 Y-coordinate of the point to check
+	@param x1 X-coordinate of the first endpoint of the edge
+	@param y1 Y-coordinate of the first endpoint of the edge
+	@param x2 X-coordinate of the second endpoint of the edge
+	@param y2 Y-coordinate of the second endpoint of the edge
+	@param x Return the X-coordinate of closest point on edge (set = 0 to skip)
+	@param y Return the Y-coordinate of closest point on edge (set = 0 to skip)
+	@return the distance
 */
 double DistanceFromPointToEdge2D(double x3, double y3, double x1, double y1, double x2, double y2, double* x, double* y);
 
 /**
- Measure distance from point to line. Strategy: Find and measure distance to closest/perpendicular point on line
- @param x3 X-coordinate of the point to check
- @param y3 Y-coordinate of the point to check
- @param x1 X-coordinate of the first point on line
- @param y1 Y-coordinate of the first point on line
- @param x2 X-coordinate of the second first point on line
- @param y2 Y-coordinate of the second first point on line
- @param x Return the X-coordinate of closest point on line
- @param y Return the Y-coordinate of closest point on line
- @return the distance
+	Measure distance from point to line. Strategy: Find and measure distance to closest/perpendicular point on line
+	@param x3 X-coordinate of the point to check
+	@param y3 Y-coordinate of the point to check
+	@param x1 X-coordinate of the first point on line
+	@param y1 Y-coordinate of the first point on line
+	@param x2 X-coordinate of the second first point on line
+	@param y2 Y-coordinate of the second first point on line
+	@param x Return the X-coordinate of closest point on line
+	@param y Return the Y-coordinate of closest point on line
+	@return the distance
 */
 double DistanceFromPointToLine2D(double x3, double y3, double x1, double y1, double x2, double y2, double* x, double* y);
 
 /**
-  Find out whether the point is left or right to a vector
+	Find out whether the point is left or right to a vector
 */
 int PointSideOfVec(double px, double py, double vx1, double vy1, double vx2, double vy2);
 
 /**
-  Retrieve the length of a 2D line segment
+	Retrieve the length of a 2D line segment
 */
 double GetLengthOfLine2D(double x1, double y1, double x2, double y2);
 
 /**
-  Retrieve the length of a 3D vector
+	Retrieve the length of a 3D vector
 */
 double GetLengthOfVector3D(double x, double y, double z);
 
 /**
-  Rotate a 2D vector
+	Rotate a 2D vector
 */
-void RotateVec2D(double x, double y, double angle, double &xr, double &yr);
+void RotateVec2D(double x, double y, double angle, double& xr, double& yr);
 
 /**
-  Convert target (x,y) coordinates to coordinate system of the host
+	Convert target (x,y) coordinates to coordinate system of the host
 */
 void Global2LocalCoordinates(double xTargetGlobal, double yTargetGlobal,
-							 double xHostGlobal, double yHostGlobal, double angleHost,
-							 double &targetXforHost, double &targetYforHost);
+	double xHostGlobal, double yHostGlobal, double angleHost,
+	double& targetXforHost, double& targetYforHost);
 
 /**
-  Convert target (x,y) coordinates to the global coordinate system
+	Convert target (x,y) coordinates to the global coordinate system
 */
-void Local2GlobalCoordinates(double &xTargetGlobal, double &yTargetGlobal,
-							 double xHostGlobal, double yHostGlobal, double thetaGlobal,
-							 double targetXforHost, double targetYforHost);
+void Local2GlobalCoordinates(double& xTargetGlobal, double& yTargetGlobal,
+	double xHostGlobal, double yHostGlobal, double thetaGlobal,
+	double targetXforHost, double targetYforHost);
 
 /**
-  Normalize a 2D vector
+	Normalize a 2D vector
 */
-void NormalizeVec2D(double x, double y, double &xn, double &yn);
+void NormalizeVec2D(double x, double y, double& xn, double& yn);
 
 /**
-  Find parallel line at specified offset (- means left, + right)
+	Find parallel line at specified offset (- means left, + right)
 */
 void OffsetVec2D(double x0, double y0, double x1, double y1, double offset, double& xo0, double& yo0, double& xo1, double& y01);
 
 /**
-  Get Euler angles in local coordinates after rotation Z0 * Y * Z1 (heading, pitch, heading)
+	Get Euler angles in local coordinates after rotation Z0 * Y * Z1 (heading, pitch, heading)
 */
 void ZYZ2EulerAngles(double z0, double y, double z1, double& h, double& p, double& r);
 
 /**
-  Get Euler angles in local coordinates after rotation Z0 * Y * Z1 (heading, pitch, heading)
+	Get Euler angles in local coordinates after rotation Z0 * Y * Z1 (heading, pitch, heading)
 */
 void R0R12EulerAngles(double h0, double p0, double r0, double h1, double p1, double r1, double& h, double& p, double& r);
 
 
 /**
-  Change byte order - can be useful for IP communication with non Intel platforms
+	Change byte order - can be useful for IP communication with non Intel platforms
 */
-void SwapByteOrder(unsigned char *buf, int data_type_size, int buf_size);
+void SwapByteOrder(unsigned char* buf, int data_type_size, int buf_size);
 
 #if (defined WINVER && WINVER == _WIN32_WINNT_WIN7)
-
 #else
-	#include <thread>
-	#include <mutex>
+#include <thread>
+#include <mutex>
 #endif
 
 class SE_Thread
 {
 public:
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7)
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
 	SE_Thread() : thread_() {}
 #else
 	SE_Thread() {}
@@ -309,11 +460,11 @@ public:
 	~SE_Thread();
 
 	void Wait();
-	void Start(void(*func_ptr)(void*), void *arg);
+	void Start(void(*func_ptr)(void*), void* arg);
 
 private:
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7)
-	void *thread_;
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
+	void* thread_;
 #else
 	std::thread thread_;
 #endif
@@ -328,14 +479,70 @@ public:
 	void Unlock();
 
 private:
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7)
-	void *mutex_;
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
+	void* mutex_;
 #else
 	std::mutex mutex_;
 #endif
 };
 
-std::vector<std::string> SplitString(const std::string &s, char separator);
+
+// Semaphore implementation based on this "thread":
+// https://stackoverflow.com/questions/4792449/c0x-has-no-semaphores-how-to-synchronize-threads/4793662#4793662
+// But adapted for use cases where a thread should wait until a series, not necessarily overlapping, tasks from
+// potentially various threads has been finished, e.g:
+// 1. Raise flag from main thread when main application thread initiates rendering of scenario image
+// 2. Lower flag from render thread when image has been created and copied into RAM
+// 3. Meanwhile, main thread waits for the flag to fall and then can fetch the image
+//
+class SE_Semaphore
+{
+public:
+	SE_Semaphore() : flag(0) {}
+
+	inline void Set()
+	{
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7)
+#elif (defined __MINGW32__)
+#else
+		std::unique_lock<std::mutex> lock(mtx);
+#endif
+		flag = true;
+	}
+
+	inline void Release()
+	{
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
+		flag = false;
+#else
+		std::unique_lock<std::mutex> lock(mtx);
+		flag = false;
+		cv.notify_one();  // notify the waiting thread
+#endif
+	}
+
+	inline void Wait()
+	{
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 ||  __MINGW32__)
+#else
+		std::unique_lock<std::mutex> lock(mtx);
+		if (flag == true)
+		{
+			cv.wait(lock);  // wait on the mutex until notify is called
+		}
+#endif
+	}
+
+private:
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
+#else
+	std::mutex mtx;
+	std::condition_variable cv;
+#endif
+	bool flag;
+};
+
+std::vector<std::string> SplitString(const std::string& s, char separator);
 std::string DirNameOf(const std::string& fname);
 std::string FileNameOf(const std::string& fname);
 std::string FileNameExtOf(const std::string& fname);
@@ -363,6 +570,7 @@ private:
 	Logger();
 	~Logger();
 
+	SE_Mutex mutex_;
 	FuncPtr callback_;
 	std::ofstream file_;
 	double* time_; // seconds
@@ -382,7 +590,8 @@ public:
 	void LogVehicleData(bool isendline, double timestamp, char const* name, int id, double speed,
 		double wheel_angle, double wheel_rot, double posX, double posY, double posZ, double velX, double velY,
 		double velZ, double accX, double accY, double accZ, double distance_road, double distance_lanem, double heading,
-		double heading_rate, double heading_angle, double heading_angle_driving_direction, double pitch, double curvature, ...);
+		double heading_rate, double heading_angle, double heading_angle_driving_direction, double pitch, double curvature,
+		char const* collisions, ...);
 
 	void SetCallback(FuncPtr callback);
 
@@ -434,19 +643,20 @@ public:
 	void AddOption(std::string opt_str, std::string opt_desc, std::string opt_arg, std::string opt_arg_default_value);
 
 	void PrintUsage();
-	void PrintArgs(int argc, char *argv[], std::string message = "Unrecognized arguments:");
+	void PrintArgs(int argc, char* argv[], std::string message = "Unrecognized arguments:");
 	bool GetOptionSet(std::string opt);
 	bool IsOptionArgumentSet(std::string opt);
 	std::string GetOptionArg(std::string opt, int index = 0);
-	int ParseArgs(int *argc, char* argv[]);
+	int ParseArgs(int* argc, char* argv[]);
 	std::vector<std::string>& GetOriginalArgs() { return originalArgs_; }
+	bool IsInOriginalArgs(std::string opt);
 
 private:
 	std::vector<SE_Option> option_;
 	std::string app_name_;
 	std::vector<std::string> originalArgs_;
 
-	SE_Option *GetOption(std::string opt);
+	SE_Option* GetOption(std::string opt);
 };
 
 class SE_SystemTime
@@ -491,7 +701,7 @@ public:
 			return duration_ - Elapsed();
 		}
 	}
-	bool Expired() { return Elapsed() > duration_; }
+	bool Expired() { return Elapsed() > duration_ - SMALL_NUMBER; }
 };
 
 
@@ -528,7 +738,7 @@ public:
 
 	bool Started() { return duration_ > SMALL_NUMBER; }
 	double Elapsed(double timestamp_s) { return timestamp_s - start_time_; }
-	double Expired(double timestamp_s) { return timestamp_s - start_time_ > duration_; }
+	double Expired(double timestamp_s) { return timestamp_s - start_time_ > duration_ - SMALL_NUMBER; }
 	double GetDuration() { return duration_; }
 };
 
@@ -595,21 +805,18 @@ private:
 class SE_Env
 {
 public:
-	static SE_Env& Inst();
-	std::vector<std::string> paths_;
-	double osiMaxLongitudinalDistance_;
-	double osiMaxLateralDeviation_;
-	std::string logFilePath_;
-	SE_SystemTime systemTime_;
-	unsigned int seed_;
-	std::mt19937 gen_;
-
 	SE_Env();
+
+	static SE_Env& Inst();
 
 	void SetOSIMaxLongitudinalDistance(double maxLongitudinalDistance) { osiMaxLongitudinalDistance_ = maxLongitudinalDistance; }
 	void SetOSIMaxLateralDeviation(double maxLateralDeviation) { osiMaxLateralDeviation_ = maxLateralDeviation; }
 	double GetOSIMaxLongitudinalDistance() { return osiMaxLongitudinalDistance_; }
 	double GetOSIMaxLateralDeviation() { return osiMaxLateralDeviation_; }
+	void SetDisableOffScreen(bool disable) { disableOffScreen_ = disable; }
+	bool GetDisableOffScreen() { return disableOffScreen_; }
+	void SetCollisionDetection(bool enable) { collisionDetection_ = enable; }
+	bool GetCollisionDetection() { return collisionDetection_; }
 	std::vector<std::string>& GetPaths() { return paths_; }
 	int AddPath(std::string path);
 	void ClearPaths() { paths_.clear(); }
@@ -630,4 +837,48 @@ public:
 	*/
 	void SetLogFilePath(std::string logFilePath);
 	std::string GetLogFilePath() { return logFilePath_; }
+	std::string GetModelFilenameById(int model_id);
+	void ClearModelFilenames() { entity_model_map.clear(); }
+
+private:
+	std::vector<std::string> paths_;
+	double osiMaxLongitudinalDistance_;
+	double osiMaxLateralDeviation_;
+	std::string logFilePath_;
+	SE_SystemTime systemTime_;
+	unsigned int seed_;
+	std::mt19937 gen_;
+	bool disableOffScreen_;
+	bool collisionDetection_;
+	std::map<int, std::string> entity_model_map;
 };
+
+/**
+	Store RGB (3*8 bits color values) image data as a PPM image file
+	PPM info: http://paulbourke.net/dataformats/ppm/
+	@param filename File name including extension which should be ".ppm", e.g. "img0.ppm"
+	@param width Width
+	@param height Height
+	@param rgbData Array of color values
+	@param pixelSize 3 for RGB/BGR
+	@param pixelFormat 0=Unspecified, 0x1907=RGB (GL_RGB), 0x80E0=BGR (GL_BGR)
+	@param upsidedown false=lines stored from top to bottom, true=lines stored from bottom to top
+	@return 0 if OK, -1 if failed to open file, -2 if unexpected pixelSize
+*/
+int SE_WritePPM(const char* filename, int width, int height, const unsigned char* data, int pixelSize, int pixelFormat, bool upsidedown);
+
+/**
+	Store RGB or BGR (3*8 bits color values) image data as a TGA image file
+	TGA spec: https://www.dca.fee.unicamp.br/~martino/disciplinas/ea978/tgaffs.pdf
+	TGA brief: http://paulbourke.net/dataformats/tga/
+	@param filename File name including extension which should be ".tga", e.g. "img0.tga"
+	@param width Width
+	@param height Height
+	@param rgbData Array of color values
+	@param pixelSize 3 (RGB) or 4 (RGBA)
+	@param pixelFormat 0=Unspecified, 0x1907=RGB (GL_RGB), 0x80E0=BGR (GL_BGR)
+	@param upsidedown false=lines stored from top to bottom, true=lines stored from bottom to top
+	@return 0 if OK, -1 if failed to open file, -2 if unexpected pixelSize
+*/
+int SE_WriteTGA(const char* filename, int width, int height, const unsigned char* data, int pixelSize, int pixelFormat, bool upsidedown);
+

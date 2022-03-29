@@ -107,12 +107,26 @@ public static class ESMiniLib
         /// <returns>0 on success, -1 on failure for any reason</returns>
         public static extern int SE_SetLogFilePath(string path);
 
-       [DllImport(LIB_NAME, EntryPoint = "SE_SetOSITolerances")]
+        [DllImport(LIB_NAME, EntryPoint = "SE_SetOSITolerances")]
         /// <summary>Configure tolerances/resolution for OSI road features</summary>
         /// <param name="max_longitudinal_distance">Maximum distance between OSI points, even on straight road. Default=50(m) </param>
         /// <param name="max_lateral_deviation"> Control resolution w.r.t. curvature default=0.05(m)</param>
         /// <return>0 if successful, -1 if not</return>
         public static extern int SE_SetOSITolerances(double maxLongitudinalDistance, double maxLateralDeviation);
+
+        [DllImport(LIB_NAME, EntryPoint = "SE_RegisterParameterDeclarationCallback")]
+        /// <summary>
+        /// Register a function and optional argument (ref) to be called back from esmini after ParameterDeclarations has been parsed,
+        /// but before the scenario is initialized, i.e.before applying the actions in the Init block.One use-case is to
+        /// set parameter values for initial entity states, e.g.s value in lane position. So this callback will happen just
+        /// after parameters has been parsed, but before they are applied, providing an opportunity to control the initial
+        /// states via API.
+        /// Registered init callbacks are be cleared between SE_Init calls, i.e.needs to be registered
+        /// </summary>
+        /// <param name="func">Reference to the callback function to be invoked</param>
+        /// <param name="user_data">Optional pointer to a local data object that will be passed as argument in the callback.
+        /// Set 0/NULL if not needed.</param>
+        public static extern void SE_RegisterParameterDeclarationCallback(Action<IntPtr> callback, IntPtr user_data);
 
         [DllImport(LIB_NAME, EntryPoint = "SE_Init")]
         /// <summary>Initialize the scenario engine</summary>
@@ -163,12 +177,41 @@ public static class ESMiniLib
         [DllImport(LIB_NAME, EntryPoint = "SE_GetSimulationTime")]
         public static extern float SE_GetSimulationTime();
 
+        [DllImport(LIB_NAME, EntryPoint = "SE_AddObject")]
+        /// <summary>Add object. Should be followed by one of the SE_Report functions to establish initial state.</summary>
+        /// <param name="object_name">Name of the object, preferably be unique</param>
+        /// <param name="object_type">Type of the object. See Entities.hpp::Object::Type. Default=1 (VEHICLE).</param>
+        /// <param name="object_category">Category of the object. Depends on type, see descendants of Entities.hpp::Object. Set to 0 if not known.</param>
+        /// <param name="model_id">Id of the 3D model to represent the object. See resources/model_ids.txt.</param>
+        /// <returns>0 on success, -1 on failure for any reason</returns>
+        public static extern int SE_AddObject(string object_name, int object_type, int object_category, int model_id);
+
+        [DllImport(LIB_NAME, EntryPoint = "SE_DeleteObject")]
+        /// <summary>Delete object</summary>
+        /// <param name="object_id">Id of the object</param>
+        /// <returns>0 on success, -1 on failure for any reason</returns>
+        public static extern int SE_DeleteObject(int object_id);
+
+        #region ObjectReporter
         [DllImport(LIB_NAME, EntryPoint = "SE_ReportObjectPos")]
         public static extern int SE_ReportObjectPos(int id, float timestamp, float x, float y, float z, float h, float p, float r, float speed);
 
         [DllImport(LIB_NAME, EntryPoint = "SE_ReportObjectRoadPos")]
         public static extern int SE_ReportObjectRoadPos(int id, float timestamp, int roadId, int laneId, float laneOffset, float s, float speed);
 
+        [DllImport(LIB_NAME, EntryPoint = "SE_ReportObjectVel")]
+        public static extern int SE_ReportObjectVel(int id, float timestamp, float x_vel, float y_vel, float z_vel);
+
+        [DllImport(LIB_NAME, EntryPoint = "SE_ReportObjectAcc")]
+        public static extern int SE_ReportObjectAcc(int id, float timestamp, float x_acc, float y_acc, float z_acc);
+
+        [DllImport(LIB_NAME, EntryPoint = "SE_ReportObjectAngularVel")]
+        public static extern int SE_ReportObjectAngularVel(int id, float timestamp, float h_vel, float p_vel, float r_vel);
+
+        [DllImport(LIB_NAME, EntryPoint = "SE_ReportObjectAngularAcc")]
+        public static extern int SE_ReportObjectAngularAcc(int id, float timestamp, float h_acc, float p_acc, float r_acc);
+
+        #endregion
         [DllImport(LIB_NAME, EntryPoint = "SE_SetLockOnLane")]
         /// <summary>Controls whether to keep lane ID regardless of lateral position or snap to closest lane (default)</summary>
         /// <parameter name="mode">True=keep lane False=Snap to closest (default)</parameter>
@@ -187,12 +230,26 @@ public static class ESMiniLib
         /// <return>0 if successful, -1 if not</return>
         public static extern int SE_GetObjectState(int index, ref ScenarioObjectState state);
 
+        [DllImport(LIB_NAME, EntryPoint = "SE_GetObjectTypeName")]
+        //[return: MarshalAs(UnmanagedType.LPStr)]
+        /// <summary>Get the type name of the specifed vehicle-, pedestrian- or misc object</summary>
+        /// <param name="index">Index of the object. Note: not ID</param>
+        /// <return>Name</return>
+        public static extern IntPtr SE_GetObjectTypeName(int index);
+
         [DllImport(LIB_NAME, EntryPoint = "SE_GetObjectName")]
         //[return: MarshalAs(UnmanagedType.LPStr)]
         /// <summary>Get the name of specified object</summary>
         /// <param name="index">Index of the object. Note: not ID</param>
         /// <return>Name</return>
         public static extern IntPtr SE_GetObjectName(int index);
+
+        [DllImport(LIB_NAME, EntryPoint = "SE_GetObjectModelFileName")]
+        //[return: MarshalAs(UnmanagedType.LPStr)]
+        /// <summary>Get the 3D model filename of the specifed object</summary>
+        /// <param name="index">Index of the object. Note: not ID</param>
+        /// <return>Name</return>
+        public static extern IntPtr SE_GetObjectModelFileName(int index);
 
         [DllImport(LIB_NAME, EntryPoint = "SE_ObjectHasGhost")]
         /// <summary>Check whether an object has a ghost (special purpose lead vehicle)</summary>
@@ -202,6 +259,14 @@ public static class ESMiniLib
 
         [DllImport(LIB_NAME, EntryPoint = "SE_GetObjectGhostState")]
         public static extern int SE_GetObjectGhostState(int index, ref ScenarioObjectState state);
+
+        [DllImport(LIB_NAME, EntryPoint = "SE_GetSpeedUnit")]
+        /// <summaryGet the unit of specified speed</summary>
+        /// All roads will be looped in search for such an element. First found will be used.
+        /// If speed is specified withouth the optional unit, SI unit m/s is assumed.
+        /// If no speed entries is found, undefined will be returned.
+        /// <returns>-1=Error, 0=Undefined, 1=km/h 2=m/s, 3=mph</returns>
+        public static extern int GetSpeedUnit();
 
         [DllImport(LIB_NAME, EntryPoint = "SE_AddObjectSensor")]
         /// <summary>Create an ideal object sensor and attach to specified vehicle</summary>
@@ -244,6 +309,19 @@ public static class ESMiniLib
         [DllImport(LIB_NAME, EntryPoint = "SE_GetRoadInfoAlongGhostTrail")]
         public static extern int SE_GetRoadInfoAlongGhostTrail(int object_id, float lookahead_distance, ref RoadInfo data, ref float speed_ghost);
 
+        [DllImport(LIB_NAME, EntryPoint = "SE_GetNumberOfParameters")]
+        /// <summary>Get the number of parameters in the current scenario</summary>
+        /// <return>Number of parameters, -1 on error e.g. scenario not initialized</return>
+        public static extern int SE_GetNumberOfParameters();
+
+        [DllImport(LIB_NAME, EntryPoint = "SE_GetParameterName")]
+        /// <summary>Get name of parameter with specifed index</summary>
+        /// <param name="index">Index of the parameter</param>
+        /// <param name="parameterType">Returns the type of the parameter</param>///
+        /// <returns>Parameter name as string. Use with: Marshal.PtrToStringAnsi(SE_GetParameterName())</returns>
+        //[return: MarshalAs(UnmanagedType.LPStr)]
+        public static extern IntPtr SE_GetParameterName(int index, out int parameterType);
+
         [DllImport(LIB_NAME, EntryPoint = "SE_GetParameterInt")]
         public static extern int SE_GetParameterInt(string parameterName, out int value);
 
@@ -270,6 +348,31 @@ public static class ESMiniLib
 
         [DllImport(LIB_NAME, EntryPoint = "SE_SetParameterBool")]
         public static extern int SE_SetParameterBool(string parameterName, bool value);
+
+        [DllImport(LIB_NAME, EntryPoint = "SE_GetObjectPropertyValue")]
+        public static extern IntPtr SE_GetObjectPropertyValue(int index, string value);
+
+        #region OSI
+        [DllImport(LIB_NAME, EntryPoint = "SE_ClearOSIGroundTruth")]
+        public static extern int SE_ClearOSIGroundTruth();
+
+        [DllImport(LIB_NAME, EntryPoint = "SE_UpdateOSIDynamicGroundTruth")]
+        public static extern int SE_UpdateOSIDynamicGroundTruth(bool fetchGhost);
+
+        [DllImport(LIB_NAME, EntryPoint = "SE_UpdateOSIStaticGroundTruth")]
+        public static extern int SE_UpdateOSIStaticGroundTruth();
+
+        /// <summary>The SE_GetOSIGroundTruthRaw function returns a char array containing the OSI GroundTruth information </summary>
+        /// <returns>>osi3::GroundTruth*</returns>
+        [DllImport(LIB_NAME, EntryPoint = "SE_GetOSIGroundTruthRaw")]
+        public static extern IntPtr SE_GetOSIGroundTruthRaw();
+
+        /// <summary>The SE_GetOSIGroundTruth function returns a char array containing the osi GroundTruth serialized to a string </summary>
+        /// <param name="size">The size of serialized osi gt string</param>
+        /// <returns>>A pointer to: string size plus serazlied string of osi3::GroundTruth </returns>
+        [DllImport(LIB_NAME, EntryPoint = "SE_GetOSIGroundTruth")]
+        public static extern IntPtr SE_GetOSIGroundTruth(out int size);
+        #endregion
     }
 
 }

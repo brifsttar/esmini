@@ -55,6 +55,45 @@ add the line
 `[_view setWantsBestResolutionOpenGLSurface: NO];`  
 Solution found [here](https://github.com/openscenegraph/OpenSceneGraph/issues/926#issuecomment-600080664)
 
+### Build jpeg lib for Windows
+If you need to rebuild the jpeg library. The following is tested with VS 2019 and platform toolset VS 2017.
+
+Pick jpeg-9d from here: https://ijg.org/files/
+
+- Edit makefile.vc and comment out the following line: ```!include <win32.mak>```  
+  (It’s for the old Win 7.1 SDK and seems not needed for Win10/VS2017-2019)
+- Open Visual Studio (v10/2019) x64 Native Tools command prompt and run:
+```
+cd jpeg-9d
+nmake /f makefile.vc setup-v16
+```
+
+Now, jpeg.sln should be generated (or actually renamed). Normally you can simply build from Visual Studio IDE or 
+command line: ```msbuild /m /property:Configuration=Release jpeg.sln```
+
+But for esmini we need to do some settings:
+- Open jpeg.sln in Visual Studio and do following settings (Solution Exporer->jpeg(right-click)->Properties)
+- First, at top row in dialog window, make sure Platform is x64
+- General:
+  - Platform Toolset: Visual Studio 2017 (v141)
+  - Windows SDK version: 10.0.19041.0  
+- C/C++:
+  - Optimizations, set “Whole Program Optimization” to false
+- Press OK
+- Make sure selected configuration is Release / x64 (usually it starts on win32, change it)
+- Now build and find lib in Release\x64
+
+To create a debug version, open Configuration Manager:
+
+- Create a new Configuration named “debug”, with “Copy settings from” Release 
+- Go to settings -> C/C++->Code Generation 
+  - set Runtime Library = Multi-threaded Debug DLL (/MDd)
+- Add a “d” to target name, like: Settings->General->Target Name = $(ProjectName)d
+- Press OK
+- Make sure selected configuration is Debug / x64 
+- Now build and find lib in Debug\x64
+
+
 ## Build configuration
 To build OSG libraries for static linking in esmini, see following examples. All examples assumes you first have created a directory "build" directly under OSG root and moved into it.
 
@@ -102,3 +141,42 @@ and
 - Copy _zlibstatic.lib_, _zlibstaticd.lib_, _jpeg.lib_ and _jpegd.lib_ from OSG 3rdparty lib folder, or other source, into the _externals/OpenSceneGraph/*/lib_ folder
 
 - Optional: For FBX support, copy FBX _libfbxsdk-md.lib_ from C:\Program Files\Autodesk\FBX\FBX SDK\2019.0\lib\vs2015\x64 (or wherever located) release and debug folders into _externals/OpenSceneGraph/*/lib_ folder. Add 'd' as in debug to the debug version of the file, i.e. libfbxsdkd-md.lib
+
+## On osgb and Unity
+[OpenSceneGraph](http://www.openscenegraph.org/) (osg) includes readers and writers for quite a few 3D file formats. It comes with a demo application, [osgconv](http://www.openscenegraph.org/index.php/documentation/user-guides/55-osgconv), a command line tool that simply takes one file as input and outputs the same content in a different format. For example:
+
+`osgconv car.osgb car.fbx`
+
+Here follows a recipe how to translate .osgb files into .fbx and import into Unity
+
+### 1. Get osgconv
+On Linux and Mac its recommended to build osg yourself. Please try this script: [compile_osg_apps_linux.sh](https://github.com/esmini/esmini/blob/master/scripts/compile_osg_apps_linux.sh). It will first fetch and install [FBX SDK](https://www.autodesk.com/developer-network/platform-technologies/fbx-sdk-2020-0) and then build OSG with FBX support. Find more details and instructions in the header of the script.
+
+For more info regarding building OSG for Linux, here's a great guide:  
+https://vicrucann.github.io/tutorials/osg-linux-quick-install/   
+But please note that it does not consider FBX support.
+
+For Windows there's an option to grab pre-built binaries including FBX support from here:  
+https://objexx.com/OpenSceneGraph.html
+
+### 2. Convert
+1. Open a command prompt in the folder where your model.osgb is
+1. Run command:  
+   `osgconv model.osgb out/model.fbx -s 100,100,100`  
+   -s ... is for scaling which typically is needed for fbx files. 
+   Potentially it also needs to be oriented according to Unity coordinate system. In that case try:  
+   `osgconv model.osgb out/model.fbx -s 100,100,100 --use-world-frame -o 120--0.5773503,-0.5773503,-0.5773503`
+
+A folder named "out" should have been created and including the model.fbx plus any texture files
+
+### 3. Import into Unity
+1. Now, drag the resulting fbx file, and all textures, into a unity project, preferably an empty folder
+1. Add the model to the Scene hierarchy
+1. Select the model and int the "Inspector", select the "Materials" tab
+1. Change the "Location" to "Use External Materials (Legacy)" and click "Apply"
+1. Open the automcatically created "Materials" folder (next to the model file)
+1. Select all materials and change  
+   for standard template: "Rendering Mode" to "Cutout" (good default option)  
+   for HDRP template: "Surface type" to "Transparent" and check "alpha clipping"
+
+That should basically be it.

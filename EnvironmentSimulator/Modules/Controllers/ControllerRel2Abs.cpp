@@ -256,7 +256,7 @@ void ControllerRel2Abs::Step(double timeStep)
 				position_copy* cpy = positionsCopied[i];
 				cpy->object->pos_ = *cpy->pos;
 				cpy->object->speed_ = cpy->speed;
-				cpy->object->dirty_ = cpy->dirtyBits;
+				cpy->object->SetDirty(cpy->dirtyBits);
 				delete(positionsCopied[i]);
 			}
 
@@ -383,14 +383,14 @@ void ControllerRel2Abs::Step(double timeStep)
 					double currentSpeed = lda->object_->GetSpeed();
 					LongSpeedAction* lsa = new LongSpeedAction();
 					lsa->object_ = object_;
-					lsa->transition_dynamics_.shape_ = OSCPrivateAction::DynamicsShape::LINEAR;
-					lsa->transition_dynamics_.dimension_ = OSCPrivateAction::DynamicsDimension::RATE;
+					lsa->transition_.shape_ = OSCPrivateAction::DynamicsShape::LINEAR;
+					lsa->transition_.dimension_ = OSCPrivateAction::DynamicsDimension::RATE;
 					if (lda->dynamics_.max_acceleration_ != 0)
-						lsa->transition_dynamics_.target_value_ = lda->dynamics_.max_acceleration_;
+						lsa->transition_.SetParamTargetVal(lda->dynamics_.max_acceleration_);
 					else if (lda->dynamics_.max_deceleration_ != 0)
-						lsa->transition_dynamics_.target_value_ = lda->dynamics_.max_deceleration_;
+						lsa->transition_.SetParamTargetVal(lda->dynamics_.max_deceleration_);
 					else
-						lsa->transition_dynamics_.target_value_ = 10;
+						lsa->transition_.SetParamTargetVal(10.0);
 					LongSpeedAction::TargetAbsolute* target_abs = new LongSpeedAction::TargetAbsolute;
 					target_abs->value_ = currentSpeed;
 					lsa->target_ = target_abs;
@@ -409,7 +409,7 @@ void ControllerRel2Abs::Step(double timeStep)
 							}
 						}
 					}
-					lda->End();
+					lda->End(scenarioEngine_->getSimulationTime());
 					lsa->Start(scenarioEngine_->getSimulationTime(),timeStep);
 					LOG("Replacing the relative target LongDistanceAction with an absolute target LongSpeedAction and target value: %lf", currentSpeed);
 				}
@@ -443,8 +443,8 @@ void ControllerRel2Abs::Step(double timeStep)
 							double trgSpeed = sa->final_speed_->GetValue();
 							LongSpeedAction* lsa = new LongSpeedAction();
 							lsa->object_ = object_;
-							lsa->transition_dynamics_.shape_ = OSCPrivateAction::DynamicsShape::LINEAR;
-							lsa->transition_dynamics_.dimension_ = OSCPrivateAction::DynamicsDimension::DISTANCE;
+							lsa->transition_.shape_ = OSCPrivateAction::DynamicsShape::LINEAR;
+							lsa->transition_.dimension_ = OSCPrivateAction::DynamicsDimension::DISTANCE;
 
 							//at this point synchronize action has exec. => lastDist was current dist this step.
 							double currentDist = sa->lastDist_;
@@ -489,15 +489,15 @@ void ControllerRel2Abs::Step(double timeStep)
 							{
 								//if speeds increasing linearly / recently passed a minima with a fairly large current acc.
 								//any other dynamicsshape would give jump to zero acc. initially => undesired behaviour
-								lsa->transition_dynamics_.shape_ = OSCPrivateAction::DynamicsShape::LINEAR;
+								lsa->transition_.shape_ = OSCPrivateAction::DynamicsShape::LINEAR;
 							}
 							else if (lastAcc < 0.3)
 							{
 								//Good solution when close to an minima in sine-like or cubic target behaviour
 								//Good enough when acceleration is negative
-								lsa->transition_dynamics_.shape_ = OSCPrivateAction::DynamicsShape::CUBIC;
+								lsa->transition_.shape_ = OSCPrivateAction::DynamicsShape::CUBIC;
 							}
-							lsa->transition_dynamics_.target_value_ = currentDist;
+							lsa->transition_.SetParamTargetVal(currentDist);
 
 							LongSpeedAction::TargetAbsolute* target_abs = new LongSpeedAction::TargetAbsolute;
 							target_abs->value_ = trgSpeed;
@@ -518,7 +518,7 @@ void ControllerRel2Abs::Step(double timeStep)
 									}
 								}
 							}
-							sa->End();
+							sa->End(scenarioEngine_->getSimulationTime());
 							lsa->Start(scenarioEngine_->getSimulationTime(), timeStep);
 							LOG("Replacing the SynchronizeAction (with final speed) with an absolute target LongSpeedAction and target value: %lf", trgSpeed);
 						}
@@ -540,10 +540,10 @@ void ControllerRel2Abs::Step(double timeStep)
 						double currentSpeed = sa->object_->GetSpeed();
 						LongSpeedAction* lsa = new LongSpeedAction();
 						lsa->object_ = object_;
-						lsa->transition_dynamics_.shape_ = OSCPrivateAction::DynamicsShape::LINEAR;
-						lsa->transition_dynamics_.dimension_ = OSCPrivateAction::DynamicsDimension::RATE;
+						lsa->transition_.shape_ = OSCPrivateAction::DynamicsShape::LINEAR;
+						lsa->transition_.dimension_ = OSCPrivateAction::DynamicsDimension::RATE;
 						// Assume normal vehicle operation => low max acceleration of 3 m/s^2
-						lsa->transition_dynamics_.target_value_ = 3;
+						lsa->transition_.SetParamTargetVal(3);
 						LongSpeedAction::TargetAbsolute* target_abs = new LongSpeedAction::TargetAbsolute;
 						target_abs->value_ = currentSpeed;
 						lsa->target_ = target_abs;
@@ -563,7 +563,7 @@ void ControllerRel2Abs::Step(double timeStep)
 								}
 							}
 						}
-						sa->End();
+						sa->End(scenarioEngine_->getSimulationTime());
 						lsa->Start(scenarioEngine_->getSimulationTime(), timeStep);
 						LOG("Replacing the SynchronizeAction (no final speed) with an absolute target LongSpeedAction and target value: %lf", currentSpeed);
 					}
@@ -586,8 +586,8 @@ void ControllerRel2Abs::Step(double timeStep)
 	prev_target_speed = object_->GetSpeed();
 
 	gateway_->reportObject(object_->id_, object_->name_, static_cast<int>(object_->type_), object_->category_, object_->model_id_,
-		object_->GetActivatedControllerType(), object_->boundingbox_, static_cast<int>(object_->scaleMode_), 0.0,
-		object_->speed_, object_->wheel_angle_, object_->wheel_rot_, &object_->pos_);
+		object_->GetActivatedControllerType(), object_->boundingbox_, static_cast<int>(object_->scaleMode_), object_->visibilityMask_,
+		0.0, object_->speed_, object_->wheel_angle_, object_->wheel_rot_, &object_->pos_);
 
 	Controller::Step(timeStep);
 }
@@ -628,5 +628,5 @@ void ControllerRel2Abs::CopyPosition(Object* object, position_copy* obj_copy)
 	obj_copy->object = object;
 	obj_copy->pos = saved_pos;
 	obj_copy->speed = saved_speed;
-	obj_copy->dirtyBits = object->dirty_;
+	obj_copy->dirtyBits = object->GetDirtyBitMask();
 }

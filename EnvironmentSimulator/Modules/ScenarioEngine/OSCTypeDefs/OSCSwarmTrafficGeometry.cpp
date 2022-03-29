@@ -10,7 +10,6 @@
  * https://sites.google.com/view/simulationscenarios
  */
 
-#pragma once
 #include <cmath>
 #include "OSCSwarmTrafficGeometry.hpp"
 
@@ -236,7 +235,7 @@ namespace STGeometry {
         if (xmin > xmax) std::swap(xmin, xmax);
         if (ymin > ymax) std::swap(ymin, ymax);
 
-        Solutions::const_iterator solsIter = sols.begin() + pos;
+        Solutions::iterator solsIter = sols.begin() + pos;
         while (solsIter < sols.end()) {
             double x, y;
             x = solsIter->x;

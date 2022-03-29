@@ -2,41 +2,24 @@
    This script shows how to use the esmini UDPDriverController, sending
    a few messages of different input modes for two objects.
    See testUDPDriverModel.py for a more comprehensive example.
+   Prerequisites:
+      Python 3
 
    To run it:
    1. Open two terminals
-   2. From terminal 1, run: ./bin/esmini --window 60 60 800 400 --osc ./scripts/udp-driver/two_cars_in_open_space.xosc
-   3. From terminal 2, run: ./scripts/udp-driver/testUDPDriver-minimalistic-example.py --id 0 --id 1
-        or python ./scripts/udp-driver/testUDPDriver-minimalistic-example.py --id 0 --id 1
-        or python3 ./scripts/udp-driver/testUDPDriver-minimalistic-example.py --id 0 --id 1
+   2. From terminal 1, run: ./bin/esmini --window 60 60 800 400 --osc ./scripts/udp_driver/two_cars_in_open_space.xosc
+   3. From terminal 2, run: ./scripts/udp_driver/testUDPDriver-minimalistic-example.py --id 0 --id 1
+        or python ./scripts/udp_driver/testUDPDriver-minimalistic-example.py --id 0 --id 1
+        or python3 ./scripts/udp_driver/testUDPDriver-minimalistic-example.py --id 0 --id 1
         depending on platform and file type associations
 
    For complete message definitions, see esmini/EnvironmentSimulator/Modules/Controllers/ControllerUDPDriver.hpp
 '''
 
 
-import sys
-import os
-from socket import *
-import struct
+from udp_osi_common import *
 import time
 
-input_modes = {
-  'driverInput': 1,
-  'stateXYZHPR': 2,
-  'stateXYH': 3,
-}
-
-base_port = 49950
-
-class UdpSender():
-    def __init__(self, ip='127.0.0.1', port=base_port):
-        # Create a UDP socket
-        self.sock = socket(AF_INET, SOCK_DGRAM)
-        self.addr = (ip, port)
-
-    def send(self, msg):
-        self.sock.sendto(msg, self.addr)
 
 udpSender0 = UdpSender(port = base_port + 0)
 udpSender1 = UdpSender(port = base_port + 1)

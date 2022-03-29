@@ -16,11 +16,13 @@
   */
 
 
-#include "osi_common.pb.h"
-#include "osi_object.pb.h"
-#include "osi_groundtruth.pb.h"
-#include "osi_sensordata.pb.h"
-#include "osi_version.pb.h"
+#if USE_OSI
+	#include "osi_common.pb.h"
+	#include "osi_object.pb.h"
+	#include "osi_groundtruth.pb.h"
+	#include "osi_sensordata.pb.h"
+	#include "osi_version.pb.h"
+#endif
 
 #include "stdio.h"
 #include "esminiLib.hpp"
@@ -88,11 +90,11 @@ void objectCallback(SE_ScenarioObjectState* state, void *my_data)
 	}
 }
 
-int main(int argc, char *argv[])
+int main(int argc, const char *argv[])
 {
 	Stuff stuff;
 	SimpleVehicle vehicle = { 0, {0, 0, 0, 0, 0, 0} };
-	char* filename = 0;
+	const char* filename = 0;
 
 	if (!filename == 0 && argc < 2)
 	{
@@ -144,6 +146,13 @@ int main(int argc, char *argv[])
 				break;
 			}
 		}
+
+#if DEMONSTRATE_OBJECT_INFO
+		for (int i = 0; i < SE_GetNumberOfObjects(); i++)
+		{
+			printf("Object[%d]: %s (type: %s, model: %s)\n", i, SE_GetObjectName(i), SE_GetObjectTypeName(i), SE_GetObjectModelFileName(i));
+		}
+#endif
 
 		// Demonstrate use of ODR query function
 		printf("odr filename: %s\n", SE_GetODRFilename());

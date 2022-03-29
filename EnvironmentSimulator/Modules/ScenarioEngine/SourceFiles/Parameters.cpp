@@ -127,10 +127,12 @@ int Parameters::setParameterValue(std::string name, const void* value)
 	if (ps->type == OSCParameterDeclarations::ParameterType::PARAM_TYPE_INTEGER)
 	{
 		ps->value._int = *((int*)value);
+		ps->value._string = std::to_string(ps->value._int);
 	}
 	else if (ps->type == OSCParameterDeclarations::ParameterType::PARAM_TYPE_DOUBLE)
 	{
 		ps->value._double = *((double*)value);
+		ps->value._string = std::to_string(ps->value._double);
 	}
 	else if (ps->type == OSCParameterDeclarations::ParameterType::PARAM_TYPE_STRING)
 	{
@@ -139,6 +141,7 @@ int Parameters::setParameterValue(std::string name, const void* value)
 	else if (ps->type == OSCParameterDeclarations::ParameterType::PARAM_TYPE_BOOL)
 	{
 		ps->value._bool = *((bool*)value);
+		ps->value._string = ps->value._bool == true ? "true" : "false";
 	}
 	else
 	{
@@ -279,6 +282,9 @@ int Parameters::setParameterValueByString(std::string name, std::string value)
 		return -1;
 	}
 
+	// Always set string value
+	ps->value._string = value;
+
 	if (ps->type == OSCParameterDeclarations::ParameterType::PARAM_TYPE_INTEGER)
 	{
 		ps->value._int = strtoi(value);
@@ -290,10 +296,6 @@ int Parameters::setParameterValueByString(std::string name, std::string value)
 	else if (ps->type == OSCParameterDeclarations::ParameterType::PARAM_TYPE_BOOL)
 	{
 		ps->value._bool = (value == "true" ? true : false);
-	}
-	else if (ps->type == OSCParameterDeclarations::ParameterType::PARAM_TYPE_STRING)
-	{
-		ps->value._string = value;
 	}
 	else
 	{
@@ -314,6 +316,7 @@ int Parameters::setParameterValue(std::string name, int value)
 	}
 
 	ps->value._int = value;
+	ps->value._string = std::to_string(ps->value._int);
 
 	return 0;
 }
@@ -328,6 +331,7 @@ int Parameters::setParameterValue(std::string name, double value)
 	}
 
 	ps->value._double = value;
+	ps->value._string = std::to_string(ps->value._double);
 
 	return 0;
 }
@@ -356,6 +360,7 @@ int Parameters::setParameterValue(std::string name, bool value)
 	}
 
 	ps->value._bool = value;
+	ps->value._string = ps->value._bool == true ? "true" : "false";
 
 	return 0;
 }
@@ -393,7 +398,7 @@ std::string Parameters::ReadAttribute(pugi::xml_node node, std::string attribute
 	{
 		if (required)
 		{
-			LOG("Warning: Empty attribute");
+			LOG_AND_QUIT("Warning: Request to read empty attribute name in XML node %s", node.name());
 		}
 		return "";
 	}
@@ -422,13 +427,13 @@ std::string Parameters::ReadAttribute(pugi::xml_node node, std::string attribute
 					ReplaceStringInPlace(expr, "true ", "1 ");
 					ReplaceStringInPlace(expr, "false ", "0 ");
 
-					float value = eval_expr(expr.c_str());
+					double value = eval_expr(expr.c_str());
 					if (isnan(value))
 					{
 						LOG_AND_QUIT("Failed to evaluate the expression : % s\n", attr.value());
 					}
 
-					LOG("Expr %s = %s = %f", attr.value(), expr.c_str(), value);
+					LOG("Expr %s = %s = %.10lf", attr.value(), expr.c_str(), value);
 					return std::to_string(value);
 				}
 				else
@@ -451,7 +456,7 @@ std::string Parameters::ReadAttribute(pugi::xml_node node, std::string attribute
 	{
 		if (required)
 		{
-			LOG("Warning: missing required attribute: %s -> %s", node.name(), attribute_name.c_str());
+			LOG_AND_QUIT("Error: missing required attribute: %s -> %s", node.name(), attribute_name.c_str());
 		}
 	}
 
@@ -467,8 +472,9 @@ void Parameters::parseParameterDeclarations(pugi::xml_node parameterDeclarations
 		param.name = pdChild.attribute("name").value();
 
 		// Check for catalog parameter assignements, overriding default value
+		// Start from end of parameter list, in case of duplicates we want the most recent
 		param.value._string = ReadAttribute(pdChild, "value");
-		for (size_t i = 0; i < catalog_param_assignments.size(); i++)
+		for (int i = (int)catalog_param_assignments.size() - 1; i >= 0; i--)
 		{
 			if (param.name == catalog_param_assignments[i].name)
 			{
@@ -528,3 +534,12 @@ void Parameters::parseParameterDeclarations(pugi::xml_node parameterDeclarations
 }
 
 
+void Parameters::Clear()
+{
+	parameterDeclarations_.Parameter.clear();
+	while (!paramDeclarationsSize_.empty())
+	{
+		paramDeclarationsSize_.pop();
+	}
+	catalog_param_assignments.clear();
+}

@@ -73,11 +73,40 @@ namespace scenarioengine
 		public:
 			DynamicsShape shape_;
 			DynamicsDimension dimension_;
-			double target_value_;
 
-			double Evaluate(double factor, double start_value, double end_value);  // 0 = start_value, 1 = end_value
+			TransitionDynamics() : param_target_val_(0), scale_factor_(1.0), param_val_(0), start_val_(0),
+				target_val_(0), rate_(0), shape_(DynamicsShape::STEP), dimension_(DynamicsDimension::TIME) {}
+			void Reset();
 
-			TransitionDynamics() : shape_(DynamicsShape::STEP), dimension_(DynamicsDimension::TIME), target_value_(0) {}
+			double Evaluate();  // 0 = start_value, 1 = end_value
+			double EvaluatePrim();
+			double EvaluateScaledPrim();
+			double EvaluatePrimPeak();
+			int Step(double delta_param_val);
+			double GetTargetParamValByPrimPeak(double prim_peak);
+			double GetTargetParamValByPrimPrimPeak(double prim_prim_peak);
+
+			double GetParamVal() { return param_val_; }
+			void SetStartVal(double start_val);
+			double GetStartVal() { return start_val_; }
+			void SetTargetVal(double target_val);
+			double GetTargetVal() { return target_val_; }
+
+			void SetParamTargetVal(double target_value);
+			double GetParamTargetVal() { return param_target_val_; }
+			void SetMaxRate(double max_rate);
+			void SetRate(double rate);
+			void UpdateRate();
+			double GetRate() { return rate_; }
+			double GetScaleFactor() { return scale_factor_; }
+
+		private:
+			double start_val_;
+			double target_val_;
+			double param_target_val_;
+			double scale_factor_;
+			double param_val_;
+			double rate_;
 		};
 
 		ActionType type_;
@@ -114,7 +143,7 @@ namespace scenarioengine
 	{
 	public:
 
-		TransitionDynamics transition_dynamics_;
+		TransitionDynamics transition_;
 
 		class Target
 		{
@@ -168,21 +197,17 @@ namespace scenarioengine
 		};
 
 		Target* target_;
-		double start_speed_;
-		double elapsed_;
-		double sim_time_;
+		bool target_speed_reached_;
 
 		LongSpeedAction() : OSCPrivateAction(OSCPrivateAction::ActionType::LONG_SPEED, ControlDomains::DOMAIN_LONG),
-			target_(0), start_speed_(0), sim_time_(0), elapsed_(0) {}
+			target_(0), target_speed_reached_(false) {}
 
 		LongSpeedAction(const LongSpeedAction& action) : OSCPrivateAction(OSCPrivateAction::ActionType::LONG_SPEED, ControlDomains::DOMAIN_LONG)
 		{
 			name_ = action.name_;
 			target_ = action.target_;
-			transition_dynamics_ = action.transition_dynamics_;
-			elapsed_ = action.elapsed_;
-			start_speed_ = action.start_speed_;
-			sim_time_ = action.sim_time_;
+			transition_ = action.transition_;
+			target_speed_reached_ = action.target_speed_reached_;
 		}
 
 		OSCPrivateAction* Copy()
@@ -199,10 +224,7 @@ namespace scenarioengine
 		void Start(double simTime, double dt);
 		void Step(double simTime, double dt);
 
-		void print()
-		{
-			LOG("");
-		}
+		void print() {}
 
 		void ReplaceObjectRefs(Object* obj1, Object* obj2);
 	};
@@ -278,10 +300,7 @@ namespace scenarioengine
 		void Start(double simTime, double dt);
 		void Step(double simTime, double dt);
 
-		void print()
-		{
-			LOG("");
-		}
+		void print() {}
 
 		void ReplaceObjectRefs(Object* obj1, Object* obj2);
 
@@ -292,7 +311,6 @@ namespace scenarioengine
 	class LatLaneChangeAction : public OSCPrivateAction
 	{
 	public:
-		TransitionDynamics transition_dynamics_;
 
 		class Target
 		{
@@ -324,36 +342,22 @@ namespace scenarioengine
 		};
 
 		Target* target_;
-		double start_t_;
-		double target_t_;
+		TransitionDynamics transition_;
 		double target_lane_offset_;
-		int target_lane_id_;
-		double elapsed_;
-		double t_;
-		double sim_time_;
 
 		LatLaneChangeAction(LatLaneChangeAction::DynamicsDimension timing_type = DynamicsDimension::TIME) :
+			start_offset_(0.0), target_lane_offset_(0.0),
 			OSCPrivateAction(OSCPrivateAction::ActionType::LAT_LANE_CHANGE, ControlDomains::DOMAIN_LAT)
 		{
-			transition_dynamics_.dimension_ = timing_type;
-			elapsed_ = 0.0;
-			target_t_ = 0.0;
-			t_ = 0.0;
-			sim_time_ = 0.0;
+			transition_.dimension_ = timing_type;
 		}
 
-		LatLaneChangeAction(const LatLaneChangeAction& action) : OSCPrivateAction(OSCPrivateAction::ActionType::LAT_LANE_CHANGE, ControlDomains::DOMAIN_LAT)
+		LatLaneChangeAction(const LatLaneChangeAction& action) :
+			transition_(action.transition_), target_(action.target_), start_offset_(action.start_offset_),
+			target_lane_offset_(action.target_lane_offset_),
+			OSCPrivateAction(OSCPrivateAction::ActionType::LAT_LANE_CHANGE, ControlDomains::DOMAIN_LAT)
 		{
 			name_ = action.name_;
-			transition_dynamics_ = action.transition_dynamics_;
-			target_ = action.target_;
-			start_t_ = action.start_t_;
-			target_t_ = action.target_t_;
-			target_lane_offset_ = action.target_lane_offset_;
-			target_lane_id_ = action.target_lane_id_;
-			elapsed_ = action.elapsed_;
-			t_ = action.t_;
-			sim_time_ = action.sim_time_;
 		}
 
 		OSCPrivateAction* Copy()
@@ -371,17 +375,15 @@ namespace scenarioengine
 		void Start(double simTime, double dt);
 
 		void ReplaceObjectRefs(Object* obj1, Object* obj2);
+
+	private:
+		double start_offset_;
+		roadmanager::Position internal_pos_;  // Internal position representation
 	};
 
 	class LatLaneOffsetAction : public OSCPrivateAction
 	{
 	public:
-		struct
-		{
-			double max_lateral_acc_;
-			TransitionDynamics transition_;
-		} dynamics_;
-
 		class Target
 		{
 		public:
@@ -412,29 +414,21 @@ namespace scenarioengine
 		};
 
 		Target *target_;
-		double elapsed_;
-		double start_lane_offset_;
-		double target_lane_offset_;
-		double sim_time_;
+		TransitionDynamics transition_;
+		double max_lateral_acc_;
 
 		LatLaneOffsetAction() : OSCPrivateAction(OSCPrivateAction::ActionType::LAT_LANE_OFFSET, ControlDomains::DOMAIN_LAT)
 		{
-			dynamics_.max_lateral_acc_ = 0;
-			elapsed_ = 0;
+			max_lateral_acc_ = 0;
 			target_ = 0;
-			target_lane_offset_ = 0;
-			sim_time_ = 0;
 		}
 
 		LatLaneOffsetAction(const LatLaneOffsetAction &action) : OSCPrivateAction(OSCPrivateAction::ActionType::LAT_LANE_OFFSET, ControlDomains::DOMAIN_LAT)
 		{
 			name_ = action.name_;
 			target_ = action.target_;
-			elapsed_ = action.elapsed_;
-			start_lane_offset_ = action.start_lane_offset_;
-			target_lane_offset_ = action.target_lane_offset_;
-			dynamics_ = action.dynamics_;
-			sim_time_ = action.sim_time_;
+			max_lateral_acc_ = action.max_lateral_acc_;
+			transition_ = action.transition_;
 		}
 
 		OSCPrivateAction* Copy()
@@ -625,7 +619,16 @@ namespace scenarioengine
 		AssignRouteAction(const AssignRouteAction&action) : OSCPrivateAction(OSCPrivateAction::ActionType::ASSIGN_ROUTE, ControlDomains::DOMAIN_NONE)
 		{
 			name_ = action.name_;
-			route_ = action.route_;
+			route_ = new roadmanager::Route(*action.route_);
+		}
+
+		~AssignRouteAction()
+		{
+			if (route_ != nullptr)
+			{
+				delete route_;
+				route_ = nullptr;
+			}
 		}
 
 		OSCPrivateAction* Copy()
@@ -689,7 +692,7 @@ namespace scenarioengine
 
 		void Step(double simTime, double dt);
 		void Start(double simTime, double dt);
-		void End();
+		void End(double simTime);
 
 		void ReplaceObjectRefs(Object* obj1, Object* obj2);
 	};
@@ -820,7 +823,7 @@ namespace scenarioengine
 
 		void Step(double, double) {}
 
-		void End()
+		void End(double simTime)
 		{
 			if (object_->GetActivatedControllerType() != 0 && object_->controller_ != nullptr)
 			{
@@ -828,7 +831,7 @@ namespace scenarioengine
 			}
 			// Make sure heading is aligned with road driving direction
 			object_->pos_.SetHeadingRelative((object_->pos_.GetHRelative() > M_PI_2 && object_->pos_.GetHRelative() < 3 * M_PI_2) ? M_PI : 0.0);
-			OSCAction::End();
+			OSCAction::End(simTime);
 		}
 	};
 

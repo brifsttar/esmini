@@ -14,17 +14,18 @@
 #include <stdio.h>
 #include <iostream>
 #include <random>
+#include <algorithm>
 
 // UDP network includes
-#ifdef _WIN32
-#include <winsock2.h>
-#include <Ws2tcpip.h>
+#ifndef _WIN32
+	 /* Assume that any non-Windows platform uses POSIX-style sockets instead. */
+	#include <sys/socket.h>
+	#include <arpa/inet.h>
+	#include <netdb.h>  /* Needed for getaddrinfo() and freeaddrinfo() */
+	#include <unistd.h> /* Needed for close() */
 #else
- /* Assume that any non-Windows platform uses POSIX-style sockets instead. */
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <netdb.h>  /* Needed for getaddrinfo() and freeaddrinfo() */
-#include <unistd.h> /* Needed for close() */
+	#include <winsock2.h>
+	#include <Ws2tcpip.h>
 #endif
 
 #include "CommonMini.hpp"
@@ -40,6 +41,28 @@ extern const char* ESMINI_GIT_BRANCH;
 extern const char* ESMINI_BUILD_VERSION;
 
 static SE_SystemTime systemTime_;
+static const int max_csv_entry_length = 1024;
+
+// Fallback list of 3D models where model_id is index in list
+static const char* entityModelsFilesFallbackList_[] =
+{
+	"car_white.osgb",
+	"car_blue.osgb",
+	"car_red.osgb",
+	"car_yellow.osgb",
+	"truck_yellow.osgb",
+	"van_red.osgb",
+	"bus_blue.osgb",
+	"walkman.osgb",
+	"moose_cc0.osgb",
+	"cyclist.osgb",
+	"mc.osgb",
+	"car_trailer.osgb",
+	"semi_tractor.osgb",
+	"semi_trailer.osgb",
+	"truck_trailer.osgb",
+};
+
 
 const char* esmini_git_tag(void)
 {
@@ -59,6 +82,62 @@ const char* esmini_git_branch(void)
 const char* esmini_build_version(void)
 {
 	return ESMINI_BUILD_VERSION;
+}
+
+std::map<int, std::string> ParseModelIds()
+{
+	std::map<int, std::string> entity_model_map;
+
+	const std::string filename = "model_ids.txt";
+
+	// find and open model_ids.txt file. Test some paths.
+	std::vector<std::string> file_name_candidates;
+
+	file_name_candidates.push_back(filename);
+
+	// Check registered paths
+	for (size_t i = 0; i < SE_Env::Inst().GetPaths().size(); i++)
+	{
+		file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], filename));
+	}
+
+	size_t i;
+	for (i = 0; i < file_name_candidates.size(); i++)
+	{
+		if (FileExists(file_name_candidates[i].c_str()))
+		{
+			std::ifstream infile(file_name_candidates[i]);
+			if (infile.is_open())
+			{
+				int id;
+				std::string model3d;
+				while (infile >> id >> model3d)
+				{
+					entity_model_map[id] = model3d;
+				}
+				break;
+			}
+			infile.close();
+		}
+	}
+
+	if (i == file_name_candidates.size())
+	{
+		printf("Failed to load %s file. Tried:\n", filename.c_str());
+		for (int j = 0; j < file_name_candidates.size(); j++)
+		{
+			printf("  %s\n", file_name_candidates[j].c_str());
+		}
+
+		printf("  continue with internal hard coded list: \n");
+		for (int j = 0; j < sizeof(entityModelsFilesFallbackList_) / sizeof(char*); j++)
+		{
+			entity_model_map[j] = entityModelsFilesFallbackList_[j];
+			printf("    %2d: %s\n", j, entity_model_map[j].c_str());
+		}
+	}
+
+	return entity_model_map;
 }
 
 std::string ControlDomain2Str(ControlDomains domains)
@@ -158,23 +237,9 @@ double GetAngleDifference(double angle1, double angle2)
 	return diff;
 }
 
-bool IsAngleStraight(double teta)
+bool IsAngleForward(double teta)
 {
-	teta = fmod(teta + M_PI, 2 * M_PI);
-
-	if (teta < 0)
-		teta += 2 * M_PI;
-
-	teta = teta - M_PI;
-
-	if (teta >= -(M_PI / 2) && teta <= (M_PI / 2))
-	{
-		return true;
-	}
-	else
-	{
-		return false;
-	}
+	return !(teta > M_PI_2 && teta < 3 * M_PI_2);
 }
 
 double GetAngleSum(double angle1, double angle2)
@@ -296,22 +361,22 @@ double DistanceFromPointToEdge2D(double x3, double y3, double x1, double y1, dou
 	if (PointInBetweenVectorEndpoints(px, py, x1, y1, x2, y2, sNorm))
 	{
 		// Point within edge interior
-		*x = px;
-		*y = py;
+		if (x) *x = px;
+		if (y) *y = py;
 	}
 	else if (sNorm < 0)
 	{
 		// measure to first endpoint
 		distance = PointDistance2D(x3, y3, x1, y1);
-		*x = x1;
-		*y = y1;
+		if (x) *x = x1;
+		if (y) *y = y1;
 	}
 	else
 	{
 		// measure to other (2:nd) endpoint
 		distance = PointDistance2D(x3, y3, x2, y2);
-		*x = x2;
-		*y = y2;
+		if (x) *x = x2;
+		if (y) *y = y2;
 	}
 
 	return distance;
@@ -320,8 +385,11 @@ double DistanceFromPointToEdge2D(double x3, double y3, double x1, double y1, dou
 double DistanceFromPointToLine2D(double x3, double y3, double x1, double y1, double x2, double y2, double* x, double* y)
 {
 	double distance = 0;
+	double xp = 0.0, yp = 0.0;
 
 	// project point on edge, and measure distance to that point
+	if (x == nullptr) x = &xp;
+	if (y == nullptr) y = &yp;
 	ProjectPointOnVector2D(x3, y3, x1, y1, x2, y2, *x, *y);
 	distance = PointDistance2D(x3, y3, *x, *y);
 
@@ -377,6 +445,44 @@ void ProjectPointOnVector2D(double x, double y, double vx1, double vy1, double v
 		double k = (dy * (x - vx1) - dx * (y - vy1)) / (dy*dy + dx*dx);
 		px = x - k * dy;
 		py = y + k * dx;
+	}
+}
+
+bool IsPointWithinSectorBetweenTwoLines(SE_Vector p, SE_Vector l0p0, SE_Vector l0p1, SE_Vector l1p0, SE_Vector l1p1, double& sNorm)
+{
+	// If point is on the right side of first normal and to the left side of the second normal, then it's in between else not
+	double d0 = (p - l0p0).Cross(l0p1 - l0p0);
+	double d1 = (p - l1p0).Cross(l1p1 - l1p0);
+
+	double x = 0.0, y = 0.0;
+
+	// Find factor between 0,1 how close the point is the first (0) vs second point (1)
+	double dist0 = DistanceFromPointToLine2D(p.x(), p.y(), l0p0.x(), l0p0.y(), l0p1.x(), l0p1.y(), &x, &y);
+	double dist1 = DistanceFromPointToLine2D(p.x(), p.y(), l1p0.x(), l1p0.y(), l1p1.x(), l1p1.y(), &x, &y);
+
+	sNorm = dist0 / MAX(SMALL_NUMBER, dist0 + dist1);
+
+	if (d0 > 0 && d1 < 0)
+	{
+		return true;
+	}
+	else if (d0 < 0 && d1 > 0)
+	{
+		sNorm = -sNorm;
+		return true;
+	}
+	else
+	{
+		if (dist0 < dist1)
+		{
+			sNorm = -dist0;
+		}
+		else
+		{
+			sNorm = dist1;
+		}
+
+		return false;
 	}
 }
 
@@ -450,7 +556,7 @@ double strtod(std::string s)
 	return atof(s.c_str());
 }
 
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7)
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
 
 	#include <windows.h>
 	#include <process.h>
@@ -705,7 +811,8 @@ void R0R12EulerAngles(double h0, double p0, double r0, double h1, double p1, dou
 	r = GetAngleInInterval2PI(atan2(R2[2][1], R2[2][2]));
 }
 
-SE_Env::SE_Env() : osiMaxLongitudinalDistance_(OSI_MAX_LONGITUDINAL_DISTANCE), osiMaxLateralDeviation_(OSI_MAX_LATERAL_DEVIATION), logFilePath_(LOG_FILENAME)
+SE_Env::SE_Env() : osiMaxLongitudinalDistance_(OSI_MAX_LONGITUDINAL_DISTANCE), osiMaxLateralDeviation_(OSI_MAX_LATERAL_DEVIATION),
+	logFilePath_(LOG_FILENAME), disableOffScreen_(false), collisionDetection_(false)
 {
 	seed_ = (std::random_device())();
 	gen_.seed(seed_);
@@ -724,6 +831,29 @@ int SE_Env::AddPath(std::string path)
 	paths_.push_back(path);
 
 	return 0;
+}
+
+std::string SE_Env::GetModelFilenameById(int model_id)
+{
+	std::string name;
+	if (entity_model_map.size() == 0)
+	{
+		entity_model_map = ParseModelIds();
+	}
+
+	name = entity_model_map[model_id];
+
+	if (name.empty())
+	{
+		LOG("Failed to lookup 3d model filename for model_id %d in list:", model_id);
+		std::map<int, std::string>::iterator it;
+		for (it = entity_model_map.begin(); it != entity_model_map.end(); ++it)
+		{
+			LOG("  %d %s", it->first, it->second.c_str());
+		}
+	}
+
+	return name;
 }
 
 Logger::Logger() : callback_(0), time_(0)
@@ -751,6 +881,8 @@ void Logger::Log(bool quit, bool trace, char const* file, char const* func, int 
 {
 	static char complete_entry[2048];
 	static char message[1024];
+
+	mutex_.Lock();  // Protect from simultanous use from different threads
 
 	va_list args;
 	va_start(args, format);
@@ -795,6 +927,8 @@ void Logger::Log(bool quit, bool trace, char const* file, char const* func, int 
 	}
 
 	va_end(args);
+
+	mutex_.Unlock();
 
 	if (quit)
 	{
@@ -896,45 +1030,46 @@ CSV_Logger::CSV_Logger(std::string scenario_filename, int numvehicles, std::stri
 	data_index_ = 0;
 
 	//Standard ESMINI log header, appended with Scenario file name and vehicle count
-	static char message[1024];
-	snprintf(message, 1024, "esmini GIT REV: %s", esmini_git_rev());
+	static char message[max_csv_entry_length];
+	snprintf(message, max_csv_entry_length, "esmini GIT REV: %s", esmini_git_rev());
 	file_ << message << std::endl;
-	snprintf(message, 1024, "esmini GIT TAG: %s", esmini_git_tag());
+	snprintf(message, max_csv_entry_length, "esmini GIT TAG: %s", esmini_git_tag());
 	file_ << message << std::endl;
-	snprintf(message, 1024, "esmini GIT BRANCH: %s", esmini_git_branch());
+	snprintf(message, max_csv_entry_length, "esmini GIT BRANCH: %s", esmini_git_branch());
 	file_ << message << std::endl;
-	snprintf(message, 1024, "esmini BUILD VERSION: %s", esmini_build_version());
+	snprintf(message, max_csv_entry_length, "esmini BUILD VERSION: %s", esmini_build_version());
 	file_ << message << std::endl;
-	snprintf(message, 1024, "Scenario File Name: %s", scenario_filename.c_str());
+	snprintf(message, max_csv_entry_length, "Scenario File Name: %s", scenario_filename.c_str());
 	file_ << message << std::endl;
-	snprintf(message, 1024, "Number of Vehicles: %d", numvehicles);
+	snprintf(message, max_csv_entry_length, "Number of Vehicles: %d", numvehicles);
 	file_ << message << std::endl;
 
 	//Ego vehicle is always present, at least one set of vehicle data values should be stored
 	//Index and TimeStamp are included in this first set of columns
-	const char* egoHeader = "Index [-] , TimeStamp [sec] , #1 Entitity_Name [-] , "
-		"#1 Entitity_ID [-] , #1 Current_Speed [m/sec] , #1 Wheel_Angle [deg] , "
-		"#1 Wheel_Rotation [-] , #1 World_Position_X [-] , #1 World_Position_Y [-] , "
-		"#1 World_Position_Z [-] , #1 Vel_X [-] , #1 Vel_Y [-] , #1 Vel_Z [-] , "
-		"#1 Acc_X [-] , #1 Acc_Y [-] , #1 Acc_Z [-] , #1 Distance_Travelled_Along_Road_Segment [m] , "
+	snprintf(message, max_csv_entry_length,
+		"Index [-] , TimeStamp [s] , #1 Entitity_Name [-] , "
+		"#1 Entitity_ID [-] , #1 Current_Speed [m/s] , #1 Wheel_Angle [deg] , "
+		"#1 Wheel_Rotation [-] , #1 World_Position_X [m] , #1 World_Position_Y [m] , "
+		"#1 World_Position_Z [m] , #1 Vel_X [m/s] , #1 Vel_Y [m/s] , #1 Vel_Z [m/s] , "
+		"#1 Acc_X [m/s2] , #1 Acc_Y [m/s2] , #1 Acc_Z [m/s2] , #1 Distance_Travelled_Along_Road_Segment [m] , "
 		"#1 Lateral_Distance_Lanem [m] , #1 World_Heading_Angle [rad] , #1 Heading_Angle_Rate [rad/s] , "
 		"#1 Relative_Heading_Angle [rad] , #1 Relative_Heading_Angle_Drive_Direction [rad] , "
-		"#1 World_Pitch_Angle [rad] , #1 Road_Curvature [1/m] , ";
-	snprintf(message, 1024, egoHeader);
+		"#1 World_Pitch_Angle [rad] , #1 Road_Curvature [1/m] , #1 collision_ids , ");
 	file_ << message;
 
 	//Based on number of vehicels in the Entities vector, extend the header accordingly
-	const char* npcHeader = "#%d Entitity_Name [-] , #%d Entitity_ID [-] , "
-		"#%d Current_Speed [m/sec] , #%d Wheel_Angle [deg] , #%d Wheel_Rotation [-] , "
-		"#%d World_Position_X [-] , #%d World_Position_Y [-] , #%d World_Position_Z [-] , "
-		"#%d Vel_X[-] , #%d Vel_Y[-] , #%d Vel_Z[-] , #%d Acc_X [-] , #%d Acc_Y[-] , #%d Acc_Z [-] , "
-		"#%d Distance_Travelled_Along_Road_Segment [m] , #%d Lateral_Distance_Lanem [m] , "
-		"#%d World_Heading_Angle [rad] , #%d Heading_Angle_Rate [rad/s] , #%d Relative_Heading_Angle [rad] , "
-		"#%d Relative_Heading_Angle_Drive_Direction [rad] , #%d World_Pitch_Angle [rad] , "
-		"#%d Road_Curvature [1/m] , ";
 	for (int i = 2; i <= numvehicles; i++)
 	{
-		snprintf(message, 1024, npcHeader, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i);
+		snprintf(message, max_csv_entry_length,
+			"#%d Entitity_Name [-] , #%d Entitity_ID [-] , "
+			"#%d Current_Speed [m/s] , #%d Wheel_Angle [deg] , #%d Wheel_Rotation [-] , "
+			"#%d World_Position_X [m] , #%d World_Position_Y [m] , #%d World_Position_Z [m] , "
+			"#%d Vel_X [m/s] , #%d Vel_Y [m/s] , #%d Vel_Z [m/s] , #%d Acc_X [m/s2] , #%d Acc_Y [m/s2] , #%d Acc_Z [m/s2] , "
+			"#%d Distance_Travelled_Along_Road_Segment [m] , #%d Lateral_Distance_Lanem [m] , "
+			"#%d World_Heading_Angle [rad] , #%d Heading_Angle_Rate [rad/s] , #%d Relative_Heading_Angle [rad] , "
+			"#%d Relative_Heading_Angle_Drive_Direction [rad] , #%d World_Pitch_Angle [rad] , "
+			"#%d Road_Curvature [1/m] , #%d collision_ids , "
+			, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i);
 		file_ << message;
 	}
 	file_ << std::endl;
@@ -957,24 +1092,25 @@ CSV_Logger::~CSV_Logger()
 void CSV_Logger::LogVehicleData(bool isendline, double timestamp, char const* name, int id, double speed,
 	double wheel_angle, double wheel_rot, double posX, double posY, double posZ, double velX, double velY,
 	double velZ, double accX, double accY, double accZ, double distance_road, double distance_lanem, double heading,
-	double heading_rate, double heading_angle, double heading_angle_driving_direction, double pitch, double curvature, ...)
+	double heading_rate, double heading_angle, double heading_angle_driving_direction, double pitch, double curvature,
+	const char* collisions, ...)
 {
-	static char data_entry[2048];
+	static char data_entry[max_csv_entry_length];
 
 	//If this data is for Ego (position 0 in the Entities vector) print using the first format
 	//Otherwise use the second format
 	if (id == 0)
-		snprintf(data_entry, 2048,
-			"%d, %f, %s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, ",
+		snprintf(data_entry, max_csv_entry_length,
+			"%d, %f, %s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %s, ",
 			data_index_, timestamp, name, id, speed, wheel_angle, wheel_rot, posX, posY, posZ, velX,
 			velY, velZ, accX, accY, accZ, distance_road, distance_lanem, heading, heading_rate,
-			heading_angle, heading_angle_driving_direction, pitch, curvature);
+			heading_angle, heading_angle_driving_direction, pitch, curvature, collisions);
 	else
-		snprintf(data_entry, 2048,
-			"%s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f",
+		snprintf(data_entry, max_csv_entry_length,
+			"%s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %s, ",
 			name, id, speed, wheel_angle, wheel_rot, posX, posY, posZ, velX, velY, velZ, accX, accY, accZ,
 			distance_road, distance_lanem, heading, heading_rate, heading_angle, heading_angle_driving_direction,
-			pitch, curvature);
+			pitch, curvature, collisions);
 
 	//Add lines horizontally until the endline is reached
 	if (isendline == false)
@@ -1029,7 +1165,7 @@ SE_Thread::~SE_Thread()
 
 void SE_Thread::Start(void(*func_ptr)(void*), void *arg)
 {
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7)
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
 	thread_ = (void*)_beginthread(func_ptr, 0, arg);
 #else
 	thread_ = std::thread(func_ptr, arg);
@@ -1039,7 +1175,7 @@ void SE_Thread::Start(void(*func_ptr)(void*), void *arg)
 
 void SE_Thread::Wait()
 {
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7)
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
 	WaitForSingleObject((HANDLE)thread_, 3000);  // Should never need to wait for more than 3 sec
 #else
 	if (thread_.joinable())
@@ -1051,7 +1187,7 @@ void SE_Thread::Wait()
 
 SE_Mutex::SE_Mutex()
 {
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7)
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || MINGW32)
 	mutex_ = (void*)CreateMutex(
 		NULL,              // default security attributes
 		0,             // initially not owned
@@ -1070,7 +1206,7 @@ SE_Mutex::SE_Mutex()
 
 void SE_Mutex::Lock()
 {
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7)
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
 	WaitForSingleObject(mutex_, 1000);  // Should never need to wait for more than 1 sec
 #else
 	mutex_.lock();
@@ -1079,7 +1215,7 @@ void SE_Mutex::Lock()
 
 void SE_Mutex::Unlock()
 {
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7)
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
 	ReleaseMutex(mutex_);
 #else
 	mutex_.unlock();
@@ -1251,5 +1387,154 @@ SE_Option* SE_Options::GetOption(std::string opt)
 			return &option_[i];
 		}
 	}
+	return 0;
+}
+
+bool SE_Options::IsInOriginalArgs(std::string opt)
+{
+	if (std::find(originalArgs_.begin(), originalArgs_.end(), opt) != originalArgs_.end())
+	{
+		return true;
+	}
+
+	return false;
+}
+
+int SE_WritePPM(const char* filename, int width, int height, const unsigned char* data, int pixelSize, int pixelFormat, bool upsidedown)
+{
+	FILE* file;
+
+	if ((file = fopen(filename, "wb")) == nullptr)
+	{
+		return -1;
+	}
+
+	if (pixelSize != 3)
+	{
+		LOG("PPM PixelSize %d not supported yet, only 3", pixelSize);
+		return -2;
+	}
+
+	if (pixelFormat != static_cast<int>(PixelFormat::BGR) && pixelFormat != static_cast<int>(PixelFormat::RGB))
+	{
+		LOG("PPM PixelFormat %d not supported yet, only 0x%x (RGB) and 0x%x (BGR)", PixelFormat::RGB, PixelFormat::BGR);
+		return -3;
+	}
+
+	/* Write PPM Header */
+	fprintf(file, "P6 %d %d %d\n", width, height, 255); /* width, height, max color value */
+
+	/* Write Image Data */
+	if (pixelFormat == static_cast<int>(PixelFormat::RGB))
+	{
+		if (upsidedown)
+		{
+			for (int i = 0; i < height; i++)
+			{
+				for (int j = 0; j < width; j++)
+				{
+					// write one line at a time, starting from bottom
+					fwrite(&data[pixelSize * ((height - i - 1) * width + j)], 3, 1, file);
+				}
+			}
+		}
+		else
+		{
+			// Write all RBG pixel values as a whole chunk
+			fwrite(data, 3, width * height, file);
+		}
+	}
+	else
+	{
+		if (upsidedown)
+		{
+			for (int i = 0; i < height; i++)
+			{
+				for (int j = 0; j < width; j++)
+				{
+					// write one line at a time, starting from bottom
+					const unsigned char* ptr = &data[pixelSize * ((height - i - 1) * width + j)];
+					unsigned char bytes[3] = { (ptr[2]), ptr[1], ptr[0] };
+					fwrite(bytes, 3, 1, file);
+				}
+			}
+		}
+		else
+		{
+			for (int i = 0; i < width * height; i++)
+			{
+				const unsigned char* ptr = &data[i * pixelSize];
+				unsigned char bytes[3] = { (ptr[2]), ptr[1], ptr[0] };
+				fwrite(bytes, 3, 1, file);
+			}
+		}
+	}
+
+	fclose(file);
+
+	return 0;
+}
+
+int SE_WriteTGA(const char* filename, int width, int height, const unsigned char* data, int pixelSize, int pixelFormat, bool upsidedown)
+{
+	FILE* file;
+
+	if ((file = fopen(filename, "wb")) == nullptr)
+	{
+		return -1;
+	}
+
+	if (pixelSize != 3)
+	{
+		LOG("TGA PixelSize %d not supported yet, only 3", pixelSize);
+		return -2;
+	}
+
+	if (pixelFormat != static_cast<int>(PixelFormat::BGR) && pixelFormat != static_cast<int>(PixelFormat::RGB))
+	{
+		LOG("TGA PixelFormat 0x%x not supported yet, only 0x%x (RGB) and 0x%x (BGR)", pixelFormat, PixelFormat::RGB, PixelFormat::BGR);
+		return -3;
+	}
+
+	/* Write TGA Header */
+	uint8_t header[18] = {
+		0,
+		0,
+		2,						  // uncompressed RGB
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		(uint8_t)(width & 0x00FF),
+		(uint8_t)((width & 0xFF00) >> 8),
+		(uint8_t)(height & 0x00FF),
+		(uint8_t)((height & 0xFF00) >> 8),
+		(uint8_t)(pixelSize * 8),  // 24 (BGR)
+		(uint8_t)(upsidedown ? 0 : (1<<5))    // bit 5 (6:th) controls vertical direction
+	};
+	fwrite(&header, 18, 1, file);
+
+	/* Write Image Data */
+	if (pixelFormat == static_cast<int>(PixelFormat::RGB))
+	{
+		for (int i = 0; i < width * height; i++)
+		{
+			const unsigned char* ptr = &data[i * pixelSize];
+			unsigned char bytes[3] = { (ptr[2]), ptr[1], ptr[0] };
+			fwrite(bytes, 3, 1, file);
+		}
+	}
+	else
+	{
+		fwrite(data, width * height * pixelSize, 1, file);
+	}
+
+	fclose(file);
+
 	return 0;
 }

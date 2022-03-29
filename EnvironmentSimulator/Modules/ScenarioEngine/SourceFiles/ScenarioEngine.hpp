@@ -27,15 +27,41 @@
 
 namespace scenarioengine
 {
+	typedef void (*ParamDeclCallbackFunc)(void*);
+
+	static struct
+	{
+		ParamDeclCallbackFunc func;
+		void* data;
+	} paramDeclCallback = {0, 0};
+
+
+	void RegisterParameterDeclarationCallback(ParamDeclCallbackFunc func, void* data);
+
+	typedef struct
+	{
+		Object* object0;
+		Object* object1;
+	} CollisionPair;
+
+	enum class GhostMode
+	{
+		NORMAL,
+		RESTART,     // the frame ghost is requested to restart
+		RESTARTING,  // ghost restart is ongoing, including the final restart timestep
+	};
+
 	class ScenarioEngine
 	{
 	public:
-		Entities entities;
+		Entities entities_;
+		std::vector<CollisionPair> collision_pair_;
 
 		ScenarioEngine(std::string oscFilename, bool disable_controllers = false);
 		ScenarioEngine(const pugi::xml_document &xml_doc, bool disable_controllers = false);
 		~ScenarioEngine();
 
+		void InitScenarioCommon(bool disable_controllers);
 		void InitScenario(std::string oscFilename, bool disable_controllers = false);
 		void InitScenario(const pugi::xml_document &xml_doc, bool disable_controllers = false);
 
@@ -47,6 +73,7 @@ namespace scenarioengine
 		void ReplaceObjectInTrigger(Trigger *trigger, Object *obj1, Object *obj2, double timeOffset, Event* event = 0);
 		void SetupGhost(Object *object);
 		void ResetEvents();
+		int DetectCollisions();
 
 		std::string getScenarioFilename() { return scenarioReader->getScenarioFilename(); }
 		std::string getSceneGraphFilename() { return roadNetwork.sceneGraphFile.filepath; }
@@ -66,8 +93,9 @@ namespace scenarioengine
 		void SetTrueTime(double time) { trueTime_ = time; }
 		double GetTrueTime() { return trueTime_; }
 		double* GetTrueTimePtr() { return &trueTime_;  }
-
-		//static void TimeSetBack();
+		void CreateGhostTeleport(Object* obj1, Object* obj2, Event* event);
+		void SetGhostRestart() { ghost_mode_ = GhostMode::RESTART; }
+		GhostMode GetGhostMode() { return ghost_mode_; }
 
 		double trueTime_;
 		bool doOnce = true;
@@ -84,6 +112,7 @@ namespace scenarioengine
 		// Simulation parameters
 		double simulationTime_;
 		double headstart_time_;
+		GhostMode ghost_mode_;
 		Vehicle sumotemplate;
 		ScenarioGateway scenarioGateway;
 

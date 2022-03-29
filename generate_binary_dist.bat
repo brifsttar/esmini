@@ -19,7 +19,8 @@ IF NOT EXIST %target_dir%\run\replayer ( mkdir %target_dir%\run\replayer )
 IF NOT EXIST %target_dir%\bin ( mkdir %target_dir%\bin )
 IF NOT EXIST %target_dir%\lib ( mkdir %target_dir%\lib )
 IF NOT EXIST %target_dir%\scripts ( mkdir %target_dir%\scripts )
-IF NOT EXIST %target_dir%\scripts\udp-driver ( mkdir %target_dir%\scripts\udp-driver )
+IF NOT EXIST %target_dir%\scripts\udp_driver ( mkdir %target_dir%\scripts\udp_driver )
+IF NOT EXIST %target_dir%\scripts\udp_driver\osi3 ( mkdir %target_dir%\scripts\udp_driver\osi3 )
 IF NOT EXIST %target_dir%\include ( mkdir %target_dir%\include )
 IF NOT EXIST %target_dir%\3rd_party_terms_and_licenses ( mkdir %target_dir%\3rd_party_terms_and_licenses )
 IF NOT EXIST %target_dir%\Hello-World_coding-example ( mkdir %target_dir%\Hello-World_coding-example )
@@ -53,6 +54,8 @@ copy resources\xosc\sumo-test.xosc %target_dir%\resources\xosc /y
 copy resources\xosc\acc-test.xosc %target_dir%\resources\xosc /y
 copy resources\xosc\alks-test.xosc %target_dir%\resources\xosc /y
 copy resources\xosc\swarm.xosc %target_dir%\resources\xosc /y
+copy resources\xosc\lane-change_clothoid_based_trajectory.xosc %target_dir%\resources\xosc /y
+copy resources\xosc\trailers.xosc %target_dir%\resources\xosc /y
 
 copy resources\xosc\Catalogs\Maneuvers\*.* %target_dir%\resources\xosc\Catalogs\Maneuvers /y
 copy resources\xosc\Catalogs\Routes\*.* %target_dir%\resources\xosc\Catalogs\Routes /y
@@ -100,6 +103,14 @@ copy resources\models\grass.jpg %target_dir%\resources\models /y
 copy resources\models\railing.osgb %target_dir%\resources\models /y
 copy resources\models\railing-pole.osgb %target_dir%\resources\models /y
 copy resources\models\guide-post.osgb %target_dir%\resources\models /y
+copy resources\models\cone-100.osgb %target_dir%\resources\models /y
+copy resources\models\car_trailer.osgb %target_dir%\resources\models /y
+copy resources\models\semi_tractor.osgb %target_dir%\resources\models /y
+copy resources\models\semi_trailer.osgb %target_dir%\resources\models /y
+copy resources\models\truck_trailer.osgb %target_dir%\resources\models /y
+copy resources\models\hedge.osgb %target_dir%\resources\models /y
+copy resources\models\fence_plank.osgb %target_dir%\resources\models /y
+copy resources\models\fence_pole.osgb %target_dir%\resources\models /y
 
 copy resources\sumo_inputs\e6mini* %target_dir%\resources\sumo_inputs /y
 copy resources\sumo_inputs\multi_intersections* %target_dir%\resources\sumo_inputs /y
@@ -130,15 +141,21 @@ copy run\esmini\run_drop-bike.bat %target_dir%\run\esmini /y
 copy run\esmini\run_sumo-test.bat %target_dir%\run\esmini /y
 copy run\esmini\run_acc-test.bat %target_dir%\run\esmini /y
 copy run\esmini\run_swarm.bat %target_dir%\run\esmini /y
+copy run\esmini\run_trailers.bat %target_dir%\run\esmini /y
 
 copy run\odrviewer\run_e6mini.bat %target_dir%\run\odrviewer /y
 copy run\odrviewer\run_multi_intersections.bat %target_dir%\run\odrviewer /y
 
 copy run\replayer\run_and_plot_cut-in_speed.bat %target_dir%\run\replayer /y
 copy run\replayer\run_and_plot_ltap-od_pos.bat %target_dir%\run\replayer /y
+copy run\replayer\run_and_replay_lane-change_clothoid.bat %target_dir%\run\replayer /y
 
-copy scripts\plot_csv.py %target_dir%\scripts /y
-copy scripts\udp-driver\* %target_dir%\scripts\udp-driver /y
+copy scripts\dat.py %target_dir%\scripts /y
+copy scripts\plot_dat.py %target_dir%\scripts /y
+copy scripts\dat2csv.py %target_dir%\scripts /y
+copy scripts\osi2csv.py %target_dir%\scripts /y
+copy scripts\udp_driver\* %target_dir%\scripts\udp_driver /y
+copy scripts\udp_driver\osi3\* %target_dir%\scripts\udp_driver\osi3 /y
 
 copy docs\readme.txt %target_dir% /y
 copy docs\commands.txt %target_dir% /y

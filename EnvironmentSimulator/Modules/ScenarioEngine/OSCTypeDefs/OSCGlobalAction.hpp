@@ -18,7 +18,6 @@
 #include "Parameters.hpp"
 #include "Entities.hpp"
 #include "ScenarioGateway.hpp"
-//#include "ScenarioReader.hpp"
 #include "OSCAABBTree.hpp"
 #include <vector>
 #include "OSCUtils.hpp"
@@ -36,7 +35,8 @@ namespace scenarioengine
 		typedef enum
 		{
 			ENVIRONMENT,     // not supported yet
-			ENTITY,          // not supported yet
+			ADD_ENTITY,
+			DELETE_ENTITY,
 			PARAMETER_SET,
 			INFRASTRUCTURE,  // not supported yet
 			SWARM_TRAFFIC,
@@ -93,11 +93,81 @@ namespace scenarioengine
 		void Start(double simTime, double dt);
 		void Step(double simTime, double dt);
 
-		void print()
+		void print() {}
+
+	};
+
+	class AddEntityAction : public OSCGlobalAction
+	{
+	public:
+		Object* entity_;
+		roadmanager::Position *pos_;
+		Entities* entities_;
+
+		AddEntityAction() : OSCGlobalAction(OSCGlobalAction::Type::ADD_ENTITY), entity_(nullptr),
+			entities_(nullptr), pos_(0) {};
+
+		AddEntityAction(Object* entity) : OSCGlobalAction(OSCGlobalAction::Type::ADD_ENTITY), entity_(entity),
+			entities_(nullptr), pos_(0) {};
+
+		AddEntityAction(const AddEntityAction& action) : OSCGlobalAction(OSCGlobalAction::Type::ADD_ENTITY)
 		{
-			LOG("");
+			entity_ = action.entity_;
+			entities_ = action.entities_;
+			pos_ = action.pos_;
 		}
 
+		~AddEntityAction() { delete pos_; }
+
+		OSCGlobalAction* Copy()
+		{
+			AddEntityAction* new_action = new AddEntityAction(*this);
+			return new_action;
+		}
+
+		void Start(double simTime, double dt);
+		void Step(double simTime, double dt);
+
+		void SetEntities(Entities* entities) { entities_ = entities; }
+
+		void print() {}
+	};
+
+	class DeleteEntityAction : public OSCGlobalAction
+	{
+	public:
+		Object* entity_;
+		Entities* entities_;
+		ScenarioGateway* gateway_;
+
+		DeleteEntityAction() : OSCGlobalAction(OSCGlobalAction::Type::DELETE_ENTITY), entity_(nullptr),
+			entities_(nullptr), gateway_(nullptr) {};
+
+		DeleteEntityAction(Object* entity) : OSCGlobalAction(OSCGlobalAction::Type::DELETE_ENTITY), entity_(entity),
+			entities_(nullptr), gateway_(nullptr) {};
+
+		DeleteEntityAction(const DeleteEntityAction& action) : OSCGlobalAction(OSCGlobalAction::Type::DELETE_ENTITY)
+		{
+			entity_ = action.entity_;
+			entities_ = action.entities_;
+			gateway_ = action.gateway_;
+		}
+
+		~DeleteEntityAction() {}
+
+		OSCGlobalAction* Copy()
+		{
+			DeleteEntityAction* new_action = new DeleteEntityAction(*this);
+			return new_action;
+		}
+
+		void Start(double simTime, double dt);
+		void Step(double simTime, double dt);
+
+		void SetEntities(Entities* entities) { entities_ = entities; }
+		void SetGateway(ScenarioGateway* gateway) { gateway_ = gateway; }
+
+		void print() {}
 	};
 
 	class ScenarioReader;
@@ -121,6 +191,7 @@ namespace scenarioengine
 	    } SelectInfo;
 
 		SwarmTrafficAction();
+		~SwarmTrafficAction();
 
 		SwarmTrafficAction(const SwarmTrafficAction& action) : OSCGlobalAction(OSCGlobalAction::Type::SWARM_TRAFFIC) {
 		    spawnedV.clear();
@@ -136,9 +207,7 @@ namespace scenarioengine
 
 		void Step(double simTime, double dt);
 
-		void print() {
-			LOG("");
-		}
+		void print() {}
 
 		void SetCentralObject(Object* centralObj) { centralObject_ = centralObj; }
 		void SetInnerRadius(double innerRadius)   { innerRadius_   = innerRadius;}
@@ -162,8 +231,8 @@ namespace scenarioengine
 		std::vector<SpawnInfo> spawnedV;
 		roadmanager::OpenDrive* odrManager_;
 		double innerRadius_, semiMajorAxis_, semiMinorAxis_, midSMjA, midSMnA, minSize_, lastTime;
-		std::vector<std::string> modelFilenames_;
-		std::vector<int> modelIds_;
+		std::vector<Vehicle*>vehicle_pool_;
+		static int counter_;
 
 		int despawn(double simTime);
 		void createRoadSegments(aabbTree::BBoxVec &vec);

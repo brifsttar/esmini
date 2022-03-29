@@ -23,6 +23,13 @@ typedef struct
 	float x;
 	float y;
 	float z;
+} RM_PositionXYZ;
+
+typedef struct
+{
+	float x;
+	float y;
+	float z;
 	float h;
 	float p;
 	float r;
@@ -36,7 +43,7 @@ typedef struct
 
 typedef struct
 {
-	float pos[3];			// position, in global coordinate system
+	RM_PositionXYZ pos;	    // position, in global coordinate system
 	float heading;			// road heading
 	float pitch;			// road pitch
 	float roll;				// road roll
@@ -54,7 +61,7 @@ typedef struct
 typedef struct
 {
 	RM_RoadLaneInfo road_lane_info; // Road info at probe location
-	float relative_pos[3];          // probe position, relative vehicle (pivot position object) coordinate system
+	RM_PositionXYZ relative_pos;    // probe position, relative vehicle (pivot position object) coordinate system
 	float relative_h;		        // heading angle to steering target from and relatove to vehicle (pivot position)
 } RM_RoadProbeInfo;
 
@@ -88,6 +95,30 @@ typedef struct
 	int fromLane;
 	int toLane;
 } RM_RoadObjValidity;
+
+typedef struct
+{
+	float a_;
+	float axis_;
+	float b_;
+	const char* ellps_;
+	float k_;
+	float k_0_;
+	float lat_0_;
+	float lon_0_;
+	float lon_wrap_;
+	float over_;
+	const char* pm_;
+	const char* proj_;
+	const char* units_;
+	const char* vunits_;
+	float x_0_;
+	float y_0_;
+	const char* datum_;
+	const char* geo_id_grids_;
+	float zone_;
+	int towgs84_;
+} RM_GeoReference;
 
 #ifdef __cplusplus
 extern "C"
@@ -202,6 +233,15 @@ extern "C"
 	RM_DLL_API int RM_GetNumberOfRoads();
 
 	/**
+	Get the unit of specified speed (in OpenDRIVE road type element).
+	All roads will be looped in search for such an element. First found will be used.
+	If speed is specified withouth the optional unit, SI unit m/s is assumed.
+	If no speed entries is found, undefined will be returned.
+	@return -1=Error, 0=Undefined, 1=km/h 2=m/s, 3=mph
+	*/
+	RM_DLL_API int RM_GetSpeedUnit();
+
+	/**
 	Get the Road ID of the road with specified index. E.g. if there are 4 roads, index 3 means the last one.
 	@param index The index of the road
 	@return The ID of the road, -1 on error
@@ -222,6 +262,21 @@ extern "C"
 	@return The number of drivable lanes, -1 indicates error e.g. no roadnetwork loaded
 	*/
 	RM_DLL_API int RM_GetRoadNumberOfLanes(int roadId, float s);
+
+	/**
+	Get the number of roads overlapping the given position
+	@param handle Handle to the position object
+	@return Number of roads overlapping the given position
+	*/
+	RM_DLL_API int RM_GetNumberOfRoadsOverlapping(int handle);
+
+	/**
+	Get the id of an overlapping road according to given position and index
+	@param handle Handle to the position object
+	@parameter index Index of the total returned by GetNumberOfRoadsOverlapping()
+	@return Id of specified overlapping road
+	*/
+	RM_DLL_API int RM_GetOverlappingRoadId(int handle, int index);
 
 	/**
 	Get the ID of the lane given by index
@@ -291,7 +346,7 @@ extern "C"
 	@param handle Handle to the position object
 	@param dist Distance (meter) to move
 	@param junctionSelectorAngle Desired direction [0:2pi] from incoming road direction (angle = 0), set -1 to randomize
-	@return 0 if successful, for other codes see esmini roadmanager::Position::enum class ErrorCode
+	@return >= 0 on success, < 0 on error. For all codes see esmini roadmanager::Position::enum class ReturnCode
 	*/
 	RM_DLL_API int RM_PositionMoveForward(int handle, float dist, float junctionSelectorAngle);
 
@@ -331,6 +386,42 @@ extern "C"
 	@return 0 if successful, 1 if probe reached end of road, 2 if end ouf route, -1 if some error
 	*/
 	RM_DLL_API int RM_GetProbeInfo(int handle, float lookahead_distance, RM_RoadProbeInfo *data, int lookAheadMode, bool inRoadDrivingDirection);
+
+	/**
+	Get width of lane with specified lane id, at current longitudinal position
+	@param handle Handle to the position object from which to measure
+	@param lane_id Id of the lane to measure
+	@return Lane width or 0.0 if lane does not exists or any other error
+	*/
+	RM_DLL_API float RM_GetLaneWidth(int handle, int lane_id);
+
+	/**
+	Get width of lane with specified lane id, at specified road and longitudinal position
+	@param road_id Id of the road
+	@param lane_id Id of the lane to measure
+	@param s Longitudinal position along the road
+	@return Lane width or 0.0 if lane does not exists or any other error
+	*/
+	RM_DLL_API float RM_GetLaneWidthByRoadId(int road_id, int lane_id, float s);
+
+	/**
+	Get type of lane with specified lane id, at current longitudinal position
+	For valid types, see RoadManager.hpp::Lane::LaneType enum
+	@param handle Handle to the position object from which to measure
+	@param lane_id Id of the lane
+	@return Lane type or 0 if lane does not exists or any other error
+	*/
+	RM_DLL_API int RM_GetLaneType(int handle, int lane_id);
+
+	/**
+	Get type of lane with specified lane id, at specified road and longitudinal position
+	For valid types, see RoadManager.hpp::Lane::LaneType enum
+	@param road_id Id of the road
+	@param lane_id Id of the lane
+	@param s Longitudinal position along the road
+	@return Lane type or 0 if lane does not exists or any other error
+	*/
+	RM_DLL_API int RM_GetLaneTypeByRoadId(int road_id, int lane_id, float s);
 
 	/**
 	Find out the difference between two position objects, i.e. delta distance (long and lat) and delta laneId
@@ -374,6 +465,11 @@ extern "C"
 		@return 0 if successful, -1 if not
 	*/
 	RM_DLL_API int RM_GetRoadSignValidityRecord(int road_id, int signIndex, int validityIndex, RM_RoadObjValidity* validity);
+
+	/**
+		Get the xodr road file georeference
+	*/
+    RM_DLL_API int RM_GetOpenDriveGeoReference(RM_GeoReference* rmGeoReference);
 
 #ifdef __cplusplus
 }

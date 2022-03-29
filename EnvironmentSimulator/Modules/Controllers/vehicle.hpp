@@ -32,9 +32,9 @@ namespace vehicle
 	{
 	public:
 		Vehicle() { Reset(); }
-		Vehicle(double x, double y, double h, double length);
+		Vehicle(double x, double y, double h, double length, double speed = 0.0);
 		void Update(double dt);
-		void DrivingControlTarget(double dt, double heading_to_target, double target_speed);
+		void DrivingControlTarget(double dt, double target_speed, double heading_to_target);
 		void DrivingControlBinary(double dt, THROTTLE throttle, STEERING steering);
 		void DrivingControlAnalog(double dt, double throttle, double steering);
 		void SetWheelAngle(double angle);
@@ -51,11 +51,23 @@ namespace vehicle
 		void SetPitch(double pitch) { pitch_ = pitch; }
 		void SetMaxSpeed(double speed);
 		double GetMaxSpeed() { return max_speed_; }
-		void SetAccelerationScale(double accScale);
+		void SetMaxAcc(double acc) { max_acc_ = acc; }
+		double GetMaxAcc() { return max_acc_; }
+		void SetMaxDec(double dec) { max_dec_ = dec; }
+		double GetMaxDec() { return max_dec_; }
+		void SetSteeringRate(double steering_rate) { steering_rate_ = steering_rate; }
+		double GetSteeringRate() { return steering_rate_; }
+		void SetSteeringReturnFactor(double steering_return_factor) { steering_return_factor_ = steering_return_factor; }
+		double GetSteeringReturnFactor() { return steering_return_factor_; }
+		void SetSteeringScale(double steering_scale) { steering_scale_ = steering_scale; }
+		double GetSteeringScale() { return steering_scale_; }
 		bool GetThrottleDisabled() { return steering_disabled_; }
 		void SetThrottleDisabled(bool value) { throttle_disabled_ = value; }
 		bool GetSteeringDisabled() { return steering_disabled_; }
 		void SetSteeringDisabled(bool value) { steering_disabled_ = value; }
+
+		// Set engine brake factor, applied when no throttle is applied. Recommended range = [0.0, 0.01], default = 0.001
+		void SetEngineBrakeFactor(double engineBrakeFactor) { engine_brake_factor_ = engineBrakeFactor; }
 		void Reset();
 
 		double posX_;
@@ -80,7 +92,12 @@ namespace vehicle
 
 	private:
 		double max_speed_;
-		double acc_scale_;
+		double max_acc_;
+		double max_dec_;
+		double steering_rate_;
+		double steering_return_factor_;
+		double steering_scale_;
+		double engine_brake_factor_;
 		bool throttle_disabled_;
 		bool steering_disabled_;
 	};

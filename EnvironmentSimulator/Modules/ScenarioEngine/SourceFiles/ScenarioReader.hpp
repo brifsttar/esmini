@@ -75,8 +75,7 @@ namespace scenarioengine
 	{
 	public:
 
-		ScenarioReader(Entities *entities, Catalogs *catalogs, bool disable_controllers = false) :
-			objectCnt_(0), entities_(entities), catalogs_(catalogs), disable_controllers_(disable_controllers) {}
+		ScenarioReader(Entities* entities, Catalogs* catalogs, bool disable_controllers = false);
 		~ScenarioReader();
 		int loadOSCFile(const char * path);
 		int loadOSCMem(const pugi::xml_document &xml_doch);
@@ -117,7 +116,7 @@ namespace scenarioengine
 		OSCPrivateAction *parseOSCPrivateAction(pugi::xml_node actionNode, Object *object);
 		OSCGlobalAction *parseOSCGlobalAction(pugi::xml_node actionNode);
 		void parseOSCOrientation(OSCOrientation &orientation, pugi::xml_node orientationNode);
-		OSCPosition *parseOSCPosition(pugi::xml_node positionNode);
+		OSCPosition *parseOSCPosition(pugi::xml_node positionNode, OSCPosition* base_on_pos = nullptr);
 
 		// Storyboard - Story
 		OSCCondition *parseOSCCondition(pugi::xml_node conditionNode);
@@ -145,12 +144,12 @@ namespace scenarioengine
 		void AddController(Controller* controller) { controller_.push_back(controller); }
 
 		std::vector<Controller*> controller_;
-		Parameters parameters;
+
+		static Parameters parameters;  // static to enable set via callback during creation of object
 
 	private:
 		pugi::xml_document doc_;
 		pugi::xml_node osc_root_;
-		int objectCnt_;
 		std::string oscFilename_;
 		Entities *entities_;
 		Catalogs *catalogs_;

@@ -8,24 +8,29 @@ Run esmini demo:
 
 Key shortcuts
 
-    H (shift h): This help text
-    TAB:         Move camera to next vehicle
-    o:           Toggle show/hide OpenDRIVE road feature lines
-    u:           Toggle show / hide OSI road lines
-    y:           Toggle show / hide OSI road points
-    p:           Toggle show / hide environment 3D model
-    r:           Toggle show / hide sensor view frustums
-    i:           Toggle info text showing time and speed
-    j:           Toggle show trails after vehicles(4 modes: none / dots / lines / both)
-    n:           Toggle show active trajectories
-    , (comma):   Switch entity view : Model only / Bounding box / Model + Bounding box / None
-    ESC:         quit
+    H (shift + h): This help text
+    Space:         Toggle pause/play simulation
+    Return:        Step simulation (one timestep) then pause
+    TAB:           Move camera to next vehicle
+    Shift + TAB:   Move camera to previoius vehicle
+    Delete:        Same as above (Shift + TAB)
+    o:             Toggle show/hide OpenDRIVE road feature lines
+    u:             Toggle show / hide OSI road lines
+    y:             Toggle show / hide OSI road points
+    p:             Toggle show / hide environment 3D model
+    r:             Toggle show / hide sensor view frustums
+    R:             Toggle route waypoint visualization
+    i:             Toggle info text showing time and speed
+    j:             Toggle show trails after vehicles(4 modes: none / dots / lines / both)
+    n:             Toggle show active trajectories
+    , (comma):     Switch entity view : Model only / Bounding box / Model + Bounding box / None
+    ESC:           quit
 
     Arrow keys is used to drive externally controlled Ego vehicle:
         Up:    Accelerate
-        Down : Brake
-        Left : Steer left
-        Right : Steer right
+        Down:  Brake
+        Left:  Steer left
+        Right: Steer right
 
     1 - 9: Camera models acording to :
         1: Custom camera model
@@ -54,7 +59,7 @@ Key shortcuts
         l: Toggle light
         w: Toggle geometry mode(shading, wireframe, dots)
         c: Save screenshot in JPEG format - in the folder where the application was started from
-        C: Toggle continuous screenshot capture
+        C: Toggle continuous screen capture (e.g for video creation)
         h: Help
 
 Mouse control

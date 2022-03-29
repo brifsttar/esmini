@@ -35,7 +35,7 @@ TEST_P(GetNumberOfObjectsTest, number_of_objects)
 	//EXPECT_EQ(n_Objects, 2);
 }
 
-INSTANTIATE_TEST_SUITE_P(EsminiAPITests, GetNumberOfObjectsTest, ::testing::Values(std::make_tuple("../../../resources/xosc/cut-in.xosc", 2), std::make_tuple("../../../resources/xosc/highway_merge.xosc", 6), std::make_tuple("../../../resources/xosc/full_e6mini.xosc", 15)));
+INSTANTIATE_TEST_SUITE_P(EsminiAPITests, GetNumberOfObjectsTest, ::testing::Values(std::make_tuple("../../../resources/xosc/cut-in.xosc", 2), std::make_tuple("../../../resources/xosc/highway_merge.xosc", 6), std::make_tuple("../../../EnvironmentSimulator/Unittest/xosc/full_e6mini.xosc", 14)));
 
 TEST(GetNumberOfObjectsTest, number_of_objects_no_init)
 {
@@ -51,12 +51,12 @@ TEST(GetNumberOfObjectsTest, number_of_objects_no_init)
 TEST(GetOSILaneBoundaryIdsTest, lane_boundary_ids)
 {
 
-	std::string scenario_file = "../../../resources/xosc/full_e6mini.xosc";
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/full_e6mini.xosc";
 
 	SE_Init(scenario_file.c_str(), 0, 0, 0, 0);
 
 	int n_Objects = SE_GetNumberOfObjects();
-	EXPECT_EQ(n_Objects, 15);
+	EXPECT_EQ(n_Objects, 14);
 
 	SE_StepDT(0.001f);
 	SE_UpdateOSIGroundTruth();
@@ -76,7 +76,7 @@ TEST(GetOSILaneBoundaryIdsTest, lane_boundary_ids)
 												{7, 12, 13, 14},
 												{12, 13, 14, -1}};
 
-	std::vector<int> veh_id = {14, 13, 12, 11, 10, 9, 8, 6, 5, 4, 3, 2, 1, 0};
+	std::vector<int> veh_id = {13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
 	for (int i = 0; i < lane_bound.size(); i++)
 	{
 		SE_LaneBoundaryId lanes_id;
@@ -252,11 +252,13 @@ TEST(OSIintersections, multilane)
 
 TEST(GetOSIRoadLaneTest, lane_no_obj)
 {
-
+	struct stat fileStatus;
 	std::string scenario_file = "../../../resources/xosc/cut-in.xosc";
 	const char *Scenario_file = scenario_file.c_str();
 
 	SE_Init(Scenario_file, 0, 0, 0, 0);
+	SE_OSIFileOpen("gt.osi");
+
 	SE_StepDT(0.001f);
 	SE_UpdateOSIGroundTruth();
 
@@ -267,21 +269,26 @@ TEST(GetOSIRoadLaneTest, lane_no_obj)
 	EXPECT_EQ(road_lane_size, 0);
 	EXPECT_EQ(road_lane, nullptr);
 
+	SE_StepDT(0.001f);  // Step for write another frame to osi file
+
 	SE_Close();
+
+	ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
+	EXPECT_EQ(fileStatus.st_size, 69725);  // slight growth due to only dynamic updates
 }
 
 TEST(GetOSIRoadLaneTest, lane_id)
 {
 
-	std::string scenario_file = "../../../resources/xosc/full_e6mini.xosc";
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/full_e6mini.xosc";
 	const char *Scenario_file = scenario_file.c_str();
 
 	SE_Init(Scenario_file, 0, 0, 0, 0);
 	SE_StepDT(0.001f);
 	SE_UpdateOSIGroundTruth();
 
-	std::vector<int> lanes = {0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14};
-	std::vector<int> veh_id = {14, 13, 12, 11, 10, 9, 8, 6, 5, 4, 3, 2, 1, 0};
+	std::vector<int> lanes = { 0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14 };
+	std::vector<int> veh_id = { 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
 
 	int road_lane_size;
 	osi3::Lane osi_lane;
@@ -301,12 +308,12 @@ TEST(GetOSIRoadLaneTest, lane_id)
 TEST(GetOSIRoadLaneTest, left_lane_id)
 {
 
-	std::string scenario_file = "../../../resources/xosc/full_e6mini.xosc";
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/full_e6mini.xosc";
 	const char *Scenario_file = scenario_file.c_str();
 	SE_Init(Scenario_file, 0, 0, 0, 0);
 
 	int n_Objects = SE_GetNumberOfObjects();
-	EXPECT_EQ(n_Objects, 15);
+	EXPECT_EQ(n_Objects, 14);
 
 	SE_StepDT(0.001f);
 	SE_UpdateOSIGroundTruth();
@@ -314,8 +321,8 @@ TEST(GetOSIRoadLaneTest, left_lane_id)
 	osi3::Lane osi_lane;
 
 	// explicitly writing lanes ID so that it will be easy to adapt the test for more complex roads in the future
-	std::vector<int> lanes = {0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14};
-	std::vector<int> veh_id = {14, 13, 12, 11, 10, 9, 8, 6, 5, 4, 3, 2, 1, 0};
+	std::vector<int> lanes = { 0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14 };
+	std::vector<int> veh_id = { 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
 
 	for (int i = 0; i < lanes.size(); i++)
 	{
@@ -345,7 +352,7 @@ TEST(GetOSIRoadLaneTest, left_lane_id)
 TEST(GetOSIRoadLaneTest, right_lane_id)
 {
 
-	std::string scenario_file = "../../../resources/xosc/full_e6mini.xosc";
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/full_e6mini.xosc";
 	const char *Scenario_file = scenario_file.c_str();
 
 	SE_Init(Scenario_file, 0, 0, 0, 0);
@@ -355,8 +362,8 @@ TEST(GetOSIRoadLaneTest, right_lane_id)
 	osi3::Lane osi_lane;
 
 	// explicitly writing lanes ID so that it will be easy to adapt the test for more complex roads in the future
-	std::vector<int> lanes = {0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14};
-	std::vector<int> veh_id = {14, 13, 12, 11, 10, 9, 8, 6, 5, 4, 3, 2, 1, 0};
+	std::vector<int> lanes = { 0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14 };
+	std::vector<int> veh_id = { 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
 
 	for (int i = 0; i < lanes.size(); i++)
 	{
@@ -387,7 +394,7 @@ TEST(GetOSIRoadLaneTest, right_lane_id)
 TEST(GetOSIRoadLaneTest, right_lane_boundary_id)
 {
 
-	std::string scenario_file = "../../../resources/xosc/full_e6mini.xosc";
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/full_e6mini.xosc";
 	const char *Scenario_file = scenario_file.c_str();
 
 	SE_Init(Scenario_file, 0, 0, 0, 0);
@@ -397,8 +404,8 @@ TEST(GetOSIRoadLaneTest, right_lane_boundary_id)
 	osi3::Lane osi_lane;
 
 	// explicitly writing lanes ID so that it will be easy to adapt the test for more complex roads in the future
-	std::vector<int> lane_bound = {8, 9, 10, 0, 1, 2, 3, 11, 4, 5, 6, 7, 12, 13, 14};
-	std::vector<int> veh_id = {14, 13, 12, 11, 10, 9, 8, 6, 5, 4, 3, 2, 1, 0};
+	std::vector<int> lane_bound = { 8, 9, 10, 0, 1, 2, 3, 11, 4, 5, 6, 7, 12, 13, 14 };
+	std::vector<int> veh_id = { 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
 
 	for (int i = 0; i < lane_bound.size() - 1; i++)
 	{
@@ -414,7 +421,7 @@ TEST(GetOSIRoadLaneTest, right_lane_boundary_id)
 TEST(GetOSIRoadLaneTest, left_lane_boundary_id)
 {
 
-	std::string scenario_file = "../../../resources/xosc/full_e6mini.xosc";
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/full_e6mini.xosc";
 	const char *Scenario_file = scenario_file.c_str();
 
 	SE_Init(Scenario_file, 0, 0, 0, 0);
@@ -424,8 +431,8 @@ TEST(GetOSIRoadLaneTest, left_lane_boundary_id)
 	osi3::Lane osi_lane;
 
 	// explicitly writing lanes ID so that it will be easy to adapt the test for more complex roads in the future
-	std::vector<int> lane_bound = {8, 9, 10, 0, 1, 2, 3, 11, 4, 5, 6, 7, 12, 13, 14};
-	std::vector<int> veh_id = {14, 13, 12, 11, 10, 9, 8, 6, 5, 4, 3, 2, 1, 0};
+	std::vector<int> lane_bound = { 8, 9, 10, 0, 1, 2, 3, 11, 4, 5, 6, 7, 12, 13, 14 };
+	std::vector<int> veh_id = { 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
 
 	for (int i = 0; i < veh_id.size(); i++)
 	{
@@ -458,14 +465,14 @@ TEST_P(GetOSIRoadLaneTest, centerline_is_driving_direction)
 	osi3::Lane osi_lane;
 
 	// explicitly writing lanes ID so that it will be easy to adapt the test for more complex roads in the future
-	std::vector<int> lanes = {0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14};
-	std::vector<int> veh_id = {14, 13, 12, 11, 10, 9, 8, 6, 5, 4, 3, 2, 1, 0};
+	std::vector<int> lanes = { 0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14 };
+	std::vector<int> veh_id = { 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
 
 	for (int i = 0; i < lanes.size(); i++)
 	{
 		const char *road_lane = SE_GetOSIRoadLane(&road_lane_size, veh_id[i]);
 		osi_lane.ParseFromArray(road_lane, road_lane_size);
-		if (veh_id[i] <= 7)
+		if (veh_id[i] < 7)
 		{
 			EXPECT_EQ(osi_lane.classification().centerline_is_driving_direction(), std::get<1>(GetParam()));
 		}
@@ -478,12 +485,13 @@ TEST_P(GetOSIRoadLaneTest, centerline_is_driving_direction)
 	SE_Close();
 }
 
-INSTANTIATE_TEST_SUITE_P(EsminiAPITests, GetOSIRoadLaneTest, ::testing::Values(std::make_tuple("../../../resources/xosc/full_e6mini.xosc", true, false), std::make_tuple("../../../resources/xosc/full_e6mini_reverse.xosc", true, false)));
+INSTANTIATE_TEST_SUITE_P(EsminiAPITests, GetOSIRoadLaneTest, ::testing::Values(std::make_tuple("../../../EnvironmentSimulator/Unittest/xosc/full_e6mini.xosc", true, false),
+	std::make_tuple("../../../EnvironmentSimulator/Unittest/xosc/full_e6mini_reverse.xosc", true, false)));
 
 TEST(GetOSIRoadLaneTest, is_host_vehicle_lane)
 {
 
-	std::string scenario_file = "../../../resources/xosc/full_e6mini.xosc";
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/full_e6mini.xosc";
 	const char *Scenario_file = scenario_file.c_str();
 
 	SE_Init(Scenario_file, 0, 0, 0, 0);
@@ -493,8 +501,8 @@ TEST(GetOSIRoadLaneTest, is_host_vehicle_lane)
 	osi3::Lane osi_lane;
 
 	// explicitly writing lanes ID so that it will be easy to adapt the test for more complex roads in the future
-	std::vector<int> lanes = {0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14};
-	std::vector<int> veh_id = {14, 13, 12, 11, 10, 9, 8, 6, 5, 4, 3, 2, 1, 0};
+	std::vector<int> lanes = { 0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14 };
+	std::vector<int> veh_id = { 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
 
 	for (int i = 0; i < lanes.size(); i++)
 	{
@@ -510,7 +518,7 @@ TEST(GetOSIRoadLaneTest, is_host_vehicle_lane)
 TEST(GetOSIRoadLaneTest, lane_classification)
 {
 
-	std::string scenario_file = "../../../resources/xosc/full_e6mini.xosc";
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/full_e6mini.xosc";
 	const char *Scenario_file = scenario_file.c_str();
 
 	SE_Init(Scenario_file, 0, 0, 0, 0);
@@ -520,8 +528,8 @@ TEST(GetOSIRoadLaneTest, lane_classification)
 	osi3::Lane osi_lane;
 
 	// explicitly writing lanes ID so that it will be easy to adapt the test for more complex roads in the future
-	std::vector<int> lanes = {0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14};
-	std::vector<int> veh_id = {14, 13, 12, 11, 10, 9, 8, 6, 5, 4, 3, 2, 1, 0};
+	std::vector<int> lanes = { 0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14 };
+	std::vector<int> veh_id = { 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
 
 	int obj_id = 0;
 
@@ -552,7 +560,7 @@ TEST(GetOSIRoadLaneTest, lane_classification)
 TEST(GetOSILaneBoundaryTests, lane_boundary_id_existing)
 {
 
-	std::string scenario_file = "../../../resources/xosc/full_e6mini.xosc";
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/full_e6mini.xosc";
 	const char *Scenario_file = scenario_file.c_str();
 
 	SE_Init(Scenario_file, 0, 0, 0, 0);
@@ -590,7 +598,7 @@ class GetOSILaneBoundaryTests : public ::testing::TestWithParam<std::tuple<int, 
 TEST_P(GetOSILaneBoundaryTests, lane_boundary_id_not_existing)
 {
 
-	std::string scenario_file = "../../../resources/xosc/full_e6mini.xosc";
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/full_e6mini.xosc";
 	const char *Scenario_file = scenario_file.c_str();
 
 	SE_Init(Scenario_file, 0, 0, 0, 0);
@@ -781,7 +789,7 @@ TEST(GetMiscObjFromGroundTruth, receive_miscobj)
 	EXPECT_EQ(miscobj_yaw, 5.0 - 2 * M_PI);
 }
 
-TEST(SetOSITimestampTest, TestGetAndSet)
+TEST(TestGetAndSet, SetOSITimestampTest)
 {
 	osi3::GroundTruth *osi_gt;
 
@@ -824,7 +832,7 @@ TEST(SetOSITimestampTest, TestGetAndSet)
 	SE_Close();
 }
 
-TEST(ReportObjectAcc, TestGetAndSet)
+TEST(TestGetAndSet, ReportObjectAcc)
 {
 	osi3::GroundTruth *osi_gt;
 
@@ -867,7 +875,7 @@ TEST(ReportObjectAcc, TestGetAndSet)
 	SE_Close();
 }
 
-TEST(ReportObjectVel, TestGetAndSet)
+TEST(TestGetAndSet, ReportObjectVel)
 {
 	osi3::GroundTruth *osi_gt;
 
@@ -915,8 +923,7 @@ TEST(ReportObjectVel, TestGetAndSet)
 TEST(ParameterTest, GetTypedParameterValues)
 {
 	std::string scenario_file = "../../../resources/xosc/lane_change.xosc";
-	const char *Scenario_file = scenario_file.c_str();
-	SE_Init(Scenario_file, 0, 0, 0, 0);
+	SE_Init(scenario_file.c_str(), 0, 0, 0, 0);
 
 	bool boolVar;
 	int retVal;
@@ -980,7 +987,52 @@ TEST(ParameterTest, GetTypedParameterValues)
 	SE_Close();
 }
 
-TEST(OverrideActionTest, TestGetAndSet)
+static void paramDeclCallback(void*)
+{
+	static int counter = 0;
+	double value[2] = { 1.1, 1.5 };
+
+	if (counter < 2)
+	{
+		SE_SetParameterDouble("TargetSpeedFactor", value[counter]);
+	}
+
+	counter++;
+}
+
+TEST(ParameterTest, SetParameterValuesBeforeInit)
+{
+	double positions[3][2] = {
+		{5.34382, 186.68216},  // TargetSpeedFactor = 1.1
+		{8.69330, 240.68001},  // TargetSpeedFactor = 1.5
+		{5.46731, 201.38162}  // TargetSpeedFactor = Default = 1.2
+	};
+	SE_ScenarioObjectState state;
+
+	std::string scenario_file = "../../../resources/xosc/cut-in.xosc";
+
+	SE_RegisterParameterDeclarationCallback(paramDeclCallback, 0);
+
+	for (int i = 0; i < 3 && SE_GetQuitFlag() != 1; i++)
+	{
+		ASSERT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+		ASSERT_EQ(SE_GetNumberOfObjects(), 2);
+
+		while (SE_GetSimulationTime() < 5.0 && SE_GetQuitFlag() != 1)
+		{
+			SE_StepDT(0.1f);
+		}
+
+		// Check position of second vehicle
+		SE_GetObjectState(1, &state);
+		EXPECT_NEAR(state.x, positions[i][0], 1e-5);
+		EXPECT_NEAR(state.y, positions[i][1], 1e-5);
+
+		SE_Close();
+	}
+}
+
+TEST(TestGetAndSet, OverrideActionTest)
 {
 	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/override_action.xosc";
 	const char *Scenario_file = scenario_file.c_str();
@@ -1030,7 +1082,7 @@ TEST(OverrideActionTest, TestGetAndSet)
 	EXPECT_NEAR(list.steeringWheel.value, 2 * M_PI, 0.01);
 }
 
-TEST(PropertyTest, TestGetAndSet)
+TEST(TestGetAndSet, PropertyTest)
 {
 	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/VehiclePropertyTest.xosc";
 	const char *Scenario_file = scenario_file.c_str();
@@ -1140,6 +1192,10 @@ TEST(OSILaneParing, multi_roads)
 	int gt_predecessor = -1;
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		// std::cout << i << std::endl;
 		// ASSERT_EQ(osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(),1);
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
@@ -1219,6 +1275,10 @@ TEST(OSILaneParing, multi_lanesections)
 	int gt_predecessor;
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
 		{
 			predecessor = -1;
@@ -1259,6 +1319,18 @@ TEST(OSILaneParing, multi_lanesections)
 	SE_Close();
 }
 
+TEST(ObjectIds,check_ids)
+{
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/init_test_objects_strange_order.xosc";
+	const char *Scenario_file = scenario_file.c_str();
+	int i_init = SE_Init(Scenario_file, 0, 0, 0, 0);
+	ASSERT_EQ(i_init, 0);
+	SE_StepDT(0.001f);
+	ASSERT_EQ(SE_GetId(0),0);
+	ASSERT_EQ(SE_GetId(1),2);
+	ASSERT_EQ(SE_GetId(2),1);
+}
+
 TEST(OSILaneParing, highway_split)
 {
 	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/highway_split.xosc";
@@ -1287,6 +1359,10 @@ TEST(OSILaneParing, highway_split)
 
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
 		{
 			predecessor = -1;
@@ -1356,6 +1432,10 @@ TEST(OSILaneParing, highway_merge_lht)
 
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
 		{
 			predecessor = -1;
@@ -1428,6 +1508,10 @@ TEST(OSILaneParing, highway_merge)
 	int gt_predecessor;
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
 		{
 			predecessor = -1;
@@ -1468,6 +1552,97 @@ TEST(OSILaneParing, highway_merge)
 	SE_Close();
 }
 
+
+
+
+TEST(OSILaneParing, highway_merge_w_split)
+{
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/highway_intersection_test0.xosc";
+	const char *Scenario_file = scenario_file.c_str();
+	int i_init = SE_Init(Scenario_file, 0, 0, 0, 0);
+	ASSERT_EQ(i_init, 0);
+
+	SE_StepDT(0.001f);
+	SE_UpdateOSIGroundTruth();
+	osi3::GroundTruth osi_gt;
+	int sv_size = 0;
+	const char *gt = SE_GetOSIGroundTruth(&sv_size);
+	osi_gt.ParseFromArray(gt, sv_size);
+	// order: lane, predecessor, successor
+	std::vector<std::vector<int>> lane_pairs = {{0, -1, 5},
+												{1, -1, 6},
+												{3, -1, 8},
+												{4, -1, 9},
+												{5, 0, 11},
+												{6, 1, 12},
+												{8, 3, 14},
+												{9, 4, 15},
+												{10, -1, 16},
+												{11, 5, 24},
+												{12, 6, 25},
+												{14, 8, 27},
+												{15, 9, 28},
+												{16, 10, 30},
+												{24, 11, 17},
+												{25, 12, 18},
+												{27, 14, 20},
+												{28, 15, 21},
+												{30, 16, 23},
+												{17, 24, -1},
+												{18, 25, -1},
+												{20, 27, -1},
+												{21, 28, -1},
+												{23, 30, -1}};
+	int successor;
+	int predecessor;
+	int gt_successor;
+	int gt_predecessor;
+	for (int i = 0; i < osi_gt.lane_size(); i++)
+	{
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
+		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
+		{
+			predecessor = -1;
+			successor = -1;
+			for (int k = 0; k < lane_pairs.size(); k++)
+			{
+				if (osi_gt.mutable_lane(i)->id().value() == lane_pairs[k][0])
+				{
+					predecessor = lane_pairs[k][1];
+					successor = lane_pairs[k][2];
+				}
+			}
+
+			if (successor == -1 && predecessor == -1)
+			{
+				ASSERT_EQ(true, false);
+			}
+			if (successor >= 0 && osi_gt.lane(i).classification().lane_pairing(j).has_successor_lane_id())
+			{
+				gt_successor = (int)osi_gt.lane(i).classification().lane_pairing(j).successor_lane_id().value();
+			}
+			else
+			{
+				gt_successor = -1;
+			}
+			if (predecessor >= 0 && osi_gt.lane(i).classification().lane_pairing(j).has_antecessor_lane_id())
+			{
+				gt_predecessor = (int)osi_gt.lane(i).classification().lane_pairing(j).antecessor_lane_id().value();
+			}
+			else
+			{
+				gt_predecessor = -1;
+			}
+			EXPECT_EQ(gt_successor, successor);
+			EXPECT_EQ(gt_predecessor, predecessor);
+		}
+	}
+	SE_Close();
+}
+
 TEST(OSILaneParing, circular_road)
 {
 	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/circular_road.xosc";
@@ -1496,6 +1671,10 @@ TEST(OSILaneParing, circular_road)
 	int gt_predecessor;
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
 		{
 			predecessor = -1;
@@ -1567,8 +1746,6 @@ TEST(OSILaneParing, simple_3way_intersection)
 
 	std::sort(lane_pairs.begin(), lane_pairs.end());
 
-	int successor;
-	int predecessor;
 	int gt_successor;
 	int gt_predecessor;
 	static int counter = 0;
@@ -1578,7 +1755,10 @@ TEST(OSILaneParing, simple_3way_intersection)
 
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
-		int current_lane_pair_length = (int)gt_lane_pairs.size();
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
 		{
 			if (osi_gt.lane(i).classification().lane_pairing(j).has_successor_lane_id())
@@ -1646,8 +1826,6 @@ TEST(OSILaneParing, simple_3way_intersection_lht)
 
 	std::sort(lane_pairs.begin(), lane_pairs.end());
 
-	int successor;
-	int predecessor;
 	int gt_successor;
 	int gt_predecessor;
 	static int counter = 0;
@@ -1657,7 +1835,10 @@ TEST(OSILaneParing, simple_3way_intersection_lht)
 
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
-		int current_lane_pair_length = (int)gt_lane_pairs.size();
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
 		{
 			if (osi_gt.lane(i).classification().lane_pairing(j).has_successor_lane_id())
@@ -1732,8 +1913,6 @@ TEST(OSILaneParing, simple_4way_intersection)
 	};
 	std::sort(lane_pairs.begin(), lane_pairs.end());
 
-	int successor;
-	int predecessor;
 	int gt_successor;
 	int gt_predecessor;
 	static int counter = 0;
@@ -1743,7 +1922,10 @@ TEST(OSILaneParing, simple_4way_intersection)
 
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
-		int current_lane_pair_length = (int)gt_lane_pairs.size();
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
 		{
 			if (osi_gt.lane(i).classification().lane_pairing(j).has_successor_lane_id())
@@ -1793,21 +1975,22 @@ TEST(OSILaneParing, Signs)
 	int sv_size = 0;
 	const char* gt = SE_GetOSIGroundTruth(&sv_size);
 	osi_gt.ParseFromArray(gt, sv_size);
-	// order: id, value, text, pitch, roll, height, s, t, zOffset
-	std::vector<std::tuple<int, double, std::string, double, double, double, double, double, double>> signs = { std::make_tuple(0, -1, "", 0.0, 0.0, 0.61, 0.0, 3.57, 1.7),
-																											   std::make_tuple(1, -1, "", 0.0, 0.0, 0.61, 0.0, 3.57, 1.7),
-																											   std::make_tuple(2, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
-																											   std::make_tuple(3, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
-																											   std::make_tuple(4, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
-																											   std::make_tuple(5, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
-																											   std::make_tuple(6, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
-																											   std::make_tuple(7, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
-																											   std::make_tuple(8, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
-																											   std::make_tuple(9, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
-																											   std::make_tuple(10, -1, "", 0.0, 0.0, 0.61, 500.0, 3.57, 1.7),
-																											   std::make_tuple(11, -1, "", 0.0, 0.0, 0.61, 500.0, 3.57, 1.7) };
+	// order: id, type, country, subtypevalue, text, pitch, roll, height, s, t, zOffset
+	std::vector<std::tuple<int, osi3::TrafficSign_MainSign_Classification_Type, double, std::string, double, double, double, double, double, double>> signs = { std::make_tuple(0, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DANGER_SPOT, -1, "", 0.0, 0.0, 0.61, 0.0, 3.57, 1.7),
+																																					std::make_tuple(1, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DANGER_SPOT, -1, "", 0.0, 0.0, 0.61, 0.0, 3.57, 1.7),
+																																					std::make_tuple(2, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_ZEBRA_CROSSING, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
+																																					std::make_tuple(3, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
+																																					std::make_tuple(4, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_HILL_UPWARDS, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
+																																					std::make_tuple(5, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DOUBLE_TURN_LEFT, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
+																																					std::make_tuple(6, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DOUBLE_TURN_RIGHT, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
+																																					std::make_tuple(7, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
+																																					std::make_tuple(8, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
+																																					std::make_tuple(9, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
+																																					std::make_tuple(10, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 500.0, 3.57, 1.7),
+																																					std::make_tuple(11, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 500.0, 3.57, 1.7) };
 
 	int sign_id = 0;
+	osi3::TrafficSign_MainSign_Classification_Type type = osi3::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN;
 	double value = 0;
 	std::string text = "";
 	double pitch = 0;
@@ -1824,17 +2007,19 @@ TEST(OSILaneParing, Signs)
 			if (traffic_sign.id().value() == std::get<0>(sign))
 			{
 				sign_id = std::get<0>(sign);
-				value = std::get<1>(sign);
-				text = std::get<2>(sign);
-				pitch = std::get<3>(sign);
-				roll = std::get<4>(sign);
-				height = std::get<5>(sign);
-				s = std::get<6>(sign);
-				t = std::get<7>(sign);
-				zOffset = std::get<8>(sign);
+				type = std::get<1>(sign);
+				value = std::get<2>(sign);
+				text = std::get<3>(sign);
+				pitch = std::get<4>(sign);
+				roll = std::get<5>(sign);
+				height = std::get<6>(sign);
+				s = std::get<7>(sign);
+				t = std::get<8>(sign);
+				zOffset = std::get<9>(sign);
 			}
 		}
 		ASSERT_EQ(traffic_sign.id().value(), sign_id);
+		ASSERT_EQ(static_cast<int>(traffic_sign.main_sign().classification().type()), static_cast<int>(type));
 		ASSERT_DOUBLE_EQ(traffic_sign.main_sign().classification().value().value(), value);
 		ASSERT_STREQ(traffic_sign.main_sign().classification().value().text().c_str(), text.c_str());
 		ASSERT_DOUBLE_EQ(traffic_sign.main_sign().base().orientation().pitch(), pitch);
@@ -1870,11 +2055,547 @@ TEST(GatewayTest, TestReportToGatewayInCallback)
 	ASSERT_FLOAT_EQ(state.laneOffset, -2.3f);
 }
 
+static void ghostParamDeclCB(void* user_arg)
+{
+	bool ghostMode = *((bool*)user_arg);
+
+	SE_SetParameterBool("GhostMode", ghostMode);
+}
+
+TEST(ExternalController, TestExternalDriver)
+{
+	const double defaultTargetSpeed = 50.0;
+	const double curveWeight = 30.0;
+	const double throttleWeight = 0.1;
+	const float dt = 0.05f;
+	const float duration = 35.0f;
+	bool ghostMode[3] = { false, true, true };
+
+	void* vehicleHandle = 0;
+	SE_SimpleVehicleState vehicleState = { 0, 0, 0, 0, 0, 0 };
+	SE_ScenarioObjectState objectState;
+	SE_RoadInfo roadInfo;
+
+	SE_AddPath("../../../resources/xodr");
+	SE_AddPath("../../../resources/xosc/Catalogs/Vehicles");
+
+	for (int i = 0; i < 3; i++)
+	{
+		SE_RegisterParameterDeclarationCallback(ghostParamDeclCB, &ghostMode[i]);
+
+		ASSERT_EQ(SE_Init("../../../EnvironmentSimulator/code-examples/test-driver/test-driver.xosc", 0, 0, 0, 0), 0);
+
+		// Lock object to the original lane
+		// If setting to false, the object road position will snap to closest lane
+		SE_SetLockOnLane(0, true);
+
+		// Initialize the vehicle model, fetch initial state from the scenario
+		SE_GetObjectState(0, &objectState);
+		vehicleHandle = SE_SimpleVehicleCreate(objectState.x, objectState.y, objectState.h, 4.0, 0.0);
+		SE_SimpleVehicleSteeringRate(vehicleHandle, 8.0f);
+
+		// show some road features, including road sensor
+		SE_ViewerShowFeature(4 + 8, true);  // NODE_MASK_TRAIL_DOTS (1 << 2) & NODE_MASK_ODR_FEATURES (1 << 3),
+
+		// Run for 40 seconds or until 'Esc' button is pressed
+		while (SE_GetSimulationTime() < duration && SE_GetQuitFlag() != 1)
+		{
+			// Get road information at a point some speed dependent distance ahead
+			double targetSpeed;
+			if (ghostMode[i] == true)
+			{
+				// ghost version
+				float ghost_speed;
+				if (i < 2)
+				{
+					SE_GetRoadInfoAlongGhostTrail(0, 5 + 0.75f * vehicleState.speed, &roadInfo, &ghost_speed);
+				}
+				else
+				{
+					SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime() + 0.25f, &roadInfo, &ghost_speed);
+				}
+				targetSpeed = ghost_speed;
+			}
+			else
+			{
+				// Look ahead along the road, to establish target info for the driver model
+				SE_GetRoadInfoAtDistance(0, 5 + 0.75f * vehicleState.speed, &roadInfo, 0, true);
+
+				// Slow down when curve ahead - CURVE_WEIGHT is the tuning parameter
+				targetSpeed = defaultTargetSpeed / (1 + curveWeight * fabs(roadInfo.angle));
+			}
+
+			// Steer towards where the point
+			double steerAngle = roadInfo.angle;
+
+			// Accelerate or decelerate towards target speed - THROTTLE_WEIGHT tunes magnitude
+			double throttle = throttleWeight * (targetSpeed - vehicleState.speed);
+
+			// Step vehicle model with driver input, but wait until time > 0
+			if (SE_GetSimulationTime() > 0 && !SE_GetPauseFlag())
+			{
+				SE_SimpleVehicleControlAnalog(vehicleHandle, dt, throttle, steerAngle);
+			}
+
+			// Fetch updated state and report to scenario engine
+			SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+
+			if (i == 0)
+			{
+				if (abs(SE_GetSimulationTime() - 11.0f) < SMALL_NUMBER)
+				{
+					SE_GetObjectState(0, &objectState);
+					EXPECT_NEAR(objectState.x, 215.891, 1e-3);
+					EXPECT_NEAR(objectState.y, 113.789, 1e-3);
+					EXPECT_NEAR(objectState.h, 1.362, 1e-3);
+					EXPECT_NEAR(objectState.p, 6.246, 1e-3);
+				}
+				else if (abs(SE_GetSimulationTime() - 30.0f) < SMALL_NUMBER)
+				{
+					SE_GetObjectState(0, &objectState);
+					EXPECT_NEAR(objectState.x, 356.204, 1e-3);
+					EXPECT_NEAR(objectState.y, 330.068, 1e-3);
+					EXPECT_NEAR(objectState.h, 5.641, 1e-3);
+					EXPECT_NEAR(objectState.p, 0.046, 1e-3);
+				}
+			}
+			else if (i==1)
+			{
+				float speed2 = 0;
+				if (abs(SE_GetSimulationTime() - 11.0f) < SMALL_NUMBER)
+				{
+					SE_GetObjectState(0, &objectState);
+					EXPECT_NEAR(objectState.x, 202.6710, 1e-3);
+					EXPECT_NEAR(objectState.y, 83.453, 1e-3);
+					EXPECT_NEAR(objectState.h, 1.137, 1e-3);
+					EXPECT_NEAR(objectState.p, 6.262, 1e-3);
+					if (ghostMode[i] == true)
+					{
+						SE_RoadInfo road_info2;
+						SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed2);
+						EXPECT_NEAR(road_info2.global_pos_x, 206.761, 1e-3);
+						EXPECT_NEAR(road_info2.global_pos_y, 92.555, 1e-3);
+					}
+				}
+				else if (abs(SE_GetSimulationTime() - 30.0f) < SMALL_NUMBER)
+				{
+					SE_GetObjectState(0, &objectState);
+					EXPECT_NEAR(objectState.x, 383.001, 1e-3);
+					EXPECT_NEAR(objectState.y, 300.194, 1e-3);
+					EXPECT_NEAR(objectState.h, 5.259, 1e-3);
+					EXPECT_NEAR(objectState.p, 0.025, 1e-3);
+					if (ghostMode[i] == true)
+					{
+						SE_RoadInfo road_info3;
+						SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info3, &speed2);
+						EXPECT_NEAR(road_info3.global_pos_x, 388.722, 1e-3);
+						EXPECT_NEAR(road_info3.global_pos_y, 290.307, 1e-3);
+					}
+				}
+			}
+			else if (i == 2)
+			{
+				SE_RoadInfo road_info2;
+				float speed3 = 0;
+				if (abs(SE_GetSimulationTime() - 11.0f) < SMALL_NUMBER)
+				{
+					SE_GetObjectState(0, &objectState);
+					EXPECT_NEAR(objectState.x, 203.726, 1e-3);
+					EXPECT_NEAR(objectState.y, 85.548, 1e-3);
+					EXPECT_NEAR(objectState.h, 1.148, 1e-3);
+					EXPECT_NEAR(objectState.p, 6.262, 1e-3);
+					if (ghostMode[i] == true)
+					{
+						SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed3);
+						EXPECT_NEAR(road_info2.global_pos_x, 207.471, 1e-3);
+						EXPECT_NEAR(road_info2.global_pos_y, 94.426, 1e-3);
+					}
+				}
+				else if (abs(SE_GetSimulationTime() - 30.0f) < SMALL_NUMBER)
+				{
+					SE_GetObjectState(0, &objectState);
+					EXPECT_NEAR(objectState.x, 383.025, 1e-3);
+					EXPECT_NEAR(objectState.y, 301.087, 1e-3);
+					EXPECT_NEAR(objectState.h, 5.257, 1e-3);
+					EXPECT_NEAR(objectState.p, 0.025, 1e-3);
+					if (ghostMode[i] == true)
+					{
+						SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed3);
+						EXPECT_NEAR(road_info2.global_pos_x, 390.909, 1e-3);
+						EXPECT_NEAR(road_info2.global_pos_y, 285.810, 1e-3);
+					}
+				}
+			}
+
+			// Report updated vehicle position and heading. z, pitch and roll will be aligned to the road
+			SE_ReportObjectPosXYH(0, 0, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+			SE_ReportObjectWheelStatus(0, vehicleState.whee_rotation, vehicleState.whee_angle);
+
+			// Finally, update scenario using same time step as for vehicle model
+			SE_StepDT(dt);
+		}
+		SE_Close();
+	}
+}
+
+TEST(TestGetAndSet, SeedTest)
+{
+	std::string scenario_file = "../../../resources/xosc/cut-in.xosc";
+
+	SE_SetSeed(12345);
+	EXPECT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+	ASSERT_EQ(SE_GetNumberOfObjects(), 2);
+	ASSERT_EQ(SE_GetSeed(), (unsigned int)12345);
+
+	SE_Close();
+}
+
+TEST(SimpleVehicleTest, TestControl)
+{
+	float dt = 0.01f;
+
+	std::string scenario_file = "../../../resources/xosc/parking_lot.xosc";
+	SE_SimpleVehicleState vehicleState = { 0, 0, 0, 0, 0, 0 };
+	SE_ScenarioObjectState objectState;
+	void* vehicleHandle = 0;
+
+	EXPECT_EQ(SE_Init(scenario_file.c_str(), 1, 0, 0, 0), 0);
+	ASSERT_EQ(SE_GetNumberOfObjects(), 3);
+
+	ASSERT_EQ(SE_GetObjectState(0, &objectState), 0);
+	EXPECT_NEAR(objectState.x, 1.800, 1e-3);
+	EXPECT_NEAR(objectState.y, -358.000, 1e-3);
+	EXPECT_NEAR(objectState.h, 1.570, 1e-3);
+
+	vehicleHandle = SE_SimpleVehicleCreate(objectState.x, objectState.y, objectState.h, 4.0, 0.0);
+
+	for (int i = 0; i < 200; i++)
+	{
+		SE_SimpleVehicleControlTarget(vehicleHandle, dt, 30.0, 0.2);
+		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+
+		SE_StepDT(dt);
+	}
+
+	SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+	EXPECT_NEAR(vehicleState.x, -18.639, 1e-3);
+	EXPECT_NEAR(vehicleState.y, -327.593, 1e-3);
+	EXPECT_NEAR(vehicleState.h, 2.471, 1e-3);
+
+	for (int i = 0; i < 200; i++)
+	{
+		SE_SimpleVehicleControlTarget(vehicleHandle, dt, 60.0, -0.2);
+		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+
+		SE_StepDT(dt);
+	}
+
+	SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+	EXPECT_NEAR(vehicleState.x, -70.041, 1e-3);
+	EXPECT_NEAR(vehicleState.y, -245.796, 1e-3);
+	EXPECT_NEAR(vehicleState.h, 1.924, 1e-3);
+	EXPECT_NEAR(vehicleState.speed, 60.000, 1e-3);
+
+	SE_SimpleVehicleSetEngineBrakeFactor(vehicleHandle, 0.001f);
+	for (int i = 0; i < 200; i++)
+	{
+		SE_SimpleVehicleControlTarget(vehicleHandle, dt, 80.0, 0.0);
+		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+
+		SE_StepDT(dt);
+	}
+
+	SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+	EXPECT_NEAR(vehicleState.x, -117.600342, 1e-3);
+	EXPECT_NEAR(vehicleState.y, -116.729, 1e-3);
+	EXPECT_NEAR(vehicleState.h, 1.924, 1e-3);
+	EXPECT_NEAR(vehicleState.speed, 70.0, 1e-3);  // Limited by the default speed 70 km/h
+
+	// no drag factor
+	SE_SimpleVehicleSetEngineBrakeFactor(vehicleHandle, 0.0f);  // no engine brake
+	for (int i = 0; i < 200; i++)
+	{
+		SE_SimpleVehicleControlBinary(vehicleHandle, dt, 0, 0);
+		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+
+		SE_StepDT(dt);
+	}
+
+	SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+	EXPECT_NEAR(vehicleState.x, -166.007, 1e-3);
+	EXPECT_NEAR(vehicleState.y, 14.636, 1e-3);
+	EXPECT_NEAR(vehicleState.h, 1.924, 1e-3);
+	EXPECT_NEAR(vehicleState.speed, 70.0, 1e-3);
+
+	// Strong drag factor
+	SE_SimpleVehicleSetEngineBrakeFactor(vehicleHandle, 0.005f);
+	for (int i = 0; i < 600; i++)
+	{
+		SE_SimpleVehicleControlAnalog(vehicleHandle, dt, 0, 0);   // no throttle -> engine brake applied
+		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+
+		SE_StepDT(dt);
+	}
+
+	SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+	EXPECT_NEAR(vehicleState.x, -211.792, 1e-3);
+	EXPECT_NEAR(vehicleState.y, 138.885, 1e-3);
+	EXPECT_NEAR(vehicleState.h, 1.924, 1e-3);
+	EXPECT_NEAR(vehicleState.speed, 3.459, 1e-3);
+
+	SE_Close();
+}
+
+TEST(APITest, TestGetName)
+{
+	std::string scenario_file = "../../../resources/xosc/cut-in.xosc";
+
+	EXPECT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+	ASSERT_EQ(SE_GetNumberOfObjects(), 2);
+
+	EXPECT_STREQ(SE_GetObjectName(0), "Ego");
+	EXPECT_STREQ(SE_GetObjectTypeName(0), "car_white");
+	EXPECT_STREQ(SE_GetObjectModelFileName(0), "car_white.osgb");
+
+	EXPECT_STREQ(SE_GetObjectName(1), "OverTaker");
+	EXPECT_STREQ(SE_GetObjectTypeName(1), "car_red");
+	EXPECT_STREQ(SE_GetObjectModelFileName(1), "car_red.osgb");
+
+	SE_Close();
+}
+
+TEST(APITest, TestGetRoute)
+{
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/highway_exit_with_route.xosc";
+
+	EXPECT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+
+	int num_of_points = SE_GetNumberOfRoutePoints(0);
+	EXPECT_EQ(num_of_points,4);
+
+	SE_RouteInfo route_info;
+	SE_GetRoutePoint(0,0,&route_info);
+	EXPECT_EQ(route_info.t,-1.5);
+	EXPECT_EQ(route_info.s,15);
+	EXPECT_EQ(route_info.x,15);
+	EXPECT_EQ(route_info.y,-1.5);
+	EXPECT_EQ(route_info.osiLaneId,3);
+	SE_GetRoutePoint(0,1,&route_info);
+	EXPECT_EQ(route_info.t,-4.5);
+	EXPECT_EQ(route_info.s,150);
+	EXPECT_EQ(route_info.x,150);
+	EXPECT_EQ(route_info.y,-4.5);
+	EXPECT_EQ(route_info.osiLaneId,15);
+
+	SE_Close();
+}
+
+static bool CheckFileExists(std::string filename, long long timestamp)
+{
+	struct stat fileStatus;
+
+	if (stat(filename.c_str(), &fileStatus) == 0)
+	{
+		if (fileStatus.st_mtime > timestamp)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+TEST(APITest, TestFetchImage)
+{
+	struct stat fileStatus;
+	long long oldModTime = 0;
+	int max_pixel_deviation = 4;
+	std::string screenshotFilename0 = "screen_shot_00000.tga";
+	std::string screenshotFilename1 = "screen_shot_00001.tga";
+	std::string screenshotFilename2 = "screen_shot_00002.tga";
+	std::string screenshotFilename3 = "screen_shot_00003.tga";
+	std::string screenshotFilename4 = "screen_shot_00004.tga";
+	std::string screenshotFilename5 = "screen_shot_00005.tga";
+
+	// Fetch timestamp of any old screenshot0
+	if (stat(screenshotFilename0.c_str(), &fileStatus) == 0)
+	{
+		oldModTime = fileStatus.st_mtime;
+	}
+
+	const char* args[] =
+	{
+		"--osc ../../../resources/xosc/cut-in_simple.xosc",
+		"--window 60 60 800 400",
+		"--aa_mode 4",
+		"--headless"
+	};
+
+	ASSERT_EQ(SE_InitWithArgs(sizeof(args)/sizeof(char*), args), 0);
+
+	ASSERT_EQ(SE_GetNumberOfObjects(), 2);
+
+	SE_Image image = {0, 0, 0, 0, 0};
+ 	SE_FetchImage(&image);
+	ASSERT_NE(image.data, nullptr);
+
+	EXPECT_EQ(image.width, 800);
+	EXPECT_EQ(image.height, 400);
+	EXPECT_EQ(image.pixelSize, 3);
+
+	// Check RGB color values of a random pixel x=222, y=250
+	int pixelNr = ((400-1) - 250) * 800 + 222;  // image stored upside down
+	EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 2], 65, max_pixel_deviation);  // R
+	EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 1], 88, max_pixel_deviation);  // G
+	EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 0], 37, max_pixel_deviation);  // B
+
+	// Save file for possible post processing or inspection
+	SE_WriteTGA("offscreen0.tga", image.width, image.height, image.data, image.pixelSize, image.pixelFormat, true);
+
+	// Verify that any screenshot file is old, since that feature has not been enabled yet
+	EXPECT_EQ(CheckFileExists(screenshotFilename0, oldModTime), false);
+
+	SE_StepDT(0.1f);  // Step once to create another image
+	SE_FetchImage(&image);
+	SE_WritePPM("offscreen1.ppm", image.width, image.height, image.data, image.pixelSize, image.pixelFormat, true);
+
+	EXPECT_EQ(image.width, 800);
+	EXPECT_EQ(image.height, 400);
+	EXPECT_EQ(image.pixelSize, 3);
+
+	// Check pixel
+	EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 2], 66, max_pixel_deviation);  // R
+	EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 1], 81, max_pixel_deviation);  // G
+	EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 0], 42, max_pixel_deviation);  // B
+
+	SE_StepDT(0.1f);  // And another one
+
+	SE_FetchImage(&image);
+	SE_WritePPM("offscreen2.ppm", image.width, image.height, image.data, image.pixelSize, image.pixelFormat, true);
+	EXPECT_EQ(image.width, 800);
+	EXPECT_EQ(image.height, 400);
+	EXPECT_EQ(image.pixelSize, 3);
+
+	// Check pixel
+	EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 2], 76, max_pixel_deviation);  // R
+	EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 1], 94, max_pixel_deviation);  // G
+	EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 0], 44, max_pixel_deviation);  // B
+
+	// Verify that we can't fetch images when feature disabled
+	EXPECT_EQ(SE_SaveImagesToRAM(false), 0);
+	SE_StepDT(0.1f);
+	EXPECT_EQ(SE_FetchImage(&image), -1);
+
+	// Now test screenshot functionality, starting with creating just two images
+	EXPECT_EQ(SE_SaveImagesToFile(2), 0);
+
+	// Check timestamp again of any old screenshot0
+	EXPECT_EQ(CheckFileExists(screenshotFilename0, oldModTime), false);
+
+	// Run a few steps to create the screenshot images
+	for (int i=0; i<3; i++) SE_StepDT(0.1f);
+	SE_sleep(100);  // Allow for last image to be created (running in a separate thread)
+
+	EXPECT_EQ(CheckFileExists(screenshotFilename0, oldModTime), true);
+	ASSERT_EQ(stat(screenshotFilename0.c_str(), &fileStatus), 0);
+	oldModTime = fileStatus.st_mtime;  // use timestamp of first image as base for following comparisons
+	EXPECT_EQ(CheckFileExists(screenshotFilename1, oldModTime - 1), true);  // -1 since timestamps could be equal
+	// Make sure no screenshot2 has been created
+	EXPECT_EQ(CheckFileExists(screenshotFilename2, oldModTime - 1), false);
+
+	// Now test continuous snapshot functionality
+	EXPECT_EQ(SE_SaveImagesToFile(-1), 0);
+
+	for (int i = 0; i < 3; i++) SE_StepDT(0.1f);  // step to create three additional screenshots
+	SE_sleep(100);  // Allow for last image to be created (running in a separate thread)
+	EXPECT_EQ(CheckFileExists(screenshotFilename2, oldModTime - 1), true);
+	EXPECT_EQ(CheckFileExists(screenshotFilename3, oldModTime - 1), true);
+	EXPECT_EQ(CheckFileExists(screenshotFilename4, oldModTime - 1), true);
+	// Make sure no screenshot5 has been created
+	EXPECT_EQ(CheckFileExists(screenshotFilename5, oldModTime - 1), false);
+
+	SE_Close();
+}
+
+
+static void paramDeclCallbackSetRoute(void* args)
+{
+	double(*positions)[8] = static_cast<double(*)[8]>(args);
+	static int counter = 0;
+
+	SE_SetParameterInt("StartRoadId", (int)positions[counter][0]);
+	SE_SetParameterInt("StartLaneId", (int)positions[counter][1]);
+	SE_SetParameterDouble("StartRoadS", positions[counter][2]);
+	SE_SetParameterDouble("StartH", positions[counter][3]);
+	SE_SetParameterInt("EndRoadId", (int)positions[counter][4]);
+	SE_SetParameterInt("EndLaneId", (int)positions[counter][5]);
+	SE_SetParameterDouble("EndRoadS", positions[counter][6]);
+	SE_SetParameterDouble("EndH", positions[counter][7]);
+
+	counter++;
+}
+
+TEST(DirectJunctionTest, TestVariousRoutes)
+{
+	// This test case will run the same scenario multiple times
+	// each with a new route involving the direct junction
+	// if the route can't be resolved esmini and test will fail
+	// Additionally expected end positions are verified
+
+	static double positions[][8] = {
+		{1, -2, 50, 0.0, 5, -2, 50, 0.0},  // Start at road 1 lane -2, end at road 5 lane -2
+		{1, -3, 50, 0.0, 3, -1, 50, 0.0},  // Start at road 1 lane -3, end at road 3 lane -1
+		{5, -1, 40, M_PI, 1, -1, 10, M_PI},  // Start at road 1 lane -2, end at road 5 lane -2
+		{3, -1, 50, M_PI, 1, -3, 10, M_PI},  // Start at road 1 lane -3, end at road 3 lane -1
+	};
+
+	double end_pos[][2] = {
+		{250.000, -4.605},
+		{196.793, -23.858},
+		{0.000, -1.535},
+		{0.000, -7.675}
+	};
+
+	SE_ScenarioObjectState state;
+
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/direct_junction.xosc";
+
+	SE_RegisterParameterDeclarationCallback(paramDeclCallbackSetRoute, &positions);
+	SE_AddPath("../../../resources/models");
+
+	for (int i = 0; i < (int)(sizeof(positions) / sizeof(double[8])); i++)
+	{
+		ASSERT_EQ(SE_Init(scenario_file.c_str(), 1, 0, 0, 0), 0);
+		ASSERT_EQ(SE_GetNumberOfObjects(), 1);
+
+		while (SE_GetQuitFlag() != 1)
+		{
+			SE_StepDT(0.1f);
+		}
+
+		// Check position of second vehicle
+		SE_GetObjectState(0, &state);
+		EXPECT_NEAR(state.x, end_pos[i][0], 1e-3);
+		EXPECT_NEAR(state.y, end_pos[i][1], 1e-3);
+
+		SE_Close();
+	}
+}
+
 int main(int argc, char **argv)
 {
 	testing::InitGoogleTest(&argc, argv);
 
+#if 0  // set to 1 and modify filter to run one single test
+	testing::GTEST_FLAG(filter) = "*lane_no_obj*";
+#else
 	SE_LogToConsole(false);
+#endif
 
 	return RUN_ALL_TESTS();
 }

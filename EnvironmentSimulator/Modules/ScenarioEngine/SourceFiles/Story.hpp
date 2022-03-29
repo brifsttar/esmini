@@ -55,6 +55,10 @@ namespace scenarioengine
 			return false;
 		}
 
+		bool AreAllManeuversComplete();
+
+		void UpdateState();
+
 		std::vector<Actor*> actor_;
 		std::vector<OSCManeuver*> maneuver_;
 
@@ -70,6 +74,8 @@ namespace scenarioengine
 		Trigger *stop_trigger_;
 
 		Act() : start_trigger_(0), stop_trigger_(0), StoryBoardElement(StoryBoardElement::ElementType::ACT) {}
+
+		void UpdateState();
 	};
 
 	class Story
@@ -79,6 +85,7 @@ namespace scenarioengine
 
 		OSCParameterDeclarations parameter_declarations_;
 		Act* FindActByName(std::string name);
+		ManeuverGroup* FindManeuverGroupByName(std::string name);
 		Event* FindEventByName(std::string name);
 		OSCAction* FindActionByName(std::string name);
 		void Print();
@@ -92,6 +99,7 @@ namespace scenarioengine
 	public:
 		StoryBoard() : stop_trigger_(0) {}
 		Act* FindActByName(std::string name);
+		ManeuverGroup* FindManeuverGroupByName(std::string name);
 		Event* FindEventByName(std::string name);
 		OSCAction* FindActionByName(std::string name);
 		Entities* entities_;

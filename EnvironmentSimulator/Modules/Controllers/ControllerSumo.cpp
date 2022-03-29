@@ -127,7 +127,7 @@ void ControllerSumo::Step(double timeStep)
 				vehicle->controller_ = this;
 				vehicle->model3d_ = template_vehicle_->model3d_;
 				vehicle->scaleMode_ = EntityScaleMode::BB_TO_MODEL;
-				entities_->addObject(vehicle);
+				entities_->addObject(vehicle, true);
 			}
 		}
 	}
@@ -141,8 +141,8 @@ void ControllerSumo::Step(double timeStep)
 			{
 				if (arrivelist[i] == entities_->object_[j]->name_) {
 					LOG("Removing vehicle: %s", arrivelist[i].c_str());
-					entities_->removeObject(arrivelist[i]);
 					gateway_->removeObject(arrivelist[i]);
+					entities_->removeObject(arrivelist[i]);
 				}
 			}
 		}
@@ -165,7 +165,7 @@ void ControllerSumo::Step(double timeStep)
 
 			// Report updated state to the gateway
 			gateway_->reportObject(obj->id_, obj->name_, static_cast<int>(obj->type_), obj->category_, obj->model_id_,
-				obj->GetActivatedControllerType(), obj->boundingbox_, static_cast<int>(obj->scaleMode_), time_,
+				obj->GetActivatedControllerType(), obj->boundingbox_, static_cast<int>(obj->scaleMode_), 0xff, time_,
 				obj->speed_, obj->wheel_angle_, obj->wheel_rot_, &obj->pos_);
 		}
 		else if (!entities_->object_[i]->IsGhost())

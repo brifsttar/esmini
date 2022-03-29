@@ -14,8 +14,13 @@
 
 using namespace scenarioengine;
 
-OSCPositionWorld::OSCPositionWorld(double x, double y, double z, double h, double p, double r) : OSCPosition(PositionType::WORLD)
+OSCPositionWorld::OSCPositionWorld(double x, double y, double z, double h, double p, double r, OSCPosition* base_on_pos) : OSCPosition(PositionType::WORLD)
 {
+	if (base_on_pos != nullptr)
+	{
+		this->position_ = *base_on_pos->GetRMPos();
+	}
+
 	if (!std::isnan(z) || !std::isnan(p) || !std::isnan(r))
 	{
 		if (std::isnan(z) || std::isnan(p) || std::isnan(r))
@@ -88,14 +93,18 @@ OSCPositionRoad::OSCPositionRoad(int roadId, double s, double t, OSCOrientation 
 
 	if (orientation.type_ == roadmanager::Position::OrientationType::ORIENTATION_RELATIVE)
 	{
-		// Adjust heading to road direction
-		if (position_.GetLaneId() < 0 || position_.GetRoadById(roadId)->GetRule() == roadmanager::Road::RoadRule::LEFT_HAND_TRAFFIC)
+		// Adjust heading to road direction also considering traffic rule (left/right hand traffic)
+		if (position_.GetDrivingDirectionRelativeRoad() < 0)
 		{
-			position_.SetHeadingRelative(orientation.h_);
+			position_.SetHeadingRelative(GetAngleSum(M_PI, orientation.h_));
+			position_.SetPitchRelative(-orientation.p_);
+			position_.SetRollRelative(-orientation.r_);
 		}
 		else
 		{
-			position_.SetHeadingRelative(GetAngleSum(M_PI, orientation.h_));
+			position_.SetHeadingRelative(orientation.h_);
+			position_.SetPitchRelative(orientation.p_);
+			position_.SetRollRelative(orientation.r_);
 		}
 	}
 	else if (orientation.type_ == roadmanager::Position::OrientationType::ORIENTATION_ABSOLUTE)
@@ -126,7 +135,6 @@ OSCPositionRelativeObject::OSCPositionRelativeObject(Object *object, double dx, 
 
 void OSCPositionRelativeObject::Print()
 {
-	LOG("");
 	object_->pos_.Print();
 }
 
@@ -147,7 +155,6 @@ OSCPositionRelativeWorld::OSCPositionRelativeWorld(Object* object, double dx, do
 
 void OSCPositionRelativeWorld::Print()
 {
-	LOG("");
 	object_->pos_.Print();
 }
 
@@ -175,7 +182,6 @@ OSCPositionRelativeLane::OSCPositionRelativeLane(Object *object, int dLane, doub
 
 void OSCPositionRelativeLane::Print()
 {
-	LOG("");
 	object_->pos_.Print();
 }
 
@@ -202,7 +208,6 @@ OSCPositionRelativeRoad::OSCPositionRelativeRoad(Object* object, double ds, doub
 
 void OSCPositionRelativeRoad::Print()
 {
-	LOG("");
 	object_->pos_.Print();
 }
 
@@ -214,7 +219,20 @@ OSCPositionRoute::OSCPositionRoute(roadmanager::Route *route, double s, int lane
 void OSCPositionRoute::SetRouteRefLaneCoord(roadmanager::Route *route, double pathS, int laneId, double laneOffset, OSCOrientation *orientation)
 {
 	position_.SetRouteLanePosition(route, pathS, laneId, laneOffset);
-	position_.SetHeading(orientation->h_);
+
+	// Adjust heading to road direction also considering traffic rule (left/right hand traffic)
+	if (position_.GetDrivingDirectionRelativeRoad() < 0)
+	{
+		position_.SetHeadingRelative(GetAngleSum(M_PI, orientation->h_));
+		position_.SetPitchRelative(-orientation->p_);
+		position_.SetRollRelative(-orientation->r_);
+	}
+	else
+	{
+		position_.SetHeadingRelative(orientation->h_);
+		position_.SetPitchRelative(orientation->p_);
+		position_.SetRollRelative(orientation->r_);
+	}
 }
 
 void OSCPositionRoute::SetRouteRefLaneCoord(roadmanager::Route *route, double pathS, int laneId, double laneOffset)

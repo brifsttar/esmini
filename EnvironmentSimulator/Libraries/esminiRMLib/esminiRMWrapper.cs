@@ -45,15 +45,15 @@ namespace OpenDRIVE
     [StructLayout(LayoutKind.Sequential)]
     public struct PositionXYZ
     {
-        [MarshalAsAttribute(UnmanagedType.ByValArray, SizeConst = 3)]
-        public float[] pos;
+        public float x;
+        public float y;
+        public float z;
     };
 
     [StructLayout(LayoutKind.Sequential)]
     public struct RoadLaneInfo
     {
-        [MarshalAsAttribute(UnmanagedType.ByValArray, SizeConst = 3)]
-        public float[] pos;            // position, in global coordinate system
+        public PositionXYZ pos;        // position, in global coordinate system
         public float heading;          // road heading
         public float pitch;            // road pitch
         public float roll;			   // road roll
@@ -70,10 +70,9 @@ namespace OpenDRIVE
 
     public struct RoadProbeInfo
     {
-        public RoadLaneInfo laneInfo;   // Road info at probe location
-        [MarshalAsAttribute(UnmanagedType.ByValArray, SizeConst = 3)]
-        public float[] relativePos;       // probe position, relative vehicle (pivot position object) coordinate system
-        public float relativeHeading;   // heading angle to steering target from and relatove to vehicle (pivot position)
+        public RoadLaneInfo laneInfo;    // Road info at probe location
+        public PositionXYZ relativePos;  // probe position, relative vehicle (pivot position object) coordinate system
+        public float relativeHeading;    // heading angle to steering target from and relatove to vehicle (pivot position)
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -103,8 +102,33 @@ namespace OpenDRIVE
         public float width;       // width as sepcified in OpenDRIVE
     };
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct GeoReference
+    {
+        // doc reference: https://proj.org/usage/projections.html
+        public float a;         // Semimajor radius of the ellipsoid axis
+        public float axis;      // Axis orientation
+        public float b;         // Semiminor radius of the ellipsoid axis
+        public IntPtr ellps;    // Ellipsoid name
+        public float k;         // Scaling factor (deprecated)
+        public float k_0;       // Scaling factor
+        public float lat_0;     // Latitude of origin
+        public float lon_0;     // Central meridian
+        public float lon_wrap;  // Center longitude to use for wrapping
+        public float over;      // Allow longitude output outside -180 to 180 range, disables wrapping (see below)
+        public IntPtr pm;       // Alternate prime meridian (typically a city name, see below)
+        public IntPtr proj;     // Projection name
+        public IntPtr units;    // meters, US survey feet, etc.
+        public IntPtr vunits;   // vertical units.
+        public float x_0;       // False easting
+        public float y_0;       // False northing
 
-    enum JunctionStrategy { Random, Straight };  // must correlate to RoadManager::Junction::JunctionStrategyType
+        public IntPtr datum;
+        public IntPtr geo_id_grids;
+        public float zone;
+        public int towgs84;
+
+    }
 
 
     public static class RoadManagerLibraryCS
@@ -213,6 +237,14 @@ namespace OpenDRIVE
         [DllImport(LIB_NAME, EntryPoint = "RM_GetNumberOfRoads")]
         public static extern int GetNumberOfRoads();
 
+        /// <summaryGet the unit of specified speed</summary>
+        /// All roads will be looped in search for such an element. First found will be used.
+        /// If speed is specified withouth the optional unit, SI unit m/s is assumed.
+        /// If no speed entries is found, undefined will be returned.
+        /// <returns>-1=Error, 0=Undefined, 1=km/h 2=m/s, 3=mph</returns>
+        [DllImport(LIB_NAME, EntryPoint = "RM_GetSpeedUnit")]
+        public static extern int GetSpeedUnit();
+
         /// <summary>
         /// Get the road ID, as specified in the OpenDRIVE description, of the road with specified index. E.g. if there are 4 roads, index 3 means the last one.
         /// </summary>
@@ -237,6 +269,23 @@ namespace OpenDRIVE
         /// <returns>The number of drivable lanes, -1 indicates error e.g. no roadnetwork loaded</returns>
         [DllImport(LIB_NAME, EntryPoint = "RM_GetRoadNumberOfLanes")]
         public static extern int GetRoadNumberOfLanes(int roadId, float s);
+
+        /// <summary>
+        /// Get the number of roads overlapping the given position
+        /// </summary>
+        /// <param name="handle">Handle to the position object</param>
+        /// <returns>Number of roads overlapping the given position</returns>
+        [DllImport(LIB_NAME, EntryPoint = "RM_GetNumberOfRoadsOverlapping")]
+        public static extern int GetNumberOfRoadsOverlapping(int handle);
+
+        /// <summary>
+        /// Get the id of an overlapping road according to given position and index
+        /// </summary>
+        /// <param name="handle">Handle to the position object</param>
+        /// <param name="index">Index of the total returned by GetNumberOfRoadsOverlapping()</param>
+        /// <returns>Id of specified overlapping road</returns>
+        [DllImport(LIB_NAME, EntryPoint = "RM_GetOverlappingRoadId")]
+        public static extern int GetOverlappingRoadId(int handle, int index);
 
         /// <summary>
         /// Get the OpenDRIVE ID of the lane given by index
@@ -309,14 +358,14 @@ namespace OpenDRIVE
         public static extern int SetWorldXYZHPosition(int index, float x, float y, float z, float h);
 
         /// <summary>
-        /// Move position forward along the road. Choose way randomly though any junctions.
+        /// Move position forward along the road network
         /// </summary>
         /// <param name="index">Handle to the position object</param>
         /// <param name="dist">Distance (in meter) to move</param>
-        /// <param name="strategy">How to move in a junction where multiple route options appear, use enum JunctionStrategy</param>
-        /// <returns>0 if successful, -1 if not</returns>
+        /// <param name="junctionSelectorAngle">Desired direction [0:2pi] from incoming road direction (angle = 0), set -1 to randomize</param>
+        /// <returns>@return >= 0 if successful, < 0 on error. For all codes see esmini roadmanager::Position::enum class ReturnCode</returns>
         [DllImport(LIB_NAME, EntryPoint = "RM_PositionMoveForward")]
-        public static extern int PositionMoveForward(int index, float dist, int strategy);
+        public static extern int PositionMoveForward(int index, float dist, float junctionSelectorAngle);
 
         /// <summary>
         /// Get the fields of the position of specified index
@@ -360,6 +409,35 @@ namespace OpenDRIVE
         public static extern int GetProbeInfo(int index, float lookahead_distance, ref RoadProbeInfo data, int lookAheadMode, bool inRoadDrivingDirection);
 
         /// <summary>
+        /// Get width of lane with specified lane id, at current longitudinal position
+        /// </summary>
+        /// <param name="handle">Handle to the position object from which to measure</param>
+        /// <param name="lane_id">Id of the lane to measure</param>
+        /// <returns>Lane width or 0.0 if lane does not exists or any other error</returns>
+        [DllImport(LIB_NAME, EntryPoint = "RM_GetLaneWidth")]
+        public static extern float GetLaneWidth(int handle, int lane_id);
+
+        /// <summary>
+        /// Get width of lane with specified lane id, at specified road and longitudinal position
+        /// </summary>
+        /// <param name="handle">Handle to the position object from which to measure</param>
+        /// <param name="road_id">Id of the road</param>
+        /// <param name="lane_id">Id of the lane to measure</param>
+        /// <param name="s">Longitudinal position along the road</param>
+        /// <returns>Lane width or 0.0 if lane does not exists or any other error</returns>
+        [DllImport(LIB_NAME, EntryPoint = "RM_GetLaneWidthByRoadId")]
+        public static extern float GetLaneWidthByRoadId(int road_id, int lane_id, float s);
+
+        /// <summary>
+        /// Get type of lane with specified lane id, at current longitudinal position
+        /// </summary>
+        /// <param name="handle">Handle to the position object from which to measure</param>
+        /// <param name="lane_id">Id of the lane</param>
+        /// <returns>Lane type or 0 if lane does not exists or any other error</returns>
+        [DllImport(LIB_NAME, EntryPoint = "RM_GetLaneType")]
+        public static extern int GetLaneType(int handle, int lane_id);
+
+        /// <summary>
         /// Find out the difference between two position objects, i.e. delta distance (long and lat) and delta laneId
         /// </summary>
         /// <param name="handleA">Handle to the position object from which to measure</param>
@@ -387,7 +465,14 @@ namespace OpenDRIVE
         [DllImport(LIB_NAME, EntryPoint = "RM_GetRoadSign")]
         public static extern int GetRoadSign(int road_id, int index, ref RoadSign road_sign);
 
-    }
+        /// <summary>
+        /// Get georeference for opendrive file
+        /// </summary>
+        /// <param name="geo_reference">Pointer/reference to a RoadSign struct to be filled in</param>
+        /// <returns>0 if successful, -1 if not</returns>
+        [DllImport(LIB_NAME, EntryPoint = "RM_GetOpenDriveGeoReference")]
+        public static extern int GetOpenDriveGeoReference(ref GeoReference geo_reference);
 
+    }
 
 }

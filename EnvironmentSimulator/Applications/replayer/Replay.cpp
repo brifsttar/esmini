@@ -13,6 +13,7 @@
 #include "Replay.hpp"
 #include "ScenarioGateway.hpp"
 #include "CommonMini.hpp"
+#include "dirent.h"
 
 using namespace scenarioengine;
 
@@ -36,11 +37,17 @@ Replay::Replay(std::string filename) : time_(0.0), index_(0), repeat_(false)
 			filename.c_str(), header_.version, DAT_FILE_FORMAT_VERSION);
 	}
 
+	if (header_.version != DAT_FILE_FORMAT_VERSION)
+	{
+		LOG_AND_QUIT("Version mismatch. %s is version %d while supported version is %d. Please re-create dat file.",
+			filename.c_str(), header_.version, DAT_FILE_FORMAT_VERSION);
+	}
+
 	while (!file_.eof())
 	{
-		ObjectStateStructDat data;
+		ReplayEntry data;
 
-		file_.read((char*)&data, sizeof(data));
+		file_.read((char*)&data.state, sizeof(data.state));
 
 		if (!file_.eof())
 		{
@@ -48,27 +55,154 @@ Replay::Replay(std::string filename) : time_(0.0), index_(0), repeat_(false)
 		}
 	}
 
-	// Ensure increasing timestamps. Remove any other entries.
-	for (int i = 0; i < data_.size() - 1; i++)
-	{
-		if (data_[i + 1].info.timeStamp < data_[i].info.timeStamp)
-		{
-			data_.erase(data_.begin() + i + 1);
-			i--;   // compensate for removed entry
-		}
-	}
+	CleanEntries(data_);
 
 	if (data_.size() > 0)
 	{
 		// Register first entry timestamp as starting time
-		time_ = data_[0].info.timeStamp;
+		time_ = data_[0].state.info.timeStamp;
 		startTime_ = time_;
 		startIndex_ = 0;
 
 		// Register last entry timestamp as stop time
-		stopTime_ = data_[data_.size() - 1].info.timeStamp;
+		stopTime_ = data_.back().state.info.timeStamp;
 		stopIndex_ = FindIndexAtTimestamp(stopTime_);
 	}
+}
+
+Replay::Replay(const std::string directory, const std::string scenario) : time_(0.0), index_(0), repeat_(false)
+{
+	GetReplaysFromDirectory(directory, scenario);
+	std::vector<std::pair<std::string, std::vector<ReplayEntry>>> scenarioData;
+
+	for (size_t i = 0; i < scenarios_.size(); i++)
+	{
+		file_.open(scenarios_[i], std::ofstream::binary);
+		if (file_.fail())
+		{
+			LOG("Cannot open file: %s", scenarios_[i].c_str());
+			throw std::invalid_argument(std::string("Cannot open file: ") + scenarios_[i]);
+		}
+		file_.read((char*)&header_, sizeof(header_));
+		LOG("Recording %s opened. dat version: %d odr: %s model: %s", FileNameOf(scenarios_[i]).c_str(), header_.version,
+			FileNameOf(header_.odr_filename).c_str(), FileNameOf(header_.model_filename).c_str());
+
+		if (header_.version != DAT_FILE_FORMAT_VERSION)
+		{
+			LOG_AND_QUIT("Version mismatch. %s is version %d while supported version is %d. Please re-create dat file.",
+				scenarios_[i].c_str(), header_.version, DAT_FILE_FORMAT_VERSION);
+		}
+		while (!file_.eof())
+		{
+			ReplayEntry entry;
+
+			file_.read((char*)&entry.state, sizeof(entry.state));
+
+			if (!file_.eof())
+			{
+				data_.push_back(entry);
+			}
+		}
+		// pair <scenario name, scenario data>
+		scenarioData.push_back(std::make_pair(scenarios_[i], data_));
+		data_ = {};
+		file_.close();
+	}
+
+	if (scenarioData.size() < 2)
+	{
+		LOG_AND_QUIT("Too few scenarios loaded, use single replay feature instead\n");
+	}
+
+	// Longest scenario first
+	std::sort(scenarioData.begin(), scenarioData.end(), [](const auto& sce1, const auto& sce2)
+	{
+		return sce1.second.size() > sce2.second.size();
+	});
+
+	// Log which scenario belongs to what ID-group (0, 100, 200 etc.)
+	for (size_t i = 0; i < scenarioData.size(); i++)
+	{
+		std::string scenario_tmp = (scenarioData.begin()+i)->first;
+		LOG("Scenarios corresponding to IDs (%d:%d): %s", i * 100, (i+1) * 100 - 1, FileNameOf(scenario_tmp.c_str()).c_str());
+	}
+
+
+	// Ensure increasing timestamps. Remove any other entries.
+	for (auto& sce : scenarioData)
+	{
+		CleanEntries(sce.second);
+	}
+
+	// Build remaining data in order.
+	BuildData(scenarioData);
+
+	if (data_.size() > 0)
+	{
+		// Register first entry timestamp as starting time
+		time_ = data_[0].state.info.timeStamp;
+		startTime_ = time_;
+		startIndex_ = 0;
+
+		// Register last entry timestamp as stop time
+		stopTime_ = data_.back().state.info.timeStamp;
+		stopIndex_ = FindIndexAtTimestamp(stopTime_);
+	}
+}
+
+// Browse through replay-folder and appends strings of absolute path to matching scenario
+void Replay::GetReplaysFromDirectory(const std::string dir, const std::string sce)
+{
+	DIR* directory = opendir(dir.c_str());
+
+	// If no directory found, write error
+	if (directory == nullptr)
+	{
+		LOG_AND_QUIT("No valid directory given, couldn't open %s", dir.c_str());
+	}
+
+	// While directory is open, check the filename
+	struct dirent* file;
+	while ((file = readdir(directory)) != nullptr)
+	{
+		std::string filename = file->d_name;
+		if (file->d_type == DT_DIR && filename.find(sce) != std::string::npos)
+		{
+			DIR* nested_dir = opendir((dir + filename).c_str());
+			if (nested_dir == nullptr)
+			{
+				LOG("Couldn't open nested directory %s", (dir+filename).c_str());
+			}
+
+			struct dirent* nested_file;
+			while ((nested_file = readdir(nested_dir)) != nullptr)
+			{
+				std::string nested_filename = nested_file->d_name;
+
+				if (nested_filename != "." && nested_filename != ".." && nested_filename.find(sce) != std::string::npos && nested_filename.find(".dat") != std::string::npos)
+				{
+					scenarios_.emplace_back(CombineDirectoryPathAndFilepath(dir+filename, nested_filename));
+				}
+			}
+			closedir(nested_dir);
+		}
+
+		if (filename != "." && filename != ".." && filename.find(sce) != std::string::npos && filename.find(".dat") != std::string::npos)
+		{
+			scenarios_.emplace_back(CombineDirectoryPathAndFilepath(dir, filename));
+		}
+	}
+	closedir(directory);
+
+	if (scenarios_.empty())
+	{
+		LOG_AND_QUIT("Couldn't read any scenarios named %s in path %s",sce.c_str(), dir.c_str());
+	}
+}
+
+size_t Replay::GetNumberOfScenarios()
+{
+	return scenarios_.size();
 }
 
 Replay::~Replay()
@@ -96,36 +230,84 @@ void Replay::GoToEnd()
 	}
 }
 
-void Replay::GoToTime(double timestamp)
+void Replay::GoToTime(double time, bool stop_at_next_frame)
 {
-	if (timestamp > stopTime_)
+	if (!stop_at_next_frame)
 	{
-		GoToEnd();
-	}
-	else if (timestamp < GetStartTime())
-	{
-		GoToStart();
+		if (time > stopTime_)
+		{
+			GoToEnd();
+		}
+		else if (time < GetStartTime())
+		{
+			GoToStart();
+		}
+		else
+		{
+			index_ = FindIndexAtTimestamp(time, index_);
+			time_ = time;
+		}
 	}
 	else
 	{
-		index_ = FindIndexAtTimestamp(timestamp, index_);
-		time_ = timestamp;
+		int next_index = index_;
+
+		if (time > time_)
+		{
+			next_index = FindNextTimestamp();
+			if (next_index > (int)index_ && time > data_[next_index].state.info.timeStamp)
+			{
+				index_ = next_index;
+				time_ = data_[index_].state.info.timeStamp;
+			}
+			else
+			{
+				if (time > GetStopTime())
+				{
+					GoToEnd();
+				}
+				else
+				{
+					time_ = time;
+				}
+			}
+		}
+		else if (time < time_)
+		{
+			next_index = FindPreviousTimestamp();
+			if (next_index < (int)index_ && time < data_[next_index].state.info.timeStamp)
+			{
+				index_ = next_index;
+				time_ = data_[index_].state.info.timeStamp;
+			}
+			else
+			{
+				if (time < GetStartTime())
+				{
+					GoToStart();
+				}
+				else
+				{
+					time_ = time;
+				}
+			}
+		}
 	}
 }
 
-void Replay::GoToDeltaTime(double dt)
+void Replay::GoToDeltaTime(double dt, bool stop_at_next_frame)
 {
-	GoToTime(time_ + dt);
+	GoToTime(time_ + dt, stop_at_next_frame);
 }
 
 void Replay::GoToNextFrame()
 {
-	double ctime = data_[index_].info.timeStamp;
+	double ctime = data_[index_].state.info.timeStamp;
 	for (size_t i = index_+1; i < data_.size(); i++)
 	{
-		if (data_[i].info.timeStamp > ctime)
+		if (data_[i].state.info.timeStamp > ctime)
 		{
-			GoToTime(data_[i].info.timeStamp);
+			GoToTime(data_[i].state.info.timeStamp);
 			break;
 		}
 	}
@@ -135,13 +317,23 @@ void Replay::GoToPreviousFrame()
 {
 	if (index_ > 0)
 	{
-		GoToTime(data_[index_ -1].info.timeStamp);
+		GoToTime(data_[index_ -1].state.info.timeStamp);
 	}
 }
 
 int Replay::FindIndexAtTimestamp(double timestamp, int startSearchIndex)
 {
-	size_t i = 0;
+	int i = 0;
+
+	if (timestamp > stopTime_)
+	{
+		GoToEnd();
+		return index_;
+	}
+	else if (timestamp < GetStartTime())
+	{
+		return index_;
+	}
 
 	if (timestamp < time_)
 	{
@@ -149,25 +341,80 @@ int Replay::FindIndexAtTimestamp(double timestamp, int startSearchIndex)
 		startSearchIndex = 0;
 	}
 
-	for (i = startSearchIndex; i < data_.size(); i++)
+	for (i = startSearchIndex; i < (int)data_.size(); i++)
 	{
-		if (data_[i].info.timeStamp >= timestamp)
+		if (data_[i].state.info.timeStamp >= timestamp)
 		{
 			break;
 		}
 	}
 
-	return (int)(MIN(i, data_.size()-1));
+	return MIN(i, (int)data_.size() - 1);
 }
 
-ObjectStateStructDat* Replay::GetState(int id)
+int Replay::FindNextTimestamp(bool wrap)
+{
+	int index = index_ + 1;
+	for (; index < data_.size(); index++)
+	{
+		if (data_[index].state.info.timeStamp > data_[index_].state.info.timeStamp)
+		{
+			break;
+		}
+	}
+
+	if (index >= data_.size())
+	{
+		if (wrap)
+		{
+			return 0;
+		}
+		else
+		{
+			return index_;  // stay on current index
+		}
+	}
+
+	return index;
+}
+
+int Replay::FindPreviousTimestamp(bool wrap)
+{
+	int index = index_ - 1;
+
+	if (index < 0)
+	{
+		if (wrap)
+		{
+			index = (int)(data_.size() - 1);
+		}
+		else
+		{
+			return 0;
+		}
+	}
+
+	for (int i = index - 1; i >= 0; i--)
+	{
+		// go backwards until we identify the first entry with same timestamp
+		if (data_[i].state.info.timeStamp < data_[index].state.info.timeStamp)
+		{
+			break;
+		}
+		index = i;
+	}
+
+	return index;
+}
+
+ReplayEntry* Replay::GetEntry(int id)
 {
 	// Read all vehicles at current timestamp
-	float timestamp = data_[index_].info.timeStamp;
+	float timestamp = data_[index_].state.info.timeStamp;
 	int i = 0;
-	while (index_ + i < data_.size() && !(data_[index_ + i].info.timeStamp > timestamp))
+	while (index_ + i < data_.size() && !(data_[index_ + i].state.info.timeStamp > timestamp))
 	{
-		if (data_[index_ + i].info.id == id)
+		if (data_[index_ + i].state.info.id == id)
 		{
 			return &data_[index_ + i];
 		}
@@ -175,6 +422,19 @@ ObjectStateStructDat* Replay::GetState(int id)
 	}
 
 	return nullptr;
+}
+
+ObjectStateStructDat* Replay::GetState(int id)
+{
+	ReplayEntry* entry = GetEntry(id);
+	if (entry != nullptr)
+	{
+		return &entry->state;
+	}
+	else
+	{
+		return nullptr;
+	}
 }
 
 void Replay::SetStartTime(double time)
@@ -197,4 +457,61 @@ void Replay::SetStopTime(double time)
 	}
 
 	stopIndex_ = FindIndexAtTimestamp(stopTime_);
+}
+
+void Replay::CleanEntries(std::vector<ReplayEntry>& entries)
+{
+	for (size_t i = 0; i < entries.size() - 1; i++)
+	{
+		if (entries[i + 1].state.info.timeStamp < entries[i].state.info.timeStamp)
+		{
+			entries.erase(entries.begin() + i + 1);
+			i--;
+		}
+
+		for (int j = 1; (i + j < entries.size()) && NEAR_NUMBERS(entries[i + j].state.info.timeStamp, entries[i].state.info.timeStamp); j++)
+		{
+			// Keep the latest instance of entries with same timestamp
+			if (entries[i + j].state.info.id == entries[i].state.info.id)
+			{
+				entries.erase(entries.begin() + i);
+				i--;
+				break;
+			}
+		}
+	}
+}
+
+void Replay::BuildData(std::vector<std::pair<std::string, std::vector<ReplayEntry>>>& scenarios)
+{
+	// Keep track of current index of each scenario
+	std::vector<int> cur_idx;
+	for (size_t j = 0; j < scenarios.size(); j++)
+	{
+		cur_idx.push_back(0);
+	}
+
+	// Populate data_ based on first (longest) scenario
+	for (size_t i = 0; i < scenarios[0].second.size() - 1; i++)
+	{
+		// push entry from pivot scenario
+		data_.push_back(scenarios[0].second[i]);
+
+		// populate entries from other scenarios within the same time frame
+		for (size_t j = 1; j < scenarios.size(); j++)
+		{
+			// pick entries until timestamp reach next frame
+			while(cur_idx[j] < scenarios[j].second.size() && scenarios[j].second[cur_idx[j]].state.info.timeStamp < scenarios[0].second[i + 1].state.info.timeStamp)
+			{
+				// Set scenario ID-group (0, 100, 200 etc.)
+				scenarios[j].second[cur_idx[j]].state.info.id += static_cast<int>(j) * 100;
+
+				// push entry
+				data_.push_back(scenarios[j].second[cur_idx[j]]);
+
+				// Fast forward j:th scenario passed current time frame
+				cur_idx[j]++;
+			}
+		}
+	}
 }

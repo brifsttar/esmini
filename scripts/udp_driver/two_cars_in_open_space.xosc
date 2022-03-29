@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- This scenario contains two vehicles on a large open space.         -->
-<!-- They both have UDPDriverModel controllers attached. The purpose is -->
+<!-- They both have UDPDriver controllers attached. The purpose is      -->
 <!-- to show how and that the controller works with multiple entities.  -->
 <!-- See scripts/udp-driver-model/testUDPDriverModel.py how to run.     -->
 
@@ -8,7 +8,7 @@
    <FileHeader revMajor="1"
                revMinor="0"
                date="2021-10-22T10:00:00"
-               description="Two cars controlled by UDPDriverModel"
+               description="Two cars controlled by UDPDriver"
                author="esmini-team"/>
    <ParameterDeclarations />
    <CatalogLocations>
@@ -40,6 +40,7 @@
               <CatalogReference catalogName="ControllerCatalog" entryName="UDPDriverController" >
                  <ParameterAssignments>
                      <ParameterAssignment parameterRef="Port" value="0" />
+                     <ParameterAssignment parameterRef="BasePort" value="53995" />
                      <ParameterAssignment parameterRef="ExecMode" value="asynchronous" />
                  </ParameterAssignments>
               </CatalogReference>

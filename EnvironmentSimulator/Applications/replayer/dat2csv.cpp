@@ -57,7 +57,7 @@ int main(int argc, char** argv)
 	}
 
 	// First output header and CSV labels
-	snprintf(line, MAX_LINE_LEN, "OpenDRIVE: %s, 3DModel: %s\n", player->header_.odr_filename, player->header_.model_filename);
+	snprintf(line, MAX_LINE_LEN, "Version: %d, OpenDRIVE: %s, 3DModel: %s\n", player->header_.version, player->header_.odr_filename, player->header_.model_filename);
 	file << line;
 	snprintf(line, MAX_LINE_LEN, "time, id, name, x, y, z, h, p, r, speed, wheel_angle, wheel_rot\n");
 	file << line;
@@ -65,7 +65,7 @@ int main(int argc, char** argv)
 	// Then output all entries with comma separated values
 	for (size_t i = 0; i < player->data_.size(); i++)
 	{
-		ObjectStateStructDat *state = &player->data_[i];
+		ObjectStateStructDat *state = &player->data_[i].state;
 
 		snprintf(line, MAX_LINE_LEN, "%.3f, %d, %s, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f\n",
 			state->info.timeStamp,

@@ -93,7 +93,7 @@ for:
 
           if [[ $APPVEYOR_REPO_COMMIT_MESSAGE = *#store_bins* ]] || [ "$APPVEYOR_REPO_TAG" == "true" ];
           then
-            zip -r esmini-bin_ubuntu.zip bin EnvironmentSimulator/Applications/odrplot/xodr.py EnvironmentSimulator/Libraries/esminiRMLib/esminiRMLib.hpp EnvironmentSimulator/Libraries/esminiRMLib/esminiRMWrapper.cs EnvironmentSimulator/Libraries/esminiRMLib/esminiRMUnityUtil.cs EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp EnvironmentSimulator/Libraries/esminiLib/ESMiniWrapper.cs version.txt
+            cd ../;zip -r esmini/esmini-bin_ubuntu.zip esmini/bin esmini/EnvironmentSimulator/Applications/odrplot/xodr.py esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMLib.hpp esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMWrapper.cs esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMUnityUtil.cs esmini/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp esmini/EnvironmentSimulator/Libraries/esminiLib/ESMiniWrapper.cs esmini/version.txt;cd -
           else
             echo "Skip binary artifacts";
           fi
@@ -111,6 +111,7 @@ for:
           fi
 
     test_script:
+      - sh: Xvfb :99 -screen 0 1920x1080x24+32 & export DISPLAY=:99
       - ps: |
             cd build/EnvironmentSimulator/Unittest
             $env:path += "../../../bin"
@@ -118,6 +119,11 @@ for:
             ./OperatingSystem_test
             if ($lastExitCode -ne 0) {
                 throw "OperatingSystem_test failed"
+            }
+
+            ./CommonMini_test
+            if ($lastExitCode -ne 0) {
+                throw "CommonMini_test failed"
             }
 
             ./RoadManager_test
@@ -134,6 +140,8 @@ for:
             if ($lastExitCode -ne 0) {
                 throw "ScenarioEngineDll_test failed"
             }
+
+            dir *.tga, *.ppm
 
             cd ../../../test
 
@@ -194,7 +202,7 @@ for:
 
           if [[ $APPVEYOR_REPO_COMMIT_MESSAGE = *#store_bins* ]] || [ "$APPVEYOR_REPO_TAG" == "true" ];
           then
-            zip -r esmini-bin_mac_catalina.zip bin EnvironmentSimulator/Applications/odrplot/xodr.py EnvironmentSimulator/Libraries/esminiRMLib/esminiRMLib.hpp EnvironmentSimulator/Libraries/esminiRMLib/esminiRMWrapper.cs EnvironmentSimulator/Libraries/esminiRMLib/esminiRMUnityUtil.cs EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp EnvironmentSimulator/Libraries/esminiLib/ESMiniWrapper.cs version.txt
+            cd ../;zip -r esmini/esmini-bin_mac_catalina.zip esmini/bin esmini/EnvironmentSimulator/Applications/odrplot/xodr.py esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMLib.hpp esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMWrapper.cs esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMUnityUtil.cs esmini/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp esmini/EnvironmentSimulator/Libraries/esminiLib/ESMiniWrapper.cs esmini/version.txt;cd -
           else
             echo "Skip binary artifacts";
           fi
@@ -271,7 +279,7 @@ for:
       - ps: |
           if ($Env:APPVEYOR_REPO_COMMIT_MESSAGE -match '#store_bins' -Or $Env:APPVEYOR_REPO_TAG -eq $true)
           {
-            7z a esmini-bin_win_x64.zip bin/* EnvironmentSimulator/Applications/odrplot/xodr.py EnvironmentSimulator/Libraries/esminiRMLib/esminiRMLib.hpp EnvironmentSimulator/Libraries/esminiRMLib/esminiRMWrapper.cs EnvironmentSimulator/Libraries/esminiRMLib/esminiRMUnityUtil.cs EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp EnvironmentSimulator/Libraries/esminiLib/ESMiniWrapper.cs version.txt
+            cd ..;7z a esmini/esmini-bin_win_x64.zip esmini/bin/* esmini/EnvironmentSimulator/Applications/odrplot/xodr.py esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMLib.hpp esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMWrapper.cs esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMUnityUtil.cs esmini/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp esmini/EnvironmentSimulator/Libraries/esminiLib/ESMiniWrapper.cs esmini/version.txt;cd esmini
           }
           else
           {
@@ -287,6 +295,19 @@ for:
             echo "Skip demos"
           }
 
+      - cmd:
+          cd ..
+
+          curl -L "https://downloads.fdossena.com/geth.php?r=mesa64-latest" -o mesa_win64.7z
+
+          7z x mesa_win64.7z -omesa
+
+          cp mesa/opengl32.dll esmini/bin
+
+          cp mesa/opengl32.dll esmini/build/EnvironmentSimulator/Unittest/Release
+
+          cd esmini
+
     # on_finish:
     #   - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
 
@@ -298,6 +319,11 @@ for:
             ./Release/OperatingSystem_test
             if ($lastExitCode -ne 0) {
                 throw "OperatingSystem_test failed"
+            }
+
+            ./Release/CommonMini_test
+            if ($lastExitCode -ne 0) {
+                throw "CommonMini_test failed"
             }
 
             ./Release/RoadManager_test
@@ -314,6 +340,8 @@ for:
             if ($lastExitCode -ne 0) {
                 throw "ScenarioEngineDll_test failed"
             }
+
+            dir *.tga, *.ppm
 
       - cmd:
             cd ../../../test

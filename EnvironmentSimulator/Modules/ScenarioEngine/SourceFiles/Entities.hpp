@@ -30,13 +30,15 @@ namespace scenarioengine
 
 	class Object
 	{
+	friend class Entities;
 	public:
 		typedef enum
 		{
 			TYPE_NONE = 0,
 			VEHICLE = 1,
 			PEDESTRIAN = 2,
-			MISC_OBJECT = 3
+			MISC_OBJECT = 3,
+			N_OBJECT_TYPES = 4
 		} Type;
 
 		typedef enum
@@ -52,6 +54,7 @@ namespace scenarioengine
 			ANGULAR_RATE = (1 << 7),
 			ACCELERATION = (1 << 8),
 			ANGULAR_ACC = (1 << 9),
+			ROUTE = (1 << 10),
 		} DirtyBit;
 
 		typedef enum
@@ -95,6 +98,7 @@ namespace scenarioengine
 
 		Type type_;
 		int category_; // specific object category in vehicle, pedestrian or misobject
+		std::string typeName_;  // Name of the vehicle-, pedestrian- or misc object type
 		std::string name_;
 		std::string model3d_;
 		int id_;
@@ -113,7 +117,6 @@ namespace scenarioengine
 		double wheel_angle_;
 		double wheel_rot_;
 		roadmanager::Position pos_;
-		roadmanager::Route *route_;
 		int model_id_;
 		roadmanager::PolyLineBase trail_;
 		double odometer_;
@@ -126,10 +129,8 @@ namespace scenarioengine
 		roadmanager::Junction::JunctionStrategyType junctionSelectorStrategy_;
 		double nextJunctionSelectorAngle_;  // number between 0:2pi (circle). E.g. if 1.57 choose the leftmost road
 		Performance performance_;
-
-		int dirty_;
+		Controller* controller_; // reference to any assigned controller object
 		bool reset_;			 // indicate discreet movement, teleporting, no odometer update
-		Controller *controller_; // reference to any assigned controller object
 		bool isGhost_;
 
 		//Rel2abs Controller addition
@@ -145,7 +146,13 @@ namespace scenarioengine
 			double h_rate;
 		} state_old;
 
+		std::vector<Object*> collisions_;
+
 		Object(Type type);
+		Object(const Object& o)
+		{
+			*this = o;
+		}
 		~Object() {}
 		void SetEndOfRoad(bool state, double time = 0.0);
 		bool IsEndOfRoad() { return end_of_road_timestamp_ > SMALL_NUMBER; }
@@ -155,7 +162,15 @@ namespace scenarioengine
 		double GetOffRoadTimestamp() { return off_road_timestamp_; }
 		void SetStandStill(bool state, double time = 0.0);
 		bool IsStandStill() { return stand_still_timestamp_ > SMALL_NUMBER; }
-		int MoveAlongS(double ds);
+		bool IsActive() { return is_active_; }
+
+		/**
+			Move current position along the road or route (if assigned)
+			@param ds Distance to move, negative will move backwards
+			@param actualDistance if true ds will adjusted for curvature and lat offset
+			@return Non zero return value indicates error of some kind
+		*/
+		roadmanager::Position::ReturnCode MoveAlongS(double ds, bool actualDistance = true);
 
 		/**
 		    Returns the timestamp from which the entity has not moved.
@@ -262,6 +277,10 @@ namespace scenarioengine
 		double GetMaxDeceleration() { return performance_.maxDeceleration; }
 		void SetMaxSpeed(double maxSpeed) { performance_.maxSpeed = maxSpeed; }
 		double GetMaxSpeed() { return performance_.maxSpeed; }
+		std::string GetName() { return name_; }
+		std::string GetTypeName() { return typeName_; }
+		std::string GetModelFileName() { return FileNameOf(model3d_); }
+		std::string GetModelFilePath() { return model3d_; }
 
 		/**
 		Specify strategy how to choose way in next junction
@@ -306,6 +325,16 @@ namespace scenarioengine
 			dirty_ |= bits;
 		}
 
+		void SetDirty(int bitmask)
+		{
+			dirty_ = bitmask;
+		}
+
+		int GetDirtyBitMask()
+		{
+			return dirty_;
+		}
+
 		void ClearDirtyBits(int bits)
 		{
 			dirty_ &= ~bits;
@@ -315,31 +344,56 @@ namespace scenarioengine
 		{
 			dirty_ = 0;
 		}
+
+		Object* TowVehicle();
+		Object* TrailerVehicle();
+
+		private:
+			int dirty_;
+			bool is_active_;
+
+			void SetActive(bool active) { is_active_ = active; }
 	};
 
 	class Vehicle : public Object
 	{
 	public:
+
+		class TrailerHitch
+		{
+		public:
+			double dx_;
+			TrailerHitch(double dx) : dx_(dx) {}
+			TrailerHitch() : dx_(0.0), trailer_vehicle_(nullptr) {}
+			Object* trailer_vehicle_;  // reference to trailer vehicle
+		};
+
+		class TrailerCoupler
+		{
+		public:
+			double dx_;
+			TrailerCoupler(double dx, Object* tow_vehicle) : dx_(dx), tow_vehicle_(tow_vehicle) {}
+			TrailerCoupler() : dx_(0.0), tow_vehicle_(nullptr) {}
+			Object* tow_vehicle_;  // reference to tow vehicle
+		};
+
 		typedef enum
 		{
 			CAR = 0,
 			VAN = 1,
 			TRUCK = 2,
 			SEMITRAILER = 3,
-			BUS = 4,
-			MOTORBIKE = 5,
-			BICYCLE = 6,
-			TRAIN = 7,
-			TRAM = 8
+			TRAILER = 4,
+			BUS = 5,
+			MOTORBIKE = 6,
+			BICYCLE = 7,
+			TRAIN = 8,
+			TRAM = 9
 		} Category;
 
-		Vehicle() : Object(Object::Type::VEHICLE)
-		{
-			category_ = static_cast<int>(Category::CAR);
-			performance_.maxAcceleration = 10.0;
-			performance_.maxDeceleration= 10.0;
-			performance_.maxSpeed = 100.0;
-		}
+		Vehicle();
+		Vehicle(const Vehicle& v);
+		~Vehicle();
 
 		void SetCategory(std::string category)
 		{
@@ -363,6 +417,18 @@ namespace scenarioengine
 			{
 				category_ = static_cast<int>(Vehicle::Category::MOTORBIKE);
 			}
+			else if (category == "semitrailer")
+			{
+				category_ = static_cast<int>(Vehicle::Category::SEMITRAILER);
+			}
+			else if (category == "trailer")
+			{
+				category_ = static_cast<int>(Vehicle::Category::TRAILER);
+			}
+			else if (category == "van")
+			{
+				category_ = static_cast<int>(Vehicle::Category::VAN);
+			}
 			else
 			{
 				LOG("Vehicle category %s not supported yet", category.c_str());
@@ -370,6 +436,11 @@ namespace scenarioengine
 
 			return;
 		}
+		int ConnectTrailer(Vehicle* trailer);
+		void AlignTrailers();
+
+		TrailerCoupler* trailer_coupler_;  // mounting point to any tow vehicle
+		TrailerHitch* trailer_hitch_;   // mounting point to any tow vehicle
 	};
 
 	class Pedestrian : public Object
@@ -382,19 +453,14 @@ namespace scenarioengine
 			ANIMAL = 2
 		} Category;
 
-		std::string model_; /**< Definition of the model of the pedestrian. */
 		double mass_;		/**< The mass of a pedestrian in kg. */
-		std::string name_;
 
-		// name, boundingBox and properties are included in base Object class.
-
-		Pedestrian() : Object(Object::Type::PEDESTRIAN),
-					   model_(""), mass_(0.0), name_("")
+		Pedestrian() : Object(Object::Type::PEDESTRIAN), mass_(0.0)
 		{
 			category_ = static_cast<int>(Category::PEDESTRIAN);
-			performance_.maxAcceleration = 10.0;
-			performance_.maxDeceleration = 10.0;
-			performance_.maxSpeed = 10.0;
+			performance_.maxAcceleration = LARGE_NUMBER;
+			performance_.maxDeceleration = LARGE_NUMBER;
+			performance_.maxSpeed = LARGE_NUMBER;
 		}
 
 		void SetCategory(std::string category)
@@ -444,11 +510,10 @@ namespace scenarioengine
 			ROADMARK = 16
 		} Category;
 
-		std::string model_;
 		double mass_;
 		std::string name_;
 
-		MiscObject() : Object(Object::Type::MISC_OBJECT), model_(""), mass_(0.0), name_("")
+		MiscObject() : Object(Object::Type::MISC_OBJECT), mass_(0.0), name_("")
 		{
 			category_ = static_cast<int>(category_);
 			performance_.maxAcceleration = 0.0;
@@ -540,17 +605,20 @@ namespace scenarioengine
 	public:
 		Entities() : nextId_(0) {}
 
-		std::vector<Object *> object_;
+		std::vector<Object*> object_;
+		std::vector<Object*> object_pool_;
 
-		// create a sumo vehicle template and a sumo controller
-		int addObject(Object *obj);
-		void removeObject(int id);
-		void removeObject(std::string name);
+		int addObject(Object* obj, bool activate, int call_index = 0);
+		int activateObject(Object* obj, int call_index = 0);
+		int deactivateObject(Object* obj, int call_index = 0);
+		void removeObject(int id, bool recursive = true);
+		void removeObject(std::string name, bool recursive = true);
+		void removeObject(Object* object, bool recursive = true);
 		int getNewId();
 		bool indexExists(int id);
 		bool nameExists(std::string name);
-		Object *GetObjectByName(std::string name);
-		Object *GetObjectById(int id);
+		Object* GetObjectByName(std::string name);
+		Object* GetObjectById(int id);
 
 	private:
 		int nextId_;  // Is incremented for each new object created

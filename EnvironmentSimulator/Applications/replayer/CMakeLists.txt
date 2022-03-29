@@ -11,6 +11,7 @@ if (USE_OSI)
   ${OSI_INCLUDE_DIR}
 endif (USE_OSI)
   ${CONTROLLERS_INCLUDE_DIR}
+  ${DIRENT_INCLUDE_DIR}
 )
 
 if (USE_OSI)
@@ -29,6 +30,7 @@ set ( SOURCES
 	main.cpp
 	Replay.cpp
     helpText.hpp
+    collision.hpp
 )
 link_directories( ${OSG_LIBRARIES_PATH} )
 add_executable ( ${TARGET1} ${SOURCES} ${INCLUDES} )
@@ -59,9 +61,5 @@ if (USE_OSI)
 endif ()
 # Install directives
 
-if (UNIX)
-  install ( TARGETS ${TARGET1} ${TARGET2} ${TARGET3} DESTINATION "${INSTALL_DIRECTORY}")
-else()
-  install ( TARGETS ${TARGET1} ${TARGET2} ${TARGET3} CONFIGURATIONS Release DESTINATION "${INSTALL_DIRECTORY}")
-  install ( TARGETS ${TARGET1} ${TARGET2} ${TARGET3} CONFIGURATIONS Debug DESTINATION "${INSTALL_DIRECTORY}")
-endif (UNIX)
+install ( TARGETS ${TARGET1} ${TARGET2} ${TARGET3} DESTINATION "${INSTALL_DIRECTORY}")
+

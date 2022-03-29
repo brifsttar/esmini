@@ -14,24 +14,29 @@ const char* helpText =
 "\n\
 Key shortcuts \n\
     \n\
-    H (shift h): This help text \n\
-    TAB:         Move camera to next vehicle \n\
-    o:           Toggle show/hide OpenDRIVE road feature lines \n\
-    u:           Toggle show / hide OSI road lines \n\
-    y:           Toggle show / hide OSI road points \n\
-    p:           Toggle show / hide environment 3D model \n\
-    r:           Toggle show / hide sensor view frustums \n\
-    i:           Toggle info text showing time and speed \n\
-    j:           Toggle show trails after vehicles(4 modes: none / dots / lines / both) \n\
-    n:           Toggle show active trajectories \n\
-    , (comma):   Switch entity view : Model only / Bounding box / Model + Bounding box / None \n\
-    ESC:         quit \n\
+    H (shift + h): This help text \n\
+    Space:         Toggle pause/play simulation \n\
+    Return:        Step simulation (one timestep) then pause \n\
+    TAB:           Move camera to next vehicle \n\
+    Shift + TAB:   Move camera to previoius vehicle \n\
+    Delete:        Same as above (Shift + TAB) \n\
+    o:             Toggle show/hide OpenDRIVE road feature lines \n\
+    u:             Toggle show / hide OSI road lines \n\
+    y:             Toggle show / hide OSI road points \n\
+    p:             Toggle show / hide environment 3D model \n\
+    r:             Toggle show / hide sensor view frustums \n\
+    R:             Toggle route waypoint visualization \n\
+    i:             Toggle info text showing time and speed \n\
+    j:             Toggle show trails after vehicles(4 modes: none / dots / lines / both) \n\
+    n:             Toggle show active trajectories \n\
+    , (comma):     Switch entity view : Model only / Bounding box / Model + Bounding box / None \n\
+    ESC:           quit \n\
     \n\
     Arrow keys is used to drive externally controlled Ego vehicle: \n\
         Up:    Accelerate \n\
-        Down : Brake \n\
-        Left : Steer left \n\
-        Right : Steer right \n\
+        Down:  Brake \n\
+        Left:  Steer left \n\
+        Right: Steer right \n\
     \n\
     1 - 9: Camera models acording to : \n\
         1: Custom camera model \n\
@@ -60,7 +65,7 @@ Key shortcuts \n\
         l: Toggle light \n\
         w: Toggle geometry mode(shading, wireframe, dots) \n\
         c: Save screenshot in JPEG format - in the folder where the application was started from \n\
-        C: Toggle continuous screen capture \n\
+        C: Toggle continuous screen capture (e.g for video creation) \n\
         h: Help \n\
     \n\
 Mouse control \n\

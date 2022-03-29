@@ -26,7 +26,7 @@
 #endif
 
 #define OSI_OUT_PORT 48198
-#define OSI_MAX_UDP_DATA_SIZE 8200
+#define OSI_MAX_UDP_DATA_SIZE 8192
 
 // Large OSI messages needs to be split for UDP transmission
 // This struct must be mached on receiver side
@@ -60,6 +60,7 @@ using namespace scenarioengine;
 static OSIGroundTruth osiGroundTruth;
 static OSIRoadLane osiRoadLane;
 static OSIRoadLaneBoundary osiRoadLaneBoundary;
+
 
 static struct sockaddr_in recvAddr;
 
@@ -226,7 +227,7 @@ void OSIReporter::ReportSensors(std::vector<ObjectSensor *> sensor)
 bool OSIReporter::OpenOSIFile(const char *filename)
 {
 	const char* f = (filename == 0 || !strcmp(filename, "")) ? DEFAULT_OSI_TRACE_FILENAME : filename;
-	osi_file = std::ofstream(f, std::ios_base::binary);
+	osi_file.open(f, std::ios_base::binary);
 	if (!osi_file.good())
 	{
 		LOG("Failed open OSI tracefile %s", f);
@@ -293,8 +294,8 @@ int OSIReporter::UpdateOSIGroundTruth(std::vector<ObjectState *> objectState)
 
 	if (GetSocket() || IsFileOpen())
 	{
-		obj_osi_internal.gt->SerializeToString(&osiGroundTruth.ground_truth);
-		osiGroundTruth.size = (unsigned int)obj_osi_internal.gt->ByteSizeLong();
+		obj_osi_external.gt->SerializeToString(&osiGroundTruth.ground_truth);
+		osiGroundTruth.size = (unsigned int)obj_osi_external.gt->ByteSizeLong();
 	}
 
 	if (sendSocket)
@@ -302,17 +303,18 @@ int OSIReporter::UpdateOSIGroundTruth(std::vector<ObjectState *> objectState)
 		// send over udp - split large OSI messages in multiple transmissions
 		unsigned int sentDataBytes = 0;
 
-		for (osi_udp_buf.counter = 0, osi_udp_buf.datasize = 0; sentDataBytes < osiGroundTruth.size; osi_udp_buf.counter++)
+		for (osi_udp_buf.counter = 1; sentDataBytes < osiGroundTruth.size; osi_udp_buf.counter++)
 		{
 			osi_udp_buf.datasize = MIN(osiGroundTruth.size - sentDataBytes, OSI_MAX_UDP_DATA_SIZE);
-			memcpy(&osi_udp_buf.data, (char *)&osiGroundTruth.ground_truth.c_str()[sentDataBytes], osi_udp_buf.datasize);
+			memcpy(osi_udp_buf.data, (char *)&osiGroundTruth.ground_truth.c_str()[sentDataBytes], osi_udp_buf.datasize);
 			int packSize = sizeof(osi_udp_buf) - (OSI_MAX_UDP_DATA_SIZE - osi_udp_buf.datasize);
 
 			if (sentDataBytes + osi_udp_buf.datasize >= osiGroundTruth.size)
 			{
-				// Last package
-				osi_udp_buf.counter = -1;
+				// Last package indicated by negative counter number
+				osi_udp_buf.counter = -osi_udp_buf.counter;
 			}
+
 			int sendResult = sendto(sendSocket, (char *)&osi_udp_buf, packSize, 0, (struct sockaddr *)&recvAddr, sizeof(recvAddr));
 
 			if (sendResult != packSize)
@@ -537,8 +539,7 @@ int OSIReporter::UpdateOSIMovingObject(ObjectState *objectState)
 	obj_osi_internal.mobj = obj_osi_internal.gt->add_moving_object();
 
 	// Set OSI Moving Object Mutable ID
-	int mobj_size = obj_osi_internal.gt->mutable_moving_object()->size();
-	obj_osi_internal.mobj->mutable_id()->set_value(mobj_size - 1);
+	obj_osi_internal.mobj->mutable_id()->set_value(objectState->state_.info.id);
 
 	// Set OSI Moving Object Type and Classification
 	if (objectState->state_.info.obj_type == static_cast<int>(Object::Type::VEHICLE))
@@ -664,7 +665,6 @@ int OSIReporter::UpdateOSIIntersection()
 		double length;
 		int global_id;
 		roadmanager::OSIPoints *osipoints;
-
 	} LaneLengthStruct;
 
 	roadmanager::Junction *junction;
@@ -675,8 +675,8 @@ int OSIReporter::UpdateOSIIntersection()
 	roadmanager::Road *connecting_road;
 	roadmanager::ContactPointType contactpoint;
 	roadmanager::RoadLink *roadlink = 0;
-	LaneLengthStruct left_lane_struct;
-	LaneLengthStruct right_lane_struct;
+	LaneLengthStruct left_lane_struct = { 0, 0.0, 0, nullptr };
+	LaneLengthStruct right_lane_struct = { 0, 0.0, 0, nullptr };
 	// s values to know where on the road to check for the lanes
 	double incomming_s_value;
 	double outgoing_s_value;
@@ -775,6 +775,12 @@ int OSIReporter::UpdateOSIIntersection()
 				else
 				{
 					LOG("WARNING: Unknow connection detected, can't establish outgoing connection in OSI junction");
+					return -1;
+				}
+				if (roadlink == nullptr)
+				{
+					LOG("Failed to resolve %s link of incoming road id %d", roadmanager::OpenDrive::LinkType2Str(connecting_road_link_type).c_str(),
+						incomming_road->GetId());
 					return -1;
 				}
 				outgoing_road = opendrive->GetRoadById(roadlink->GetElementId());
@@ -891,8 +897,18 @@ int OSIReporter::UpdateOSIIntersection()
 
 						osi3::Lane_Classification_LanePairing *laneparing = osi_lane->mutable_classification()->add_lane_pairing();
 						laneparing->mutable_antecessor_lane_id()->set_value(incomming_road->GetDrivingLaneById(incomming_s_value, junctionlanelink->from_)->GetGlobalId());
-						laneparing->mutable_successor_lane_id()->set_value(outgoing_road->GetDrivingLaneById(outgoing_s_value,
-							connecting_road->GetDrivingLaneById(connecting_outgoing_s_value, junctionlanelink->to_)->GetLink(connecting_road_link_type)->GetId())->GetGlobalId());
+
+						roadmanager::Lane* lane = connecting_road->GetDrivingLaneById(connecting_outgoing_s_value, junctionlanelink->to_);
+						if (lane != nullptr)
+						{
+							laneparing->mutable_successor_lane_id()->set_value(outgoing_road->GetDrivingLaneById(outgoing_s_value,
+								lane->GetLink(connecting_road_link_type)->GetId())->GetGlobalId());
+						}
+						else
+						{
+							LOG("Connecting road %d incoming road %d failed get lane by id %d", connecting_road->GetId(),
+								connection->GetIncomingRoad()->GetId(), junctionlanelink->to_);
+						}
 					}
 				}
 			}
@@ -1195,22 +1211,22 @@ int OSIReporter::UpdateOSILaneBoundary(std::vector<ObjectState *> objectState)
 									osi3::LaneBoundary_Classification_Color classific_col;
 									switch (laneroadmark->GetColor())
 									{
-									case roadmanager::LaneRoadMark::RoadMarkColor::STANDARD_COLOR:
+									case roadmanager::RoadMarkColor::STANDARD_COLOR:
 										classific_col = osi3::LaneBoundary_Classification_Color::LaneBoundary_Classification_Color_COLOR_WHITE;
 										break;
-									case roadmanager::LaneRoadMark::RoadMarkColor::BLUE:
+									case roadmanager::RoadMarkColor::BLUE:
 										classific_col = osi3::LaneBoundary_Classification_Color::LaneBoundary_Classification_Color_COLOR_BLUE;
 										break;
-									case roadmanager::LaneRoadMark::RoadMarkColor::GREEN:
+									case roadmanager::RoadMarkColor::GREEN:
 										classific_col = osi3::LaneBoundary_Classification_Color::LaneBoundary_Classification_Color_COLOR_GREEN;
 										break;
-									case roadmanager::LaneRoadMark::RoadMarkColor::RED:
+									case roadmanager::RoadMarkColor::RED:
 										classific_col = osi3::LaneBoundary_Classification_Color::LaneBoundary_Classification_Color_COLOR_RED;
 										break;
-									case roadmanager::LaneRoadMark::RoadMarkColor::WHITE:
+									case roadmanager::RoadMarkColor::WHITE:
 										classific_col = osi3::LaneBoundary_Classification_Color::LaneBoundary_Classification_Color_COLOR_WHITE;
 										break;
-									case roadmanager::LaneRoadMark::RoadMarkColor::YELLOW:
+									case roadmanager::RoadMarkColor::YELLOW:
 										classific_col = osi3::LaneBoundary_Classification_Color::LaneBoundary_Classification_Color_COLOR_YELLOW;
 										break;
 									default:
@@ -1348,10 +1364,18 @@ int OSIReporter::UpdateOSIRoadLane(std::vector<ObjectState *> objectState)
 						{
 							predecessor_lane_section = predecessorRoad->GetLaneSectionByIdx(0);
 						}
+						else if (predecessorRoad->GetLink(roadmanager::LinkType::PREDECESSOR)->GetElementId() == road->GetJunction())
+						{
+							predecessor_lane_section = predecessorRoad->GetLaneSectionByIdx(0);
+						}
 					}
 					if (predecessorRoad->GetLink(roadmanager::LinkType::SUCCESSOR))
 					{
 						if (predecessorRoad->GetLink(roadmanager::LinkType::SUCCESSOR)->GetElementId() == road->GetId())
+						{
+							predecessor_lane_section = predecessorRoad->GetLaneSectionByIdx(predecessorRoad->GetNumberOfLaneSections() - 1);
+						}
+						else if (predecessorRoad->GetLink(roadmanager::LinkType::SUCCESSOR)->GetElementId() == road->GetJunction())
 						{
 							predecessor_lane_section = predecessorRoad->GetLaneSectionByIdx(predecessorRoad->GetNumberOfLaneSections() - 1);
 						}
@@ -1381,10 +1405,18 @@ int OSIReporter::UpdateOSIRoadLane(std::vector<ObjectState *> objectState)
 						{
 							successor_lane_section = successorRoad->GetLaneSectionByIdx(0);
 						}
+						else if (successorRoad->GetLink(roadmanager::LinkType::PREDECESSOR)->GetElementId() == road->GetJunction())
+						{
+							successor_lane_section = successorRoad->GetLaneSectionByIdx(0);
+						}
 					}
 					if (successorRoad->GetLink(roadmanager::LinkType::SUCCESSOR))
 					{
 						if (successorRoad->GetLink(roadmanager::LinkType::SUCCESSOR)->GetElementId() == road->GetId())
+						{
+							successor_lane_section = successorRoad->GetLaneSectionByIdx(successorRoad->GetNumberOfLaneSections() - 1);
+						}
+						else if (successorRoad->GetLink(roadmanager::LinkType::SUCCESSOR)->GetElementId() == road->GetJunction())
 						{
 							successor_lane_section = successorRoad->GetLaneSectionByIdx(successorRoad->GetNumberOfLaneSections() - 1);
 						}
@@ -1425,44 +1457,118 @@ int OSIReporter::UpdateOSIRoadLane(std::vector<ObjectState *> objectState)
 						// CLASSIFICATION TYPE
 						roadmanager::Lane::LaneType lanetype = lane->GetLaneType();
 						osi3::Lane_Classification_Type class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_UNKNOWN;
-
-						if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_DRIVING ||
-							lanetype == roadmanager::Lane::LaneType::LANE_TYPE_PARKING ||
-							lanetype == roadmanager::Lane::LaneType::LANE_TYPE_BIDIRECTIONAL)
+						osi3::Lane_Classification_Subtype subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_UNKNOWN;
+						if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_DRIVING)
 						{
 							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_DRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_NORMAL;
 						}
-						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_STOP ||
-								 lanetype == roadmanager::Lane::LaneType::LANE_TYPE_BIKING ||
-								 lanetype == roadmanager::Lane::LaneType::LANE_TYPE_SIDEWALK ||
-								 lanetype == roadmanager::Lane::LaneType::LANE_TYPE_BORDER ||
-								 lanetype == roadmanager::Lane::LaneType::LANE_TYPE_RESTRICTED ||
-								 lanetype == roadmanager::Lane::LaneType::LANE_TYPE_ROADMARKS ||
-								 lanetype == roadmanager::Lane::LaneType::LANE_TYPE_TRAM ||
-								 lanetype == roadmanager::Lane::LaneType::LANE_TYPE_RAIL)
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_PARKING)
 						{
 							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_NONDRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_PARKING;
 						}
-						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_ENTRY ||
-								 lanetype == roadmanager::Lane::LaneType::LANE_TYPE_EXIT ||
-								 lanetype == roadmanager::Lane::LaneType::LANE_TYPE_OFF_RAMP ||
-								 lanetype == roadmanager::Lane::LaneType::LANE_TYPE_ON_RAMP ||
-								 lanetype == roadmanager::Lane::LaneType::LANE_TYPE_MEDIAN ||
-								 lanetype == roadmanager::Lane::LaneType::LANE_TYPE_SHOULDER)
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_BIDIRECTIONAL)
 						{
 							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_DRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_NORMAL;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_STOP)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_NONDRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_STOP;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_BIKING)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_NONDRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_BIKING;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_SIDEWALK)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_NONDRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_SIDEWALK;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_BORDER)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_NONDRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_BORDER;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_RESTRICTED)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_NONDRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_RESTRICTED;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_ROADMARKS)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_NONDRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_OTHER;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_TRAM)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_NONDRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_OTHER;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_RAIL)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_NONDRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_OTHER;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_ENTRY)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_DRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_ENTRY;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_EXIT)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_DRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_EXIT;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_OFF_RAMP)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_DRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_OFFRAMP;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_ON_RAMP)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_DRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_ONRAMP;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_MEDIAN)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_NONDRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_OTHER;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_SHOULDER)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_NONDRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_SHOULDER;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_CURB)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_NONDRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_BORDER;
+						}
+						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_CONNECTING_RAMP)
+						{
+							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_DRIVING;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_CONNECTINGRAMP;
 						}
 						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_SPECIAL1 ||
 								 lanetype == roadmanager::Lane::LaneType::LANE_TYPE_SPECIAL2 ||
 								 lanetype == roadmanager::Lane::LaneType::LANE_TYPE_SPECIAL3)
 						{
 							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_OTHER;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_OTHER;
+
 						}
 						else if (lanetype == roadmanager::Lane::LaneType::LANE_TYPE_NONE)
 						{
 							class_type = osi3::Lane_Classification_Type::Lane_Classification_Type_TYPE_UNKNOWN;
+							subclass_type = osi3::Lane_Classification_Subtype::Lane_Classification_Subtype_SUBTYPE_UNKNOWN;
+
 						}
 						osi_lane->mutable_classification()->set_type(class_type);
+						osi_lane->mutable_classification()->set_subtype(subclass_type);
 
 						// CENTERLINE POINTS
 						int n_osi_points = lane->GetOSIPoints()->GetNumOfOSIPoints();
@@ -1538,34 +1644,64 @@ int OSIReporter::UpdateOSIRoadLane(std::vector<ObjectState *> objectState)
 						{
 							for (int l = 0; l < obj_osi_internal.gt->lane_size(); ++l)
 							{
-								lane_pairing = nullptr;
-
-								if (predecessorRoad && predecessor_lane_section &&
-									predecessorRoad->GetDrivingLaneById(predecessor_lane_section->GetS(), lane->GetLink(roadmanager::LinkType::PREDECESSOR)->GetId())->GetGlobalId() == obj_osi_internal.gt->lane(l).id().value())
+								if (obj_osi_internal.gt->mutable_lane(l)->mutable_classification()->lane_pairing_size() >0 )
 								{
-									if (!lane_pairing)
-									{
-										lane_pairing = obj_osi_internal.gt->mutable_lane(l)->mutable_classification()->add_lane_pairing();
-									}
-
-									if ((road->GetLink(roadmanager::LinkType::PREDECESSOR) != 0))
-									{
-										lane_pairing->mutable_successor_lane_id()->set_value(lane_global_id);
-									}
+									// there should be only one lane_paring, since only intersections have multiple ones
+									lane_pairing = obj_osi_internal.gt->mutable_lane(l)->mutable_classification()->mutable_lane_pairing(0);
+								}
+								else
+								{
+									lane_pairing = obj_osi_internal.gt->mutable_lane(l)->mutable_classification()->add_lane_pairing();
 								}
 
-								if (successorRoad && successor_lane_section &&
-									successorRoad->GetDrivingLaneById(successor_lane_section->GetS(), lane->GetLink(roadmanager::LinkType::SUCCESSOR)->GetId())->GetGlobalId() == obj_osi_internal.gt->lane(l).id().value())
+								roadmanager::LaneLink* link = lane->GetLink(roadmanager::LinkType::PREDECESSOR);
+								if (link)
 								{
-									if (!lane_pairing)
+									roadmanager::Lane* driving_lane = predecessorRoad->GetDrivingLaneById(predecessor_lane_section->GetS(), link->GetId());
+									if (driving_lane != nullptr)
 									{
-										lane_pairing = obj_osi_internal.gt->mutable_lane(l)->mutable_classification()->add_lane_pairing();
+										if (predecessorRoad && predecessor_lane_section &&
+											driving_lane->GetGlobalId() == obj_osi_internal.gt->lane(l).id().value())
+										{
+											if ((road->GetLink(roadmanager::LinkType::PREDECESSOR) != 0))
+											{
+												lane_pairing->mutable_successor_lane_id()->set_value(lane_global_id);
+											}
+										}
+										else
+										{
+											LOG("Lane %d on road %d s %d is not a driving lane", lane->GetId(), predecessorRoad->GetId(), predecessor_lane_section->GetS());
+										}
 									}
+								}
+								else
+								{
+									LOG("Failed to resolve Predecessor link of lane %d of road %d", lane->GetId(), road->GetId());
+								}
 
-									if ((road->GetLink(roadmanager::LinkType::SUCCESSOR) != 0))
+								link = lane->GetLink(roadmanager::LinkType::SUCCESSOR);
+								if (link)
+								{
+									roadmanager::Lane* driving_lane = successorRoad->GetDrivingLaneById(successor_lane_section->GetS(), link->GetId());
+									if (driving_lane != nullptr)
 									{
-										lane_pairing->mutable_antecessor_lane_id()->set_value(lane_global_id);
+										if (successorRoad && successor_lane_section &&
+											driving_lane->GetGlobalId() == obj_osi_internal.gt->lane(l).id().value())
+										{
+											if ((road->GetLink(roadmanager::LinkType::SUCCESSOR) != 0))
+											{
+												lane_pairing->mutable_antecessor_lane_id()->set_value(lane_global_id);
+											}
+										}
 									}
+									else
+									{
+										LOG("Lane %d on road %d s %d is not a driving lane", lane->GetId(), predecessorRoad->GetId(), predecessor_lane_section->GetS());
+									}
+								}
+								else
+								{
+									LOG("Failed to resolve Successor link of lane %d of road %d", lane->GetId(), road->GetId());
 								}
 							}
 						}
@@ -1681,35 +1817,38 @@ int OSIReporter::UpdateOSIRoadLane(std::vector<ObjectState *> objectState)
 							}
 							// look at right lane and check if it has Lines for RoadMarks
 							roadmanager::Lane *next_lane = lane_section->GetLaneById(next_lane_id);
-							std::vector<int> nextlane_line_ids = next_lane->GetLineGlobalIds();
-							if (!nextlane_line_ids.empty())
+							if (next_lane != nullptr)
 							{
-								for (int jj = 0; jj < nextlane_line_ids.size(); jj++)
+								std::vector<int> nextlane_line_ids = next_lane->GetLineGlobalIds();
+								if (!nextlane_line_ids.empty())
 								{
-									if (lane_id < 0)
+									for (int jj = 0; jj < nextlane_line_ids.size(); jj++)
 									{
-										osi3::Identifier *right_lane_bound_id = osi_lane->mutable_classification()->add_left_lane_boundary_id();
-										right_lane_bound_id->set_value(nextlane_line_ids[jj]);
-									}
-									else if (lane_id > 0)
-									{
-										osi3::Identifier *right_lane_bound_id = osi_lane->mutable_classification()->add_right_lane_boundary_id();
-										right_lane_bound_id->set_value(nextlane_line_ids[jj]);
+										if (lane_id < 0)
+										{
+											osi3::Identifier* right_lane_bound_id = osi_lane->mutable_classification()->add_left_lane_boundary_id();
+											right_lane_bound_id->set_value(nextlane_line_ids[jj]);
+										}
+										else if (lane_id > 0)
+										{
+											osi3::Identifier* right_lane_bound_id = osi_lane->mutable_classification()->add_right_lane_boundary_id();
+											right_lane_bound_id->set_value(nextlane_line_ids[jj]);
+										}
 									}
 								}
-							}
-							else // if the neightbour lane does not have Lines for RoadMakrs we take the LaneBoundary
-							{
-								int next_laneboundary_global_id = next_lane->GetLaneBoundaryGlobalId();
-								if (lane_id < 0 && next_laneboundary_global_id >= 0)
+								else // if the neightbour lane does not have Lines for RoadMakrs we take the LaneBoundary
 								{
-									osi3::Identifier *right_lane_bound_id = osi_lane->mutable_classification()->add_left_lane_boundary_id();
-									right_lane_bound_id->set_value(next_laneboundary_global_id);
-								}
-								else if (lane_id > 0 && next_laneboundary_global_id >= 0)
-								{
-									osi3::Identifier *right_lane_bound_id = osi_lane->mutable_classification()->add_right_lane_boundary_id();
-									right_lane_bound_id->set_value(next_laneboundary_global_id);
+									int next_laneboundary_global_id = next_lane->GetLaneBoundaryGlobalId();
+									if (lane_id < 0 && next_laneboundary_global_id >= 0)
+									{
+										osi3::Identifier* right_lane_bound_id = osi_lane->mutable_classification()->add_left_lane_boundary_id();
+										right_lane_bound_id->set_value(next_laneboundary_global_id);
+									}
+									else if (lane_id > 0 && next_laneboundary_global_id >= 0)
+									{
+										osi3::Identifier* right_lane_bound_id = osi_lane->mutable_classification()->add_right_lane_boundary_id();
+										right_lane_bound_id->set_value(next_laneboundary_global_id);
+									}
 								}
 							}
 						}
@@ -1777,6 +1916,7 @@ int OSIReporter::UpdateTrafficSignals()
 					trafficSign->mutable_id()->set_value(signal->GetId());
 					trafficSign->mutable_main_sign()->mutable_classification()->mutable_value()->set_value(signal->GetValue());
 					trafficSign->mutable_main_sign()->mutable_classification()->mutable_value()->set_text(signal->GetText());
+					trafficSign->mutable_main_sign()->mutable_classification()->set_type(static_cast<osi3::TrafficSign_MainSign_Classification_Type>(signal->GetType()));
 
 					//Set Unit
 					if(std::strcmp(signal->GetUnit().c_str(), ""))

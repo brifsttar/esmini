@@ -30,6 +30,15 @@ using namespace scenarioengine;
 
 #ifdef _USE_OSG
 void ReportKeyEvent(viewer::KeyEvent *keyEvent, void *data);
+
+static struct
+{
+	viewer::ImageCallbackFunc func;
+	void* data;
+} imageCallback = { 0, 0 };
+
+void RegisterImageCallback(viewer::ImageCallbackFunc func, void* data);
+
 #endif
 
 class ScenarioPlayer
@@ -51,6 +60,14 @@ public:
 		VIEWER_STATE_DONE
 	} ViewerState;
 
+	typedef enum
+	{
+		PLAYER_STATE_UNDEFINED,
+		PLAYER_STATE_PLAYING,
+		PLAYER_STATE_PAUSE,
+		PLAYER_STATE_STEP
+	} PlayerState;
+
 	typedef void (*ObjCallbackFunc)(ObjectStateStruct *, void *);
 
 	typedef struct
@@ -60,14 +77,17 @@ public:
 		void *data;
 	} ObjCallback;
 
-	ScenarioPlayer(int &argc, char *argv[]);
+
+	ScenarioPlayer(int& argc, char* argv[]);
 	~ScenarioPlayer();
+	void PrintUsage();
 	bool IsQuitRequested() { return quit_request; }
 	void SetOSIFileStatus(bool is_on, const char *filename = 0);
 	void Frame(); // let player calculate actual time step
+	void Draw();
 	void Frame(double timestep_s);
-	void ScenarioFrame(double timestep_s);
-	void ScenarioFramePart(double timestep_s);
+	void ScenarioPostFrame();
+	int ScenarioFrame(double timestep_s, bool keyframe);
 	void ShowObjectSensors(bool mode);
 	void AddObjectSensor(int object_index, double pos_x, double pos_y, double pos_z, double heading,
 						 double near, double far, double fovH, int maxObj);
@@ -89,6 +109,10 @@ public:
 	int SetParameterValue(const char *name, double value);
 	int SetParameterValue(const char *name, const char *value);
 	int SetParameterValue(const char *name, bool value);
+	void SetQuitRequest(bool quit) { quit_request = quit; }
+	void SetState(PlayerState state) { state_ = state; }
+	PlayerState GetState() { return state_; }
+	bool IsPaused() { return GetState() == PlayerState::PLAYER_STATE_PAUSE; }
 
 	//TODO
 	//int GetNumberOfVehicleProperties(){return 4;};
@@ -114,18 +138,21 @@ public:
 	int InitViewer();
 	void CloseViewer();
 	void ViewerFrame();
-	void CaptureNextFrame();
-	void CaptureContinuously(bool state);
+
+	int SaveImagesToRAM(bool state);
+	int SaveImagesToFile(int nrOfFrames);
+
+	OffScreenImage *FetchCapturedImagePtr();
 	void AddCustomCamera(double x, double y, double z, double h, double p);
 #else
-	void *viewer_;
+	void* viewer_;
 #endif
 	roadmanager::OpenDrive *odr_manager;
 	std::vector<ObjectSensor *> sensor;
 	const double maxStepSize;
 	const double minStepSize;
 	SE_Options opt;
-	std::vector<ObjCallback> callback;
+	std::vector<ObjCallback> objCallback;
 	std::string exe_path_;
 
 private:
@@ -136,7 +163,6 @@ private:
 	SE_Mutex mutex;
 	bool quit_request;
 	bool threads;
-	bool headless;
 	bool launch_server;
 	bool disable_controllers_;
 	double fixed_timestep_;
@@ -146,4 +172,5 @@ private:
 	int &argc_;
 	char **argv_;
 	std::string titleString;
+	PlayerState state_;
 };

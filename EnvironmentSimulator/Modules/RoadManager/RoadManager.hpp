@@ -15,6 +15,7 @@
 
 #include <cmath>
 #include <string>
+#include <map>
 #include <vector>
 #include <list>
 #include "pugixml.hpp"
@@ -290,10 +291,9 @@ namespace roadmanager
 
 	typedef enum
 	{
-		UNKNOWN,
-		SUCCESSOR,
-		PREDECESSOR,
-		NONE
+		NONE = 0,
+		SUCCESSOR = 1,
+		PREDECESSOR = -1
 	} LinkType;
 
 
@@ -347,6 +347,21 @@ namespace roadmanager
 		int roadmarkline_idx_;
 	};
 
+
+	enum class RoadMarkColor
+	{
+		UNDEFINED,
+		STANDARD_COLOR, // equivalent to white
+		BLUE,
+		GREEN,
+		RED,
+		WHITE,
+		YELLOW,
+		UNKNOWN,
+	};
+
+
+
 	class LaneRoadMarkTypeLine
 	{
 	public:
@@ -357,8 +372,9 @@ namespace roadmanager
 			NONE
 		};
 
-		LaneRoadMarkTypeLine(double length, double space, double t_offset, double s_offset, RoadMarkTypeLineRule rule, double width):
-		length_(length), space_(space), t_offset_(t_offset), s_offset_(s_offset), rule_(rule), width_(width) {}
+		LaneRoadMarkTypeLine(double length, double space, double t_offset, double s_offset, RoadMarkTypeLineRule rule, double width,
+			RoadMarkColor color = RoadMarkColor::UNDEFINED) : length_(length), space_(space),
+			t_offset_(t_offset), s_offset_(s_offset), rule_(rule), width_(width), color_(color) {}
 		~LaneRoadMarkTypeLine() {};
 		double GetSOffset() { return s_offset_; }
 		double GetTOffset() { return t_offset_; }
@@ -369,6 +385,7 @@ namespace roadmanager
 		OSIPoints osi_points_;
 		void SetGlobalId();
 		int GetGlobalId() { return global_id_; }
+		RoadMarkColor GetColor() { return color_; }
 
 	private:
 		double length_;
@@ -378,6 +395,7 @@ namespace roadmanager
 		RoadMarkTypeLineRule rule_;
 		double width_;
 		int global_id_;  // Unique ID for OSI
+		RoadMarkColor color_;  // if set, supersedes setting in <RoadMark>
 	};
 
 	class LaneRoadMarkType
@@ -420,16 +438,6 @@ namespace roadmanager
 			BOLD
 		};
 
-		enum RoadMarkColor
-		{
-			STANDARD_COLOR, // equivalent to white
-			BLUE,
-			GREEN,
-			RED,
-			WHITE,
-			YELLOW
-		};
-
 		enum RoadMarkMaterial
 		{
 			STANDARD_MATERIAL // only "standard" is available for now
@@ -461,6 +469,9 @@ namespace roadmanager
 
 		int GetNumberOfRoadMarkTypes() { return (int)lane_roadMarkType_.size(); }
 		LaneRoadMarkType* GetLaneRoadMarkTypeByIdx(int idx);
+
+		static RoadMarkColor ParseColor(pugi::xml_node node);
+		static std::string RoadMarkColor2Str(RoadMarkColor color);
 
 	private:
 		double s_offset_;
@@ -536,6 +547,8 @@ namespace roadmanager
 			LANE_TYPE_EXIT =          (1 << 18),
 			LANE_TYPE_OFF_RAMP =      (1 << 19),
 			LANE_TYPE_ON_RAMP =       (1 << 20),
+			LANE_TYPE_CURB =          (1 << 21),
+			LANE_TYPE_CONNECTING_RAMP=(1 << 22),
 			LANE_TYPE_ANY_DRIVING =   LANE_TYPE_DRIVING |
 			                          LANE_TYPE_ENTRY |
 			                          LANE_TYPE_EXIT |
@@ -655,10 +668,10 @@ namespace roadmanager
 
 	enum ContactPointType
 	{
-		CONTACT_POINT_UNKNOWN,
+		CONTACT_POINT_UNDEFINED,
 		CONTACT_POINT_START,
 		CONTACT_POINT_END,
-		CONTACT_POINT_NONE,  // No contact point for element type junction
+		CONTACT_POINT_JUNCTION,  // No contact point for element type junction
 	};
 
 	class RoadLink
@@ -671,10 +684,11 @@ namespace roadmanager
 			ELEMENT_TYPE_JUNCTION,
 		} ElementType;
 
-		RoadLink() : type_(NONE), element_id_(-1), element_type_(ELEMENT_TYPE_UNKNOWN), contact_point_type_(CONTACT_POINT_UNKNOWN) {}
+		RoadLink() : type_(NONE), element_id_(-1), element_type_(ELEMENT_TYPE_UNKNOWN), contact_point_type_(CONTACT_POINT_UNDEFINED) {}
 		RoadLink(LinkType type, ElementType element_type, int element_id, ContactPointType contact_point_type) :
 			type_(type), element_id_(element_id), element_type_(element_type),  contact_point_type_(contact_point_type) {}
 		RoadLink(LinkType type, pugi::xml_node node);
+		bool operator== (RoadLink& rhs);
 
 		int GetElementId() { return element_id_; }
 		LinkType GetType() { return type_; }
@@ -719,48 +733,256 @@ namespace roadmanager
 	{
 	public:
 
-		enum Type
-		{
-			NONETYPE,
-			T1000001, // traditional red-yellow-green light
-			T1000002, // 2 subtypes: pedestrian light (red or green & only red)
-			T1000003, // Pedestrian Crossing
-			T1000004, // Bicycle Crossing
-			T1000007, // 4 subtypes: pedestrian + cyclists light (red or green & only red & only yellow & only green)
-			T1000008, // 3 subtypes: yellow light (no arrow & left arrow & right arrow)
-			T1000009, // 2 subtypes: red-yellow light & solid yellow or green light
-			T1000010, // 2 subtypes: yellow-green light (only left arrows & only right arrows)
-			T1000011, // 5 subtypes: red-yellow-green light (only left arrows & only right arrows & only straight arrows & straight+left arrows & straight+right arrows)
-			T1000012, // 2 subtypes: green light (left arrow & right arrow)
-			T1000013, // red-green cyclist light
-			T1000014, // yellow tram light
-			T1000015, // yellow pedestrian light
-			T1000016, // yellow bicycle light
-			T1000017, // yellow bus light
-			T1000018, // yellow horse light
-			T1000019, // yellow pedestrian/bicycle light
-			T1000020  // red light (no arrow & left arrow & right arrow)
-		};
-
-		enum SubType
-		{
-			NONESUBTYPE,
-			SUBT10,
-			SUBT20,
-			SUBT30,
-			SUBT40,
-			SUBT50,
-			SUBT60,
-			SUBT70,
-			SUBT80,
-			SUBT90,
-			SUBT100
+		enum Type : int {
+			TYPE_UNKNOWN = 0,
+			TYPE_OTHER = 1,
+			TYPE_DANGER_SPOT = 2,
+			TYPE_ZEBRA_CROSSING = 87,
+			TYPE_FLIGHT = 110,
+			TYPE_CATTLE = 200,
+			TYPE_HORSE_RIDERS = 197,
+			TYPE_AMPHIBIANS = 188,
+			TYPE_FALLING_ROCKS = 96,
+			TYPE_SNOW_OR_ICE = 94,
+			TYPE_LOOSE_GRAVEL = 97,
+			TYPE_WATERSIDE = 102,
+			TYPE_CLEARANCE = 210,
+			TYPE_MOVABLE_BRIDGE = 101,
+			TYPE_RIGHT_BEFORE_LEFT_NEXT_INTERSECTION = 3,
+			TYPE_TURN_LEFT = 4,
+			TYPE_TURN_RIGHT = 5,
+			TYPE_DOUBLE_TURN_LEFT = 6,
+			TYPE_DOUBLE_TURN_RIGHT = 7,
+			TYPE_HILL_DOWNWARDS = 8,
+			TYPE_HILL_UPWARDS = 9,
+			TYPE_UNEVEN_ROAD = 93,
+			TYPE_ROAD_SLIPPERY_WET_OR_DIRTY = 95,
+			TYPE_SIDE_WINDS = 98,
+			TYPE_ROAD_NARROWING = 10,
+			TYPE_ROAD_NARROWING_RIGHT = 12,
+			TYPE_ROAD_NARROWING_LEFT = 11,
+			TYPE_ROAD_WORKS = 13,
+			TYPE_TRAFFIC_QUEUES = 100,
+			TYPE_TWO_WAY_TRAFFIC = 14,
+			TYPE_ATTENTION_TRAFFIC_LIGHT = 15,
+			TYPE_PEDESTRIANS = 103,
+			TYPE_CHILDREN_CROSSING = 106,
+			TYPE_CYCLE_ROUTE = 107,
+			TYPE_DEER_CROSSING = 109,
+			TYPE_UNGATED_LEVEL_CROSSING = 144,
+			TYPE_LEVEL_CROSSING_MARKER = 112,
+			TYPE_RAILWAY_TRAFFIC_PRIORITY = 135,
+			TYPE_GIVE_WAY = 16,
+			TYPE_STOP = 17,
+			TYPE_PRIORITY_TO_OPPOSITE_DIRECTION = 18,
+			TYPE_PRIORITY_TO_OPPOSITE_DIRECTION_UPSIDE_DOWN = 19,
+			TYPE_PRESCRIBED_LEFT_TURN = 20,
+			TYPE_PRESCRIBED_RIGHT_TURN = 21,
+			TYPE_PRESCRIBED_STRAIGHT = 22,
+			TYPE_PRESCRIBED_RIGHT_WAY = 24,
+			TYPE_PRESCRIBED_LEFT_WAY = 23,
+			TYPE_PRESCRIBED_RIGHT_TURN_AND_STRAIGHT = 26,
+			TYPE_PRESCRIBED_LEFT_TURN_AND_STRAIGHT = 25,
+			TYPE_PRESCRIBED_LEFT_TURN_AND_RIGHT_TURN = 27,
+			TYPE_PRESCRIBED_LEFT_TURN_RIGHT_TURN_AND_STRAIGHT = 28,
+			TYPE_ROUNDABOUT = 29,
+			TYPE_ONEWAY_LEFT = 30,
+			TYPE_ONEWAY_RIGHT = 31,
+			TYPE_PASS_LEFT = 32,
+			TYPE_PASS_RIGHT = 33,
+			TYPE_SIDE_LANE_OPEN_FOR_TRAFFIC = 128,
+			TYPE_SIDE_LANE_CLOSED_FOR_TRAFFIC = 129,
+			TYPE_SIDE_LANE_CLOSING_FOR_TRAFFIC = 130,
+			TYPE_BUS_STOP = 137,
+			TYPE_TAXI_STAND = 138,
+			TYPE_BICYCLES_ONLY = 145,
+			TYPE_HORSE_RIDERS_ONLY = 146,
+			TYPE_PEDESTRIANS_ONLY = 147,
+			TYPE_BICYCLES_PEDESTRIANS_SHARED_ONLY = 148,
+			TYPE_BICYCLES_PEDESTRIANS_SEPARATED_LEFT_ONLY = 149,
+			TYPE_BICYCLES_PEDESTRIANS_SEPARATED_RIGHT_ONLY = 150,
+			TYPE_PEDESTRIAN_ZONE_BEGIN = 151,
+			TYPE_PEDESTRIAN_ZONE_END = 152,
+			TYPE_BICYCLE_ROAD_BEGIN = 153,
+			TYPE_BICYCLE_ROAD_END = 154,
+			TYPE_BUS_LANE = 34,
+			TYPE_BUS_LANE_BEGIN = 35,
+			TYPE_BUS_LANE_END = 36,
+			TYPE_ALL_PROHIBITED = 37,
+			TYPE_MOTORIZED_MULTITRACK_PROHIBITED = 38,
+			TYPE_TRUCKS_PROHIBITED = 39,
+			TYPE_BICYCLES_PROHIBITED = 40,
+			TYPE_MOTORCYCLES_PROHIBITED = 41,
+			TYPE_MOPEDS_PROHIBITED = 155,
+			TYPE_HORSE_RIDERS_PROHIBITED = 156,
+			TYPE_HORSE_CARRIAGES_PROHIBITED = 157,
+			TYPE_CATTLE_PROHIBITED = 158,
+			TYPE_BUSES_PROHIBITED = 159,
+			TYPE_CARS_PROHIBITED = 160,
+			TYPE_CARS_TRAILERS_PROHIBITED = 161,
+			TYPE_TRUCKS_TRAILERS_PROHIBITED = 162,
+			TYPE_TRACTORS_PROHIBITED = 163,
+			TYPE_PEDESTRIANS_PROHIBITED = 42,
+			TYPE_MOTOR_VEHICLES_PROHIBITED = 43,
+			TYPE_HAZARDOUS_GOODS_VEHICLES_PROHIBITED = 164,
+			TYPE_OVER_WEIGHT_VEHICLES_PROHIBITED = 165,
+			TYPE_VEHICLES_AXLE_OVER_WEIGHT_PROHIBITED = 166,
+			TYPE_VEHICLES_EXCESS_WIDTH_PROHIBITED = 167,
+			TYPE_VEHICLES_EXCESS_HEIGHT_PROHIBITED = 168,
+			TYPE_VEHICLES_EXCESS_LENGTH_PROHIBITED = 169,
+			TYPE_DO_NOT_ENTER = 44,
+			TYPE_SNOW_CHAINS_REQUIRED = 170,
+			TYPE_WATER_POLLUTANT_VEHICLES_PROHIBITED = 171,
+			TYPE_ENVIRONMENTAL_ZONE_BEGIN = 45,
+			TYPE_ENVIRONMENTAL_ZONE_END = 46,
+			TYPE_NO_U_TURN_LEFT = 47,
+			TYPE_NO_U_TURN_RIGHT = 48,
+			TYPE_PRESCRIBED_U_TURN_LEFT = 49,
+			TYPE_PRESCRIBED_U_TURN_RIGHT = 50,
+			TYPE_MINIMUM_DISTANCE_FOR_TRUCKS = 51,
+			TYPE_SPEED_LIMIT_BEGIN = 52,
+			TYPE_SPEED_LIMIT_ZONE_BEGIN = 53,
+			TYPE_SPEED_LIMIT_ZONE_END = 54,
+			TYPE_MINIMUM_SPEED_BEGIN = 55,
+			TYPE_OVERTAKING_BAN_BEGIN = 56,
+			TYPE_OVERTAKING_BAN_FOR_TRUCKS_BEGIN = 57,
+			TYPE_SPEED_LIMIT_END = 58,
+			TYPE_MINIMUM_SPEED_END = 59,
+			TYPE_OVERTAKING_BAN_END = 60,
+			TYPE_OVERTAKING_BAN_FOR_TRUCKS_END = 61,
+			TYPE_ALL_RESTRICTIONS_END = 62,
+			TYPE_NO_STOPPING = 63,
+			TYPE_NO_PARKING = 64,
+			TYPE_NO_PARKING_ZONE_BEGIN = 65,
+			TYPE_NO_PARKING_ZONE_END = 66,
+			TYPE_RIGHT_OF_WAY_NEXT_INTERSECTION = 67,
+			TYPE_RIGHT_OF_WAY_BEGIN = 68,
+			TYPE_RIGHT_OF_WAY_END = 69,
+			TYPE_PRIORITY_OVER_OPPOSITE_DIRECTION = 70,
+			TYPE_PRIORITY_OVER_OPPOSITE_DIRECTION_UPSIDE_DOWN = 71,
+			TYPE_TOWN_BEGIN = 72,
+			TYPE_TOWN_END = 73,
+			TYPE_CAR_PARKING = 74,
+			TYPE_CAR_PARKING_ZONE_BEGIN = 75,
+			TYPE_CAR_PARKING_ZONE_END = 76,
+			TYPE_SIDEWALK_HALF_PARKING_LEFT = 172,
+			TYPE_SIDEWALK_HALF_PARKING_RIGHT = 173,
+			TYPE_SIDEWALK_PARKING_LEFT = 174,
+			TYPE_SIDEWALK_PARKING_RIGHT = 175,
+			TYPE_SIDEWALK_PERPENDICULAR_HALF_PARKING_LEFT = 176,
+			TYPE_SIDEWALK_PERPENDICULAR_HALF_PARKING_RIGHT = 177,
+			TYPE_SIDEWALK_PERPENDICULAR_PARKING_LEFT = 178,
+			TYPE_SIDEWALK_PERPENDICULAR_PARKING_RIGHT = 179,
+			TYPE_LIVING_STREET_BEGIN = 77,
+			TYPE_LIVING_STREET_END = 78,
+			TYPE_TUNNEL = 79,
+			TYPE_EMERGENCY_STOPPING_LEFT = 80,
+			TYPE_EMERGENCY_STOPPING_RIGHT = 81,
+			TYPE_HIGHWAY_BEGIN = 82,
+			TYPE_HIGHWAY_END = 83,
+			TYPE_EXPRESSWAY_BEGIN = 84,
+			TYPE_EXPRESSWAY_END = 85,
+			TYPE_NAMED_HIGHWAY_EXIT = 183,
+			TYPE_NAMED_EXPRESSWAY_EXIT = 184,
+			TYPE_NAMED_ROAD_EXIT = 185,
+			TYPE_HIGHWAY_EXIT = 86,
+			TYPE_EXPRESSWAY_EXIT = 186,
+			TYPE_ONEWAY_STREET = 187,
+			TYPE_CROSSING_GUARDS = 189,
+			TYPE_DEADEND = 190,
+			TYPE_DEADEND_EXCLUDING_DESIGNATED_ACTORS = 191,
+			TYPE_FIRST_AID_STATION = 194,
+			TYPE_POLICE_STATION = 195,
+			TYPE_TELEPHONE = 196,
+			TYPE_FILLING_STATION = 198,
+			TYPE_HOTEL = 201,
+			TYPE_INN = 202,
+			TYPE_KIOSK = 203,
+			TYPE_TOILET = 204,
+			TYPE_CHAPEL = 205,
+			TYPE_TOURIST_INFO = 206,
+			TYPE_REPAIR_SERVICE = 207,
+			TYPE_PEDESTRIAN_UNDERPASS = 208,
+			TYPE_PEDESTRIAN_BRIDGE = 209,
+			TYPE_CAMPER_PLACE = 213,
+			TYPE_ADVISORY_SPEED_LIMIT_BEGIN = 214,
+			TYPE_ADVISORY_SPEED_LIMIT_END = 215,
+			TYPE_PLACE_NAME = 216,
+			TYPE_TOURIST_ATTRACTION = 217,
+			TYPE_TOURIST_ROUTE = 218,
+			TYPE_TOURIST_AREA = 219,
+			TYPE_SHOULDER_NOT_PASSABLE_MOTOR_VEHICLES = 220,
+			TYPE_SHOULDER_UNSAFE_TRUCKS_TRACTORS = 221,
+			TYPE_TOLL_BEGIN = 222,
+			TYPE_TOLL_END = 223,
+			TYPE_TOLL_ROAD = 224,
+			TYPE_CUSTOMS = 225,
+			TYPE_INTERNATIONAL_BORDER_INFO = 226,
+			TYPE_STREETLIGHT_RED_BAND = 227,
+			TYPE_FEDERAL_HIGHWAY_ROUTE_NUMBER = 228,
+			TYPE_HIGHWAY_ROUTE_NUMBER = 229,
+			TYPE_HIGHWAY_INTERCHANGE_NUMBER = 230,
+			TYPE_EUROPEAN_ROUTE_NUMBER = 231,
+			TYPE_FEDERAL_HIGHWAY_DIRECTION_LEFT = 232,
+			TYPE_FEDERAL_HIGHWAY_DIRECTION_RIGHT = 233,
+			TYPE_PRIMARY_ROAD_DIRECTION_LEFT = 234,
+			TYPE_PRIMARY_ROAD_DIRECTION_RIGHT = 235,
+			TYPE_SECONDARY_ROAD_DIRECTION_LEFT = 236,
+			TYPE_SECONDARY_ROAD_DIRECTION_RIGHT = 237,
+			TYPE_DIRECTION_DESIGNATED_ACTORS_LEFT = 238,
+			TYPE_DIRECTION_DESIGNATED_ACTORS_RIGHT = 239,
+			TYPE_ROUTING_DESIGNATED_ACTORS = 240,
+			TYPE_DIRECTION_TO_HIGHWAY_LEFT = 143,
+			TYPE_DIRECTION_TO_HIGHWAY_RIGHT = 108,
+			TYPE_DIRECTION_TO_LOCAL_DESTINATION_LEFT = 127,
+			TYPE_DIRECTION_TO_LOCAL_DESTINATION_RIGHT = 136,
+			TYPE_CONSOLIDATED_DIRECTIONS = 118,
+			TYPE_STREET_NAME = 119,
+			TYPE_DIRECTION_PREANNOUNCEMENT = 120,
+			TYPE_DIRECTION_PREANNOUNCEMENT_LANE_CONFIG = 121,
+			TYPE_DIRECTION_PREANNOUNCEMENT_HIGHWAY_ENTRIES = 122,
+			TYPE_HIGHWAY_ANNOUNCEMENT = 123,
+			TYPE_OTHER_ROAD_ANNOUNCEMENT = 124,
+			TYPE_HIGHWAY_ANNOUNCEMENT_TRUCK_STOP = 125,
+			TYPE_HIGHWAY_PREANNOUNCEMENT_DIRECTIONS = 126,
+			TYPE_POLE_EXIT = 88,
+			TYPE_HIGHWAY_DISTANCE_BOARD = 180,
+			TYPE_DETOUR_LEFT = 181,
+			TYPE_DETOUR_RIGHT = 182,
+			TYPE_NUMBERED_DETOUR = 131,
+			TYPE_DETOUR_BEGIN = 132,
+			TYPE_DETOUR_END = 133,
+			TYPE_DETOUR_ROUTING_BOARD = 134,
+			TYPE_OPTIONAL_DETOUR = 111,
+			TYPE_OPTIONAL_DETOUR_ROUTING = 199,
+			TYPE_ROUTE_RECOMMENDATION = 211,
+			TYPE_ROUTE_RECOMMENDATION_END = 212,
+			TYPE_ANNOUNCE_LANE_TRANSITION_LEFT = 192,
+			TYPE_ANNOUNCE_LANE_TRANSITION_RIGHT = 193,
+			TYPE_ANNOUNCE_RIGHT_LANE_END = 90,
+			TYPE_ANNOUNCE_LEFT_LANE_END = 89,
+			TYPE_ANNOUNCE_RIGHT_LANE_BEGIN = 115,
+			TYPE_ANNOUNCE_LEFT_LANE_BEGIN = 116,
+			TYPE_ANNOUNCE_LANE_CONSOLIDATION = 117,
+			TYPE_DETOUR_CITY_BLOCK = 142,
+			TYPE_GATE = 141,
+			TYPE_POLE_WARNING = 91,
+			TYPE_TRAFFIC_CONE = 140,
+			TYPE_MOBILE_LANE_CLOSURE = 139,
+			TYPE_REFLECTOR_POST = 114,
+			TYPE_DIRECTIONAL_BOARD_WARNING = 113,
+			TYPE_GUIDING_PLATE = 104,
+			TYPE_GUIDING_PLATE_WEDGES = 105,
+			TYPE_PARKING_HAZARD = 99,
+			TYPE_TRAFFIC_LIGHT_GREEN_ARROW = 92,
+			TrafficSign_MainSign_Classification_Type_INT_MIN_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::min(),
+			TrafficSign_MainSign_Classification_Type_INT_MAX_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::max()
 		};
 
 		Signal(double s, double t, int id, std::string name, bool dynamic, Orientation orientation, double z_offset, std::string country,
-		int type, int sub_type, double value, std::string unit, double height, double width, std::string text, double h_offset,
+		int type, double value, std::string unit, double height, double width, std::string text, double h_offset,
 		double pitch, double roll) : s_(s), t_(t), id_(id), name_(name), dynamic_(dynamic), orientation_(orientation), z_offset_(z_offset),
-		country_(country), type_(type), sub_type_(sub_type), value_(value), unit_(unit), height_(height), width_(width), text_(text),
+		country_(country), type_(type), value_(value), unit_(unit), height_(height), width_(width), text_(text),
 		h_offset_(h_offset), pitch_(pitch), roll_(roll), length_(0) {}
 
 		std::string GetName() { return name_; }
@@ -773,7 +995,6 @@ namespace roadmanager
 		double GetZOffset() { return z_offset_; }
 		Orientation GetOrientation() { return orientation_; }
 		int GetType() { return type_; }
-		int GetSubType() { return sub_type_; }
 		double GetHeight() { return height_; }
 		double GetWidth() { return width_; }
 		bool IsDynamic() { return dynamic_; }
@@ -782,6 +1003,7 @@ namespace roadmanager
 		double GetValue() { return value_; }
 		std::string GetUnit() { return unit_; }
 		std::string GetText() { return text_; }
+		static Type GetTypeFromString(const std::string& type);
 
 	private:
 		double s_;
@@ -793,7 +1015,6 @@ namespace roadmanager
 		double z_offset_;
 		std::string country_;
 		int type_;
-		int sub_type_;
 		double value_;
 		std::string unit_;
 		double height_;
@@ -803,6 +1024,7 @@ namespace roadmanager
 		double pitch_;
 		double roll_;
 		double length_;
+		static const std::map<std::string, Type> types_mapping_;
 	};
 
 	class OutlineCorner
@@ -906,9 +1128,9 @@ namespace roadmanager
 		void SetWidthStart(double widthStart) { widthStart_ = widthStart; }
 		void SetWidthEnd(double widthEnd) { widthEnd_ = widthEnd; }
 		void SetLengthStart(double lengthStart) { lengthStart_ = lengthStart; }
-		void SetLengthEnd(double lengthEnd) { lengthStart_ = lengthEnd; }
+		void SetLengthEnd(double lengthEnd) { lengthEnd_ = lengthEnd; }
 		void SetHeightStart(double heightStart) { heightStart_ = heightStart; }
-		void SeHeightEnd(double heightStart) { heightStart_ = heightStart; }
+		void SeHeightEnd(double heightEnd) { heightEnd_ = heightEnd; }
 		double GetS() { return s_; }
 		double GetLength() { return length_; }
 		double GetDistance() { return distance_; }
@@ -930,8 +1152,37 @@ namespace roadmanager
 	class RMObject : public RoadObject
 	{
 	public:
+		enum class ObjectType
+		{
+			BARRIER,
+			BIKE,
+			BUILDING,
+			BUS,
+			CAR,
+			CROSSWALK,
+			GANTRY,
+			MOTORBIKE,
+			NONE,
+			OBSTACLE,
+			PARKINGSPACE,
+			PATCH,
+			PEDESTRIAN,
+			POLE,
+			RAILING,
+			ROADMARK,
+			SOUNDBARRIER,
+			STREETLAMP,
+			TRAFFICISLAND,
+			TRAILER,
+			TRAIN,
+			TRAM,
+			TREE,
+			VAN,
+			VEGETATION,
+			WIND
+		};
 
-		RMObject(double s, double t, int id, std::string name, Orientation orientation, double z_offset, std::string type,
+		RMObject(double s, double t, int id, std::string name, Orientation orientation, double z_offset, ObjectType type,
 			double length, double height, double width, double heading, double pitch, double roll) :
 			s_(s), t_(t), id_(id), name_(name), orientation_(orientation), z_offset_(z_offset), type_(type),
 			length_(length), height_(height), width_(width), heading_(heading), pitch_(pitch), roll_(roll), repeat_(0) {}
@@ -940,10 +1191,17 @@ namespace roadmanager
 		{
 			for (size_t i = 0; i < outlines_.size(); i++) delete(outlines_[i]);
 			outlines_.clear();
+
+			for (size_t i = 0; i < repeats_.size(); i++) delete(repeats_[i]);
+			repeats_.clear();
 		}
 
+		static std::string Type2Str(ObjectType type);
+		static ObjectType Str2Type(std::string type);
+
 		std::string GetName() { return name_; }
-		std::string GetType() { return type_; }
+		std::string GetTypeStr() { return Type2Str(type_); }
+		ObjectType GetType() { return type_; }
 		int GetId() { return id_; }
 		double GetS() { return s_; }
 		double GetT() { return t_; }
@@ -954,16 +1212,25 @@ namespace roadmanager
 		double GetHeight() { return height_; }
 		double GetLength() { return length_; }
 		double GetWidth() { return width_; }
+		void SetHeight(double height) { height_ = height; }
+		void SetLength(double length) { length_ = length; }
+		void SetWidth(double width) { width_ = width; }
 		Orientation GetOrientation() { return orientation_; }
 		void AddOutline(Outline* outline) { outlines_.push_back(outline); }
 		void SetRepeat(Repeat* repeat);
+		void AddRepeat(Repeat* repeat) {repeats_.push_back(repeat);};
 		Repeat* GetRepeat() { return repeat_; }
+
 		int GetNumberOfOutlines() { return (int)outlines_.size(); }
+		int GetNumberOfRepeats() { return (int)repeats_.size(); }
+
 		Outline* GetOutline(int i) { return (0 <= i && i < outlines_.size()) ? outlines_[i] : 0; }
+		Repeat* GetRepeatByIdx(int i) { return (0 <= i && i < repeats_.size()) ? repeats_[i] : 0; }
+
 
 	private:
-		std::string type_;
 		std::string name_;
+		ObjectType type_;
 		int id_;
 		double s_;
 		double t_;
@@ -977,6 +1244,15 @@ namespace roadmanager
 		double roll_;
 		std::vector<Outline*> outlines_;
 		Repeat* repeat_;
+		std::vector<Repeat*> repeats_;
+	};
+
+	enum class SpeedUnit
+	{
+		UNDEFINED,
+		KMH,
+		MS,
+		MPH
 	};
 
 	class ROADMANAGER_API Road
@@ -999,6 +1275,7 @@ namespace roadmanager
 			double s_;
 			RoadType road_type_;
 			double speed_;  // m/s
+			SpeedUnit unit_;  // Originally specified unit
 		} RoadTypeEntry;
 
 		enum class RoadRule
@@ -1054,9 +1331,10 @@ namespace roadmanager
 		LaneInfo GetLaneInfoByS(double s, int start_lane_link_idx, int start_lane_id, int laneTypeMask = Lane::LaneType::LANE_TYPE_ANY_DRIVING);
 		int GetConnectingLaneId(RoadLink* road_link, int fromLaneId, int connectingRoadId);
 		double GetLaneWidthByS(double s, int lane_id);
+		Lane::LaneType GetLaneTypeByS(double s, int lane_id);
 		double GetSpeedByS(double s);
-		bool GetZAndPitchByS(double s, double *z, double *pitch, int *index);
-		bool UpdateZAndRollBySAndT(double s, double t, double *z, double *roll, int *index);
+		bool GetZAndPitchByS(double s, double *z, double* z_prim, double *z_primPrim, double *pitch, int *index);
+		bool UpdateZAndRollBySAndT(double s, double t, double *z, double* roadSuperElevationPrim, double *roll, int *index);
 		int GetNumberOfLaneSections() { return (int)lane_section_.size(); }
 		std::string GetName() { return name_; }
 		void SetLength(double length) { length_ = length; }
@@ -1096,11 +1374,45 @@ namespace roadmanager
 		Lane* GetDrivingLaneById(double s, int idx);
 		int GetNumberOfDrivingLanesSide(double s, int side);  // side = -1 right, 1 left
 
-		/// <summary>Get width of road</summary>
-		/// <param name="s">Longitudinal position/distance along the road</param>
-		/// <param name="side">Side of the road: -1=right, 1=left, 0=both</param>
-		/// <param name="laneTypeMask">Bitmask specifying what lane types to consider - see Lane::LaneType</param>
-		/// <returns>Width (m)</returns>
+		/**
+			Check if specified road is directly connected to at specified end of current one (this)
+			@param road Road to check if connected with current one
+			@param contact_point If not null it will contain the contact point of specified road
+			@return true if connection exist, else false
+		*/
+		bool IsDirectlyConnected(Road* road, LinkType link_type, ContactPointType* contact_point = 0);
+
+		/**
+			Check if specified road is directly connected, at least in one end of current one (this)
+			@param road Road to check if connected with current one
+			@param curvature Optional return parameter for curvature of checked road at connection point
+			@return true if connection exist, else false
+		*/
+		bool IsDirectlyConnected(Road* road, double* curvature = 0);
+
+		/**
+			Check if specified road is directly connected as successor to current one (this)
+			@param road Road to check if connected with current one
+			@param contact_point If not null it will contain the contact point of the successor road
+			@return true if connection exist, else false
+		*/
+		bool IsSuccessor(Road *road, ContactPointType* contact_point = 0);
+
+		/**
+			Check if specified road is directly connected as predecessor to current one (this)
+			@param road Road to check if connected with current one
+			@param contact_point If not null it will contain the contact point of the predecessor road
+			@return true if connection exist, else false
+		*/
+		bool IsPredecessor(Road* road, ContactPointType* contact_point = 0);
+
+		/**
+			Get width of road
+			@param s Longitudinal position/distance along the road
+			@param side Side of the road: -1=right, 1=left, 0=both
+			@param laneTypeMask Bitmask specifying what lane types to consider - see Lane::LaneType
+			@return Width (m)
+		*/
 		double GetWidth(double s, int side, int laneTypeMask = Lane::LaneType::LANE_TYPE_ANY);   // side: -1=right, 1=left, 0=both
 
 	protected:
@@ -1125,9 +1437,9 @@ namespace roadmanager
 	{
 	public:
 		LaneRoadLaneConnection() :
-			lane_id_(0), connecting_road_id_(-1), connecting_lane_id_(0), contact_point_(ContactPointType::CONTACT_POINT_NONE) {}
+			lane_id_(0), connecting_road_id_(-1), connecting_lane_id_(0), contact_point_(ContactPointType::CONTACT_POINT_UNDEFINED) {}
 		LaneRoadLaneConnection(int lane_id, int connecting_road_id, int connecting_lane_id) :
-			lane_id_(lane_id), connecting_road_id_(connecting_road_id), connecting_lane_id_(connecting_lane_id), contact_point_(ContactPointType::CONTACT_POINT_NONE) {}
+			lane_id_(lane_id), connecting_road_id_(connecting_road_id), connecting_lane_id_(connecting_lane_id), contact_point_(ContactPointType::CONTACT_POINT_UNDEFINED) {}
 		void SetLane(int id) { lane_id_ = id; }
 		void SetConnectingRoad(int id) { connecting_road_id_ = id; }
 		void SetConnectingLane(int id) { connecting_lane_id_ = id; }
@@ -1211,6 +1523,13 @@ namespace roadmanager
 	public:
 		typedef enum
 		{
+			DEFAULT,
+			DIRECT,
+			VIRTUAL  // not supported yet
+		} JunctionType;
+
+		typedef enum
+		{
 			LEFT_SECOND = -2,
 			LEFT_FIRST = -1,
 			STRAIGHT = 0,
@@ -1218,7 +1537,7 @@ namespace roadmanager
 			RIGHT_SECOND = 2
 		} JunctionStrategyType;
 
-		Junction(int id, std::string name) : id_(id), name_(name) {SetGlobalId();}
+		Junction(int id, std::string name, JunctionType type) : id_(id), name_(name), type_(type) {SetGlobalId();}
 		~Junction();
 		int GetId() { return id_; }
 		std::string GetName() { return name_; }
@@ -1237,6 +1556,8 @@ namespace roadmanager
 		int GetNumberOfControllers() { return (int)controller_.size(); }
 		JunctionController *GetJunctionControllerByIdx(int index);
 		void AddController(JunctionController controller) { controller_.push_back(controller); }
+		Road* GetRoadAtOtherEndOfConnectingRoad(Road* connecting_road, Road* incoming_road);
+		JunctionType GetType() { return type_; }
 
 	private:
 
@@ -1245,6 +1566,7 @@ namespace roadmanager
 		int id_;
 		int global_id_;
 		std::string name_;
+		JunctionType type_;
 	};
 
 	typedef struct
@@ -1274,7 +1596,7 @@ namespace roadmanager
 	class ROADMANAGER_API OpenDrive
 	{
 	public:
-		OpenDrive() {};
+		OpenDrive() : speed_unit_(SpeedUnit::UNDEFINED), versionMajor_(0), versionMinor_(0) {};
 		OpenDrive(const char *filename);
 		~OpenDrive();
 
@@ -1341,14 +1663,6 @@ namespace roadmanager
 		Junction* GetJunctionByIdx(int idx);
 
 		int GetNumOfJunctions() { return (int)junction_.size(); }
-		/**
-			Check if two roads are connected directly
-			@param road1_id Id of the first road
-			@param road2_id Id of the second road
-			@param angle if connected, the angle between road 2 and road 1 is returned here
-			@return 0 if not connected, -1 if road 2 is the predecessor of road 1, +1 if road 2 is the successor of road 1
-		*/
-		int IsDirectlyConnected(int road1_id, int road2_id, double& angle);
 
 		bool IsIndirectlyConnected(int road1_id, int road2_id, int* &connecting_road_id, int* &connecting_lane_id, int lane1_id = 0, int lane2_id = 0);
 
@@ -1362,18 +1676,30 @@ namespace roadmanager
 		int CheckLink(Road *road, RoadLink *link, ContactPointType expected_contact_point_type);
 		int CheckConnectedRoad(Road *road, RoadLink *link, ContactPointType expected_contact_point_type, RoadLink *link2);
 		int CheckJunctionConnection(Junction *junction, Connection *connection);
-		std::string ContactPointType2Str(ContactPointType type);
-		std::string ElementType2Str(RoadLink::ElementType type);
+		static std::string ContactPointType2Str(ContactPointType type);
+		static std::string ElementType2Str(RoadLink::ElementType type);
+		static std::string LinkType2Str(LinkType link_type);
 
 		int GetNumberOfControllers() { return (int)controller_.size(); }
 		Controller* GetControllerByIdx(int index);
 		Controller* GetControllerById(int id);
 		void AddController(Controller controller) { controller_.push_back(controller); }
 
-
 		GeoReference* GetGeoReference();
 		std::string GetGeoReferenceAsString();
 		void ParseGeoLocalization(const std::string& geoLocalization);
+
+		bool LoadSignalsByCountry(const std::string& country);
+
+		void SetSpeedUnit(SpeedUnit unit) { speed_unit_ = unit; }
+		/**
+			Get first specified speed unit (in road type elements). MS is default.
+			@return 0=Undefined, 1=km/h 2=m/s, 3=mph
+		*/
+		SpeedUnit GetSpeedUnit() { return speed_unit_; }
+
+		int GetVersionMajor() { return versionMajor_; }
+		int GetVersionMinor() { return versionMinor_; }
 
 		void Print();
 
@@ -1384,6 +1710,10 @@ namespace roadmanager
 		std::vector<Controller> controller_;
 		GeoReference geo_ref_;
 		std::string odr_filename_;
+		std::map<std::string, std::string> signals_types_;
+		SpeedUnit speed_unit_;  // First specified speed unit. MS is default. Undefined if no speed entries.
+		int versionMajor_;
+		int versionMinor_;
 	};
 
 	typedef struct
@@ -1477,11 +1807,13 @@ namespace roadmanager
 
 		enum class ErrorCode
 		{
-			ERROR_NO_ERROR = 0,
-			ERROR_GENERIC = -1,
-			ERROR_END_OF_ROAD = -2,
-			ERROR_END_OF_ROUTE = -3,
 			ERROR_OFF_ROAD = -4,
+			ERROR_END_OF_ROUTE = -3,
+			ERROR_END_OF_ROAD = -2,
+			ERROR_GENERIC = -1,
+			OK = 0,
+			ENTERED_NEW_ROAD = 1,     // position moved into a new road segment
+			MADE_JUNCTION_CHOICE = 2,  // position moved into a junction and made a choice
 		};
 
 		enum class UpdateTrackPosMode
@@ -1523,9 +1855,9 @@ namespace roadmanager
 		@param updateXY update world coordinates x, y... as well - or not
 		@return Non zero return value indicates error of some kind
 		*/
-		ErrorCode SetTrackPos(int track_id, double s, double t, bool UpdateXY = true);
+		ReturnCode SetTrackPos(int track_id, double s, double t, bool UpdateXY = true);
 		void ForceLaneId(int lane_id);
-		ErrorCode SetLanePos(int track_id, int lane_id, double s, double offset, int lane_section_idx = -1);
+		ReturnCode SetLanePos(int track_id, int lane_id, double s, double offset, int lane_section_idx = -1);
 		void SetLaneBoundaryPos(int track_id, int lane_id, double s, double offset, int lane_section_idx = -1);
 		void SetRoadMarkPos(int track_id, int lane_id, int roadmark_idx, int roadmarktype_idx, int roadmarkline_idx, double s, double offset, int lane_section_idx = -1);
 
@@ -1574,11 +1906,15 @@ namespace roadmanager
 		@param h Heading
 		@param conenctedOnly If true only roads that can be reached from current position will be considered, if false all roads will be considered
 		@param roadId If != -1 only this road will be considered else all roads will be searched
+		@param check_overlapping_roads If true all roads ovlerapping the position will be registered (with some performance penalty)
 		@return Non zero return value indicates error of some kind
 		*/
-		ErrorCode XYZH2TrackPos(double x, double y, double z, double h, bool connectedOnly = false, int roadId = -1);
+		ReturnCode XYZH2TrackPos(double x, double y, double z, double h, bool connectedOnly = false, int roadId = -1, bool check_overlapping_roads = false);
 
 		int MoveToConnectingRoad(RoadLink *road_link, ContactPointType &contact_point_type, Junction::JunctionStrategyType strategy = Junction::STRAIGHT);
+		int TeleportTo(Position* pos);
+
+		ReturnCode MoveToConnectingRoad(RoadLink *road_link, ContactPointType &contact_point_type, double junctionSelectorAngle = -1.0);
 
 		void SetRelativePosition(Position* rel_pos, PositionType type)
 		{
@@ -1603,36 +1939,34 @@ namespace roadmanager
 		@param position A regular position created with road, lane or world coordinates
 		@return Non zero return value indicates error of some kind
 		*/
-		int SetRoutePosition(Position *position);
+		int SetRoutePosition(Position* position);
 
 		/**
 		Retrieve the S-value of the current route position. Note: This is the S along the
 		complete route, not the actual individual roads.
 		*/
-		double GetRouteS() { return s_route_; }
-
+		double GetRouteS();
 		/**
 		Move current position forward, or backwards, ds meters along the route
 		@param ds Distance to move, negative will move backwards
+		@param actualDistance Distance considering lateral offset and curvature (true/default) or along centerline (false)
 		@return Non zero return value indicates error of some kind, most likely End Of Route
 		*/
-		ErrorCode MoveRouteDS(double ds);
+		ReturnCode MoveRouteDS(double ds, bool actualDistance = true);
 
 		/**
 		Move current position to specified S-value along the route
 		@param route_s Distance to move, negative will move backwards
-		@param laneId Explicit (not delta/offset) lane ID
-		@param laneOffset Explicit (not delta/offset) lane offset value
+		@return Non zero return value indicates error of some kind, most likely End Of Route
+		*/
+		ReturnCode SetRouteS(double route_s);
+
+		/**
+		Move current position along the route
+		@param ds Distance to move, negative will move backwards
 		@return Non zero return value indicates error of some kind
 		*/
-		int SetRouteLanePosition(Route* route, double route_s, int laneId, double  laneOffset);
-
-		/**
-		Move current position to specified S-value along the route
-		@param route_s Distance to move, negative will move backwards
-		@return Non zero return value indicates error of some kind, most likely End Of Route
-		*/
-		ErrorCode SetRouteS(Route* route, double route_s);
+		int SetRouteLanePosition(Route* route, double path_s, int lane_id, double lane_offset);
 
 		/**
 		Move current position forward, or backwards, ds meters along the trajectory
@@ -1660,7 +1994,7 @@ namespace roadmanager
 		@param trajectory_t Lateral distance from trajectory at current s-value
 		@return Non zero return value indicates error of some kind
 		*/
-		int SetTrajectoryT(double trajectory_t) { t_trajectory_ = trajectory_t; return 0; }
+		void SetTrajectoryT(double trajectory_t) { t_trajectory_ = trajectory_t; }
 
 		/**
 		Retrieve the T-value of the current trajectory position
@@ -1728,7 +2062,7 @@ namespace roadmanager
 		@param lookAheadMode Measurement strategy: Along reference lane, lane center or current lane offset. See roadmanager::Position::LookAheadMode enum
 		@return 0 if successful, other codes see Position::ErrorCode
 		*/
-		ErrorCode GetProbeInfo(double lookahead_distance, RoadProbeInfo *data, LookAheadMode lookAheadMode);
+		ReturnCode GetProbeInfo(double lookahead_distance, RoadProbeInfo *data, LookAheadMode lookAheadMode);
 
 		/**
 		Get information suitable for driver modeling of a point at a specified distance from object along the road ahead
@@ -1736,7 +2070,7 @@ namespace roadmanager
 		@param data Struct to fill in calculated values, see typdef for details
 		@return 0 if successful, other codes see Position::ErrorCode
 		*/
-		ErrorCode GetProbeInfo(Position *target_pos, RoadProbeInfo *data);
+		ReturnCode GetProbeInfo(Position *target_pos, RoadProbeInfo *data);
 
 		/**
 		Get information of current lane at a specified distance from object along the road ahead
@@ -1756,14 +2090,31 @@ namespace roadmanager
 		*/
 		int CalcProbeTarget(Position *target, RoadProbeInfo *data);
 
+		double DistanceToDS(double ds);
+
+		/**
+		Move position along the road network, forward or backward, from the current position
+		It will automatically follow connecting lanes between connected roads
+		If reaching a junction, choose way according to specified junctionSelectorAngle
+		@param ds distance to move from current position
+		@param dLaneOffset delta lane offset (adding to current position lane offset)
+		@param junctionSelectorAngle Desired direction [0:2pi] from incoming road direction (angle = 0), set -1 to randomize
+		@param actualDistance Distance considering lateral offset and curvature (true/default) or along centerline (false)
+		@return >= 0 on success, < 0 on error. For all codes see esmini roadmanager::Position::enum class ReturnCode
+		*/
+		ReturnCode MoveAlongS(double ds, double dLaneOffset, Junction::JunctionStrategyType strategy = Junction::JunctionStrategyType::STRAIGHT, bool actualDistance = true);
+
 		/**
 		Move position along the road network, forward or backward, from the current position
 		It will automatically follow connecting lanes between connected roads
 		If multiple options (only possible in junctions) it will choose randomly
 		@param ds distance to move from current position
-		@return 0 if successful, other codes see Position::ErrorCode
+		@return 0 if successful, other codes see Position::ReturnCode
 		*/
-		Position::ErrorCode MoveAlongS(double ds, double dLaneOffset = 0, Junction::JunctionStrategyType strategy = Junction::JunctionStrategyType::STRAIGHT);
+		ReturnCode MoveAlongS(double ds, bool actualDistance = true)
+		{
+			return MoveAlongS(ds, 0.0, -1.0, actualDistance);
+		}
 
 		/**
 		Retrieve the track/road ID from the position object
@@ -1840,6 +2191,21 @@ namespace roadmanager
 		Retrieve the road Z-value
 		*/
 		double GetZRoad() const { return z_road_; }
+
+		/**
+		Retrieve the road slope (vertical inclination)
+		*/
+		double GetZRoadPrim() const { return z_roadPrim_; }
+
+		/**
+		Retrieve the road slope rate of change (vertical bend)
+		*/
+		double GetZRoadPrimPrim() const { return z_roadPrimPrim_; }
+
+		/**
+		Retrieve the road rate of change of the road lateral inclination
+		*/
+		double GetRoadSuperElevationPrim() const { return roadSuperElevationPrim_; }
 
 		/**
 		Retrieve the world coordinate heading angle (radians)
@@ -2034,6 +2400,7 @@ namespace roadmanager
 		int GetStatusBitMask() { return status_; }
 
 		void SetOrientationType(OrientationType type) { orientation_type_ = type; }
+		OrientationType GetOrientationType() { return orientation_type_; }
 		void SetAlignModeH(ALIGN_MODE mode) { align_h_ = mode; }
 		void SetAlignModeP(ALIGN_MODE mode) { align_p_ = mode; }
 		void SetAlignModeR(ALIGN_MODE mode) { align_r_ = mode; }
@@ -2047,7 +2414,7 @@ namespace roadmanager
 		*/
 		void SetSnapLaneTypes(int laneTypeMask) { snapToLaneTypes_ = laneTypeMask; }
 
-		void CopyRMPos(Position *from);
+		void CopyRMPos(Position* from);
 
 		void PrintTrackPos();
 		void PrintLanePos();
@@ -2058,6 +2425,19 @@ namespace roadmanager
 
 		bool IsOffRoad();
 		bool IsInJunction();
+
+		/**
+		Get the number of roads overlapping the position
+		@return Number of roads overlapping the position
+		*/
+		int GetNumberOfRoadsOverlapping();
+
+		/**
+		Get the id of an overlapping road
+		@parameter index Index of the total returned by GetNumberOfRoadsOverlapping()
+		@return Id of specified overlapping road
+		*/
+		int GetOverlappingRoadId(int index);
 
 		void ReplaceObjectRefs(Position* pos1, Position* pos2)
 		{
@@ -2075,7 +2455,7 @@ namespace roadmanager
 
 	protected:
 		void Track2Lane();
-		ErrorCode Track2XYZ();
+		ReturnCode Track2XYZ();
 		void Lane2Track();
 		void RoadMark2Track();
 		/**
@@ -2083,7 +2463,7 @@ namespace roadmanager
 		*/
 		void LaneBoundary2Track();
 		void XYZ2Track();
-		ErrorCode SetLongitudinalTrackPos(int track_id, double s);
+		ReturnCode SetLongitudinalTrackPos(int track_id, double s);
 		bool EvaluateRoadZPitchRoll();
 
 		// Control lane belonging
@@ -2105,7 +2485,6 @@ namespace roadmanager
 		double  h_offset_;			// local heading offset given by lane width and offset
 		double  h_relative_;		// heading relative to the road (h_ = h_road_ + h_relative_)
 		double  z_relative_;        // z relative to the road
-		double  s_route_;			// longitudinal point/distance along the route
 		double  s_trajectory_;		// longitudinal point/distance along the trajectory
 		double  t_trajectory_;		// longitudinal point/distance along the trajectory
 		double  curvature_;
@@ -2144,6 +2523,9 @@ namespace roadmanager
 		double	z_road_;
 		double	p_road_;
 		double	r_road_;
+		double  z_roadPrim_;  // the road vertical slope (dz/ds)
+		double  z_roadPrimPrim_;  // rate of change of the road slope, like the vertical curvature
+		double  roadSuperElevationPrim_;  // rate of change of the road superelevation/lateral inclination
 
 		// keep track for fast incremental updates of the position
 		int		track_idx_;				// road index
@@ -2156,6 +2538,9 @@ namespace roadmanager
 		int		elevation_idx_;			// index of the current elevation entry
 		int		super_elevation_idx_;   // index of the current super elevation entry
 		int     osi_point_idx_;			// index of the current closest OSI road point
+
+		// Store roads overlapping position, updated by XYZH2TrackPos()
+		std::vector<int> overlapping_roads;  // road ids overlapping position evaluated by XYZH2TrackPos()
 	};
 
 
@@ -2163,22 +2548,63 @@ namespace roadmanager
 	class Route
 	{
 	public:
-		explicit Route() {}
+		Route() : invalid_route_(false), waypoint_idx_(-1), path_s_(0), length_(0) {}
 
 		/**
 		Adds a waypoint to the route. One waypoint per road. At most one junction between waypoints.
 		@param position A regular position created with road, lane or world coordinates
 		@return Non zero return value indicates error of some kind
 		*/
-		int AddWaypoint(Position *position);
+		int AddWaypoint(Position* position);
 		int GetWayPointDirection(int index);
 
 		void setName(std::string name);
 		std::string getName();
-		double GetLength();
+		double GetLength() { return length_; }
+		void CheckValid();
+		bool IsValid() { return !invalid_route_; }
 
-		std::vector<Position> waypoint_;
+		// Current route position data
+		// Actual object position might differ, e.g. laneId or even trackId in junctions
+		double GetTrackS() { return currentPos_.GetS(); }
+		double GetPathS() { return path_s_; }
+		int GetLaneId() { return currentPos_.GetLaneId(); }
+		int GetTrackId() { return currentPos_.GetTrackId(); }
+		Position* GetWaypoint(int index = -1);  // -1 means current
+		Road* GetRoadAtOtherEndOfConnectingRoad(Road* incoming_road);
+		Position* GetCurrentPosition() { return &currentPos_; }
+
+		/**
+		Specify route position in terms of a track ID and track S value
+		@return Non zero return value indicates error of some kind
+		*/
+		Position::ReturnCode SetTrackS(int trackId, double s);
+
+		/**
+		Move current position forward, or backwards, ds meters along the route
+		@param ds Distance to move, negative will move backwards
+		@param actualDistance Distance considering lateral offset and curvature (true/default) or along centerline (false)
+		@return Non zero return value indicates error of some kind, most likely End Of Route
+		*/
+		Position::ReturnCode MovePathDS(double ds);
+
+		/**
+		Move current position to specified S-value along the route
+		@param route_s Distance to move, negative will move backwards
+		@return Non zero return value indicates error of some kind, most likely End Of Route
+		*/
+		Position::ReturnCode SetPathS(double s);
+
+		Position::ReturnCode CopySFractionOfLength(Position* pos);
+
+		std::vector<Position> minimal_waypoints_; // used only for the default controllers
+		std::vector<Position> all_waypoints_; // used for user-defined controllers
 		std::string name_;
+		bool invalid_route_;
+		double path_s_;
+		Position currentPos_;
+		double length_;
+		int waypoint_idx_;
 	};
 
 	// A Road Path is a linked list of road links (road connections or junctions)
@@ -2194,6 +2620,7 @@ namespace roadmanager
 			double dist;
 			Road* fromRoad;
 			int fromLaneId;
+			ContactPointType contactPoint;
 			PathNode* previous;
 		} PathNode;
 
@@ -2240,7 +2667,7 @@ namespace roadmanager
 	{
 	public:
 
-		PolyLineBase() : length_(0), vIndex_(0), currentPos_({0, 0, 0, 0, 0, 0, 0, 0, false }), interpolateHeading_(false) {}
+		PolyLineBase() : length_(0), current_index_(0), current_s_(0.0), interpolateHeading_(false) {}
 		TrajVertex* AddVertex(TrajVertex p);
 		TrajVertex* AddVertex(double x, double y, double z, double h);
 		TrajVertex* AddVertex(double x, double y, double z);
@@ -2273,15 +2700,34 @@ namespace roadmanager
 		int Evaluate(double s, TrajVertex& pos);
 		int FindClosestPoint(double xin, double yin, TrajVertex& pos, int& index, int startAtIndex = 0);
 		int FindPointAhead(double s_start, double distance, TrajVertex& pos, int& index, int startAtIndex = 0);
+
+		/**
+		* Get ghost state at a point in time
+		* @param time Simulation time (subtracting headstart time, i.e. time=0 gives the initial state)
+		* @param pos Returns state including position, heading, speed. See TrajVertex type.
+		* @param index Returns the index of matching trajectory segment
+		* @param startAtIndex Start search for segment (e.g. index returned by previous call)
+		*/
+		int FindPointAtTime(double time, TrajVertex& pos, int& index, int startAtIndex = 0);
+
+		/**
+		* Get ghost state at a point in time
+		* @param time Time offset from first timestamp
+		* @param pos Returns state including position, heading, speed. See TrajVertex type.
+		* @param index Returns the index of matching trajectory segment
+		* @param startAtIndex Start search for segment (e.g. index returned by previous call)
+		*/
+		int FindPointAtTimeRelative(double time, TrajVertex& pos, int& index, int startAtIndex = 0);
+
 		int GetNumberOfVertices() { return (int)vertex_.size(); }
 		TrajVertex* GetVertex(int index);
 		void Reset();
 		int Time2S(double time, double& s);
 
 		std::vector<TrajVertex> vertex_;
-		TrajVertex currentPos_;
+		int current_index_;
+		double current_s_;
 		double length_;
-		int vIndex_;
 		bool interpolateHeading_;
 
 	protected:
@@ -2309,6 +2755,16 @@ namespace roadmanager
 
 		Shape(ShapeType type) : type_(type) {}
 		virtual int Evaluate(double p, TrajectoryParamType ptype, TrajVertex& pos) { return -1; };
+
+		/**
+			Find point on shape closest to provided point
+			@param xin X coordinate of input position
+			@param yin Y coordinate of input position
+			@param pos Output parameter: Closest trajectory position
+			@param index Output parameter: Index of closest underlying polyline segment, can be used as start index in next call
+			@param startAtIndex: <= 0: Search global minimum along the whole path, > 0: Look for local minimum around this index.
+			@return true if connection exist, else false
+		*/
 		int FindClosestPoint(double xin, double yin, TrajVertex& pos, int& index, int startAtIndex = 0) { return -1; };
 		virtual double GetLength() { return 0.0; }
 		virtual double GetStartTime() { return 0.0; }

@@ -14,6 +14,8 @@
 
 using namespace scenarioengine;
 
+void (*Event::eventCallback)(const char* name, double timestamp, bool start) = nullptr;
+
 void Event::Start(double simTime, double dt)
 {
 	double adjustedTime = simTime;
@@ -38,7 +40,7 @@ void Event::Start(double simTime, double dt)
 							// Domains overlap, at least one domain in common. Terminate old action.
 							LOG("Stopping %s on conflicting %s domain(s)",
 								obj->initActions_[j]->name_.c_str(), ControlDomain2Str(obj->initActions_[j]->GetDomain()).c_str());
-							obj->initActions_[j]->End();
+							obj->initActions_[j]->End(simTime);
 						}
 					}
 				}
@@ -49,7 +51,7 @@ void Event::Start(double simTime, double dt)
 					for (size_t k = 0; k < obj->objectEvents_[j]->action_.size(); k++)
 					{
 						if (pa->object_->objectEvents_[j]->action_[k] != pa &&
-							pa->object_->objectEvents_[j]->action_[k]->state_ == StoryBoardElement::State::RUNNING &&
+							pa->object_->objectEvents_[j]->action_[k]->IsActive() &&
 							pa->object_->objectEvents_[j]->action_[k]->base_type_ == OSCAction::BaseType::PRIVATE)
 						{
 							OSCPrivateAction* pa2 = (OSCPrivateAction*)obj->objectEvents_[j]->action_[k];
@@ -58,7 +60,7 @@ void Event::Start(double simTime, double dt)
 								// Domains overlap, at least one domain in common. Terminate old action.
 								LOG("Stopping object %s %s on conflicting %s domain(s)",
 									obj->name_.c_str(), pa2->name_.c_str(), ControlDomain2Str(pa2->GetDomain()).c_str());
-								pa2->End();
+								pa2->End(simTime);
 							}
 						}
 					}
@@ -82,19 +84,30 @@ void Event::Start(double simTime, double dt)
 		}
 	}
 
+	if (eventCallback != nullptr)
+	{
+		eventCallback(name_.c_str(), adjustedTime, true);
+	}
+
 	StoryBoardElement::Start(adjustedTime, dt);
 }
 
-void Event::End()
+void Event::End(double simTime)
 {
 	for (size_t i = 0; i < action_.size(); i++)
 	{
 		if (action_[i]->IsActive())
 		{
-			action_[i]->End();
+			action_[i]->End(simTime);
 		}
 	}
-	StoryBoardElement::End();
+
+	if (eventCallback != nullptr)
+	{
+		eventCallback(name_.c_str(), simTime, false);
+	}
+
+	StoryBoardElement::End(simTime);
 }
 
 void Event::Stop()
@@ -106,7 +119,16 @@ void Event::Stop()
 	StoryBoardElement::Stop();
 }
 
-bool scenarioengine::OSCManeuver::IsAnyEventActive()
+void Event::UpdateState()
+{
+	for (size_t n = 0; n < action_.size(); n++)
+	{
+		action_[n]->UpdateState();
+	}
+	StoryBoardElement::UpdateState();
+}
+
+bool OSCManeuver::IsAnyEventActive()
 {
 	for (size_t i = 0; i < event_.size(); i++)
 	{
@@ -117,3 +139,25 @@ bool scenarioengine::OSCManeuver::IsAnyEventActive()
 	}
 	return false;
 }
+
+bool OSCManeuver::AreAllEventsComplete()
+{
+	for (size_t i = 0; i < event_.size(); i++)
+	{
+		if (event_[i]->state_ != StoryBoardElement::State::COMPLETE)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+void OSCManeuver::UpdateState()
+{
+	// Update state of sub elements - moving from transitions to stable states
+	for (size_t k = 0; k < event_.size(); k++)
+	{
+		event_[k]->UpdateState();
+	}
+}
+

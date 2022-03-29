@@ -39,21 +39,21 @@ static int GetProbeInfo(int index, float lookahead_distance, RM_RoadProbeInfo *r
 
 	double adjustedLookaheadDistance = lookahead_distance;
 
-	if (!inRoadDrivingDirection)
+	if (inRoadDrivingDirection)
 	{
-		// Find out what direction to look in
-		if (fabs(position[index].GetHRelativeDrivingDirection()) > M_PI_2)
+		// Look in the driving direction of current lane
+		if (position[index].GetHRelativeDrivingDirection() > M_PI_2 && position[index].GetHRelativeDrivingDirection() < 3 * M_PI_2)
 		{
 			adjustedLookaheadDistance = -lookahead_distance;
 		}
 	}
 
-	if (position[index].GetProbeInfo(adjustedLookaheadDistance, &s_data, (roadmanager::Position::LookAheadMode)lookAheadMode) != roadmanager::Position::ErrorCode::ERROR_GENERIC)
+	if (position[index].GetProbeInfo(adjustedLookaheadDistance, &s_data, (roadmanager::Position::LookAheadMode)lookAheadMode) != roadmanager::Position::ReturnCode::ERROR_GENERIC)
 	{
 		// Copy data
-		r_data->road_lane_info.pos[0] = (float)s_data.road_lane_info.pos[0];
-		r_data->road_lane_info.pos[1] = (float)s_data.road_lane_info.pos[1];
-		r_data->road_lane_info.pos[2] = (float)s_data.road_lane_info.pos[2];
+		r_data->road_lane_info.pos.x = (float)s_data.road_lane_info.pos[0];
+		r_data->road_lane_info.pos.y = (float)s_data.road_lane_info.pos[1];
+		r_data->road_lane_info.pos.z = (float)s_data.road_lane_info.pos[2];
 		r_data->road_lane_info.heading = (float)s_data.road_lane_info.heading;
 		r_data->road_lane_info.pitch = (float)s_data.road_lane_info.pitch;
 		r_data->road_lane_info.roll = (float)s_data.road_lane_info.roll;
@@ -66,18 +66,18 @@ static int GetProbeInfo(int index, float lookahead_distance, RM_RoadProbeInfo *r
 		r_data->road_lane_info.laneOffset = (float)s_data.road_lane_info.laneOffset;
 		r_data->road_lane_info.s = (float)s_data.road_lane_info.s;
 		r_data->road_lane_info.t = (float)s_data.road_lane_info.t;
-		r_data->relative_pos[0] = (float)s_data.relative_pos[0];
-		r_data->relative_pos[1] = (float)s_data.relative_pos[1];
-		r_data->relative_pos[2] = (float)s_data.relative_pos[2];
+		r_data->relative_pos.x = (float)s_data.relative_pos[0];
+		r_data->relative_pos.y = (float)s_data.relative_pos[1];
+		r_data->relative_pos.z = (float)s_data.relative_pos[2];
 		r_data->relative_h = (float)s_data.relative_h;
 
 		if (position[index].GetStatusBitMask() & static_cast<int>(roadmanager::Position::PositionStatusMode::POS_STATUS_END_OF_ROAD))
 		{
-			return static_cast<int>(roadmanager::Position::ErrorCode::ERROR_END_OF_ROAD);
+			return static_cast<int>(roadmanager::Position::ReturnCode::ERROR_END_OF_ROAD);
 		}
 		else if (position[index].GetStatusBitMask() & static_cast<int>(roadmanager::Position::PositionStatusMode::POS_STATUS_END_OF_ROUTE))
 		{
-			return static_cast<int>(roadmanager::Position::ErrorCode::ERROR_END_OF_ROUTE);
+			return static_cast<int>(roadmanager::Position::ReturnCode::ERROR_END_OF_ROUTE);
 		}
 		else
 		{
@@ -116,9 +116,9 @@ static int GetRoadLaneInfo(int index, float lookahead_distance, RM_RoadLaneInfo 
 
 	position[index].GetRoadLaneInfo(adjustedLookaheadDistance, &s_data, (roadmanager::Position::LookAheadMode)lookAheadMode);
 
-	r_data->pos[0] = (float)s_data.pos[0];
-	r_data->pos[1] = (float)s_data.pos[1];
-	r_data->pos[2] = (float)s_data.pos[2];
+	r_data->pos.x = (float)s_data.pos[0];
+	r_data->pos.y = (float)s_data.pos[1];
+	r_data->pos.z = (float)s_data.pos[2];
 	r_data->heading = (float)s_data.heading;
 	r_data->pitch = (float)s_data.pitch;
 	r_data->roll = (float)s_data.roll;
@@ -313,6 +313,16 @@ extern "C"
 		}
 	}
 
+	RM_DLL_API int RM_GetSpeedUnit()
+	{
+		if (odrManager != nullptr)
+		{
+			return static_cast<int>(odrManager->GetSpeedUnit());
+		}
+
+		return -1;
+	}
+
 	RM_DLL_API int RM_GetIdOfRoadFromIndex(int index)
 	{
 		if (odrManager != nullptr)
@@ -361,6 +371,30 @@ extern "C"
 		}
 
 		return numberOfDrivableLanes;
+	}
+
+	RM_DLL_API int RM_GetNumberOfRoadsOverlapping(int handle)
+	{
+		if (odrManager == nullptr || handle >= position.size() || handle < 0)
+		{
+			return -1;
+		}
+
+		roadmanager::Position* pos = &position[handle];
+
+		return pos->GetNumberOfRoadsOverlapping();
+	}
+
+	RM_DLL_API int RM_GetOverlappingRoadId(int handle, int index)
+	{
+		if (odrManager == nullptr || handle >= position.size() || handle < 0)
+		{
+			return -1;
+		}
+
+		roadmanager::Position* pos = &position[handle];
+
+		return pos->GetOverlappingRoadId(index);
 	}
 
 	RM_DLL_API int RM_GetLaneIdByIndex(int roadId, int laneIndex, float s)
@@ -553,6 +587,70 @@ extern "C"
 		return GetProbeInfo(handle, lookahead_distance, data, lookAheadMode, inRoadDrivingDirection);
 	}
 
+	RM_DLL_API float RM_GetLaneWidth(int handle, int lane_id)
+	{
+		if (odrManager == nullptr || handle < 0 || handle >= position.size())
+		{
+			return 0.0;
+		}
+
+		roadmanager::Road* road = odrManager->GetRoadById(position[handle].GetTrackId());
+		if (road == nullptr)
+		{
+			return 0.0;
+		}
+
+		return (float)road->GetLaneWidthByS(position[handle].GetS(), lane_id);
+	}
+
+	RM_DLL_API float RM_GetLaneWidthByRoadId(int road_id, int lane_id, float s)
+	{
+		if (odrManager == nullptr)
+		{
+			return 0.0;
+		}
+
+		roadmanager::Road* road = odrManager->GetRoadById(road_id);
+		if (road == nullptr)
+		{
+			return 0.0;
+		}
+
+		return (float)road->GetLaneWidthByS(s, lane_id);
+	}
+
+	RM_DLL_API int RM_GetLaneType(int handle, int lane_id)
+	{
+		if (odrManager == nullptr || handle < 0 || handle >= position.size())
+		{
+			return -1;
+		}
+
+		roadmanager::Road* road = odrManager->GetRoadById(position[handle].GetTrackId());
+		if (road == nullptr)
+		{
+			return -1;
+		}
+
+		return road->GetLaneTypeByS(position[handle].GetS(), lane_id);
+	}
+
+	RM_DLL_API int RM_GetLaneTypeByRoadId(int road_id, int lane_id, float s)
+	{
+		if (odrManager == nullptr)
+		{
+			return -1;
+		}
+
+		roadmanager::Road* road = odrManager->GetRoadById(road_id);
+		if (road == nullptr)
+		{
+			return -1;
+		}
+
+		return road->GetLaneTypeByS(s, lane_id);
+	}
+
 	RM_DLL_API int RM_SubtractAFromB(int handleA, int handleB, RM_PositionDiff *pos_diff)
 	{
 		if (odrManager == nullptr || handleA >= position.size() || handleB >= position.size())
@@ -672,4 +770,45 @@ extern "C"
 
 		return -1;
 	}
+
+	RM_DLL_API int RM_GetOpenDriveGeoReference(RM_GeoReference* rmGeoReference)
+	{
+		if (odrManager != nullptr)
+		{
+			roadmanager::GeoReference* geoReference = odrManager->GetGeoReference();
+			if (geoReference == nullptr)
+			{
+				return -1;
+			}
+			else {
+				rmGeoReference->a_ = (float)(geoReference->a_);
+				rmGeoReference->axis_ = (float)(geoReference->axis_);
+				rmGeoReference->b_ = (float)(geoReference->b_);
+				rmGeoReference->ellps_ = geoReference->ellps_.c_str();
+				rmGeoReference->k_ = (float)(geoReference->k_);
+				rmGeoReference->k_0_ = (float)(geoReference->k_0_);
+				rmGeoReference->lat_0_ = (float)(geoReference->lat_0_);
+				rmGeoReference->lon_0_ = (float)(geoReference->lon_0_);
+				rmGeoReference->lon_wrap_ = (float)(geoReference->lon_wrap_);
+				rmGeoReference->over_ = (float)(geoReference->over_);
+				rmGeoReference->pm_ = geoReference->pm_.c_str();
+				rmGeoReference->proj_ = geoReference->proj_.c_str();
+				rmGeoReference->units_ = geoReference->units_.c_str();
+				rmGeoReference->vunits_ = geoReference->vunits_.c_str();
+				rmGeoReference->x_0_ = (float)(geoReference->x_0_);
+				rmGeoReference->y_0_ = (float)(geoReference->y_0_);
+				rmGeoReference->datum_ = geoReference->datum_.c_str();
+				rmGeoReference->geo_id_grids_ = geoReference->geo_id_grids_.c_str();
+				rmGeoReference->zone_ = (float)(geoReference->zone_);
+				rmGeoReference->towgs84_ = geoReference->towgs84_;
+
+				return 0;
+
+			}
+		}
+
+		return -1;
+
+	}
+
 }

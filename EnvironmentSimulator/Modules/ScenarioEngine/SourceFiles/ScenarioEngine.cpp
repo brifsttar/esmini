@@ -18,9 +18,17 @@
 
 #define WHEEL_RADIUS 0.35
 #define STAND_STILL_THRESHOLD 1e-3  // meter per second
-#define TRAJECTORY_SAMPLE_TIME 0.2
 
 using namespace scenarioengine;
+
+namespace scenarioengine
+{
+	void RegisterParameterDeclarationCallback(ParamDeclCallbackFunc func, void* data)
+	{
+		paramDeclCallback.func = func;
+		paramDeclCallback.data = data;
+	}
+}
 
 ScenarioEngine::ScenarioEngine(std::string oscFilename, bool disable_controllers)
 {
@@ -32,17 +40,21 @@ ScenarioEngine::ScenarioEngine(const pugi::xml_document &xml_doc, bool disable_c
 	InitScenario(xml_doc, disable_controllers);
 }
 
-void ScenarioEngine::InitScenario(std::string oscFilename, bool disable_controllers)
+void ScenarioEngine::InitScenarioCommon(bool disable_controllers)
 {
-	// Load and parse data
 	quit_flag = false;
 	disable_controllers_ = disable_controllers;
 	headstart_time_ = 0;
 	simulationTime_ = 0;
 	trueTime_ = 0;
 	initialized_ = false;
-	scenarioReader = new ScenarioReader(&entities, &catalogs, disable_controllers);
+	ghost_mode_ = GhostMode::NORMAL;
+	scenarioReader = new ScenarioReader(&entities_, &catalogs, disable_controllers);
+}
 
+void ScenarioEngine::InitScenario(std::string oscFilename, bool disable_controllers)
+{
+	InitScenarioCommon(disable_controllers);
 
 	std::vector<std::string> file_name_candidates;
 	// absolute path or relative to current directory
@@ -86,13 +98,8 @@ void ScenarioEngine::InitScenario(std::string oscFilename, bool disable_controll
 
 void ScenarioEngine::InitScenario(const pugi::xml_document &xml_doc, bool disable_controllers)
 {
-	quit_flag = false;
-	disable_controllers_ = disable_controllers;
-	headstart_time_ = 0;
-	simulationTime_ = 0;
-	trueTime_ = 0;
-	initialized_ = false;
-	scenarioReader = new ScenarioReader(&entities, &catalogs, disable_controllers);
+	InitScenarioCommon(disable_controllers);
+
 	if (scenarioReader->loadOSCMem(xml_doc) != 0)
 	{
 		throw std::invalid_argument("Failed to load OpenSCENARIO from XML string");
@@ -110,57 +117,19 @@ ScenarioEngine::~ScenarioEngine()
 
 int ScenarioEngine::step(double deltaSimTime)
 {
-
-	// This timestep calculation is due to the Ghost vehicle
-	// If both times are equal, it is a normal scenario, or no Ghost teleportation is ongoing -> Step as usual
-	// Else if we can take a step, and still not reach the point of teleportation -> Step only simulationTime (That the Ghost runs on)
-	// Else, the only thing left is that the next step will take us above the point of teleportation -> Step to that point instead and go on from there
-
-	if ( simulationTime_ == trueTime_)
+	if (ghost_mode_ == GhostMode::RESTART)
 	{
-		simulationTime_ += deltaSimTime;
 		trueTime_ = simulationTime_;
-
-	} else if ( simulationTime_ + deltaSimTime < trueTime_)
-	{
-		simulationTime_ += deltaSimTime;
-
-	} else
-	{
-		simulationTime_ = trueTime_;
-	}
-
-	//simulationTime_ += deltaSimTime;
-
-	//if (simulationTime_ > trueTime_) // - trueTime_ >= -deltaSimTime/2)
-	//if ( simulationTime_ >= trueTime_ )
-	//{
-		// if (simulationTime_ < 0)
-		// {
-		// 	simulationTime_ = 0;
-		// }
-		// simulationTime_ = trueTime_;
-
-		// simulationTime_ += deltaSimTime;
-
-		// trueTime_ = simulationTime_;
-		//trueTime_ = simulationTime_;
-		//printf("Truetime: %.2f \n", trueTime_);
-	//}
-	//LOG("Ghost Sim Time %f", simulationTime_);
-	//LOG("True Sim Time %f", trueTime_);
-
-	if (entities.object_.size() == 0)
-	{
-		return -1;
+		simulationTime_ -= headstart_time_;
+		ghost_mode_ = GhostMode::RESTARTING;
 	}
 
 	if (!initialized_)
 	{
 		// Set initial values for speed and acceleration derivation
-		for (size_t i = 0; i < entities.object_.size(); i++)
+		for (size_t i = 0; i < entities_.object_.size(); i++)
 		{
-			Object* obj = entities.object_[i];
+			Object* obj = entities_.object_[i];
 
 			obj->state_old.pos_x = obj->pos_.GetX();
 			obj->state_old.pos_y = obj->pos_.GetY();
@@ -177,14 +146,19 @@ int ScenarioEngine::step(double deltaSimTime)
 			init.private_action_[i]->Start(simulationTime_, deltaSimTime);
 			init.private_action_[i]->UpdateState();
 		}
+		for (size_t i = 0; i < init.global_action_.size(); i++)
+		{
+			init.global_action_[i]->Start(simulationTime_, deltaSimTime);
+			init.global_action_[i]->UpdateState();
+		}
 		initialized_ = true;
 	}
 	else
 	{
 		// reset update bits and indicators of applied control
-		for (size_t i = 0; i < entities.object_.size(); i++)
+		for (size_t i = 0; i < entities_.object_.size(); i++)
 		{
-			Object* obj = entities.object_[i];
+			Object* obj = entities_.object_[i];
 			ObjectState *o;
 
 			obj->ClearDirtyBits(
@@ -206,22 +180,22 @@ int ScenarioEngine::step(double deltaSimTime)
 			{
 				if (o->dirty_ & (Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL))
 				{
-					obj->pos_ =  o->state_.pos;
+					obj->pos_ = o->state_.pos;
 					obj->SetDirtyBits(o->dirty_ & (Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL));
 				}
 				if (o->dirty_ & Object::DirtyBit::SPEED)
 				{
-					obj->speed_ =  o->state_.info.speed;
+					obj->speed_ = o->state_.info.speed;
 					obj->SetDirtyBits(Object::DirtyBit::SPEED);
 				}
 				if (o->dirty_ & Object::DirtyBit::WHEEL_ANGLE)
 				{
-					obj->wheel_angle_ =  o->state_.info.wheel_angle;
+					obj->wheel_angle_ = o->state_.info.wheel_angle;
 					obj->SetDirtyBits(Object::DirtyBit::WHEEL_ANGLE);
 				}
 				if (o->dirty_ & Object::DirtyBit::WHEEL_ROTATION)
 				{
-					obj->wheel_rot_ =  o->state_.info.wheel_rot;
+					obj->wheel_rot_ = o->state_.info.wheel_rot;
 					obj->SetDirtyBits(Object::DirtyBit::WHEEL_ROTATION);
 				}
 				o->clearDirtyBits();
@@ -237,15 +211,21 @@ int ScenarioEngine::step(double deltaSimTime)
 				{
 					obj->SetEndOfRoad(false);
 				}
-
 			}
 		}
+	}
+
+	// Check for collisions
+	if (SE_Env::Inst().GetCollisionDetection())
+	{
+		DetectCollisions();
 	}
 
 	// Step inital actions - might be extened in time (more than one step)
 	for (size_t i = 0; i < init.private_action_.size(); i++)
 	{
-		if (init.private_action_[i]->IsActive())
+		Object* obj = init.private_action_[i]->object_;
+		if (obj && init.private_action_[i]->IsActive())
 		{
 			//Add action to object initActions vector if it doesn't contain the action
 			if (std::find(init.private_action_[i]->object_->initActions_.begin(), init.private_action_[i]->object_->initActions_.end(), init.private_action_[i]) == init.private_action_[i]->object_->initActions_.end())
@@ -256,6 +236,15 @@ int ScenarioEngine::step(double deltaSimTime)
 			init.private_action_[i]->Step(getSimulationTime(), deltaSimTime);
 		}
 		init.private_action_[i]->UpdateState();
+	}
+
+	for (size_t i = 0; i < init.global_action_.size(); i++)
+	{
+		if (init.global_action_[i]->IsActive())
+		{
+			init.global_action_[i]->Step(getSimulationTime(), deltaSimTime);
+		}
+		init.global_action_[i]->UpdateState();
 	}
 
 	// Story
@@ -279,14 +268,14 @@ int ScenarioEngine::step(double deltaSimTime)
 			if (act->IsTriggable())
 			{
 				// Check start conditions
-				if (!act->start_trigger_)
-				{
-					// Start act even if there's no trigger
-					act->Start(simulationTime_, deltaSimTime);
-				}
-				else if (act->start_trigger_->Evaluate(&storyBoard, simulationTime_) == true)
+				if (!act->start_trigger_ ||   // Start act even if there's no trigger
+					act->start_trigger_->Evaluate(&storyBoard, simulationTime_) == true)
 				{
 					act->Start(simulationTime_, deltaSimTime);
+					for (size_t k = 0; k < act->maneuverGroup_.size(); k++)
+					{
+						act->maneuverGroup_[k]->Start(simulationTime_, deltaSimTime);
+					}
 				}
 			}
 
@@ -294,7 +283,7 @@ int ScenarioEngine::step(double deltaSimTime)
 			{
 				if (act->stop_trigger_->Evaluate(&storyBoard, simulationTime_) == true)
 				{
-					act->End();
+					act->End(simulationTime_);
 				}
 			}
 
@@ -303,23 +292,137 @@ int ScenarioEngine::step(double deltaSimTime)
 			// Check whether this act is done - and update flag for all acts
 			all_done = all_done && act->state_ == Act::State::COMPLETE;
 
-			// Update state of sub elements - moving from transitions to stable states
-			for (size_t k = 0; k < act->maneuverGroup_.size(); k++)
+			// Maneuvers
+			if (act->IsActive())
 			{
-				for (size_t l = 0; l < act->maneuverGroup_[k]->maneuver_.size(); l++)
+				for (size_t k = 0; k < act->maneuverGroup_.size(); k++)
 				{
-					OSCManeuver *maneuver = act->maneuverGroup_[k]->maneuver_[l];
-
-					for (size_t m = 0; m < maneuver->event_.size(); m++)
+					ManeuverGroup* mg = act->maneuverGroup_[k];
+					if (mg->IsActive())
 					{
-						for (size_t n = 0; n < maneuver->event_[m]->action_.size(); n++)
+						for (size_t l = 0; l < mg->maneuver_.size(); l++)
 						{
-							maneuver->event_[m]->action_[n]->UpdateState();
+							OSCManeuver* maneuver = mg->maneuver_[l];
+
+							for (size_t m = 0; m < maneuver->event_.size(); m++)
+							{
+								Event* event = maneuver->event_[m];
+
+								// add event to objectEvents vector
+								if (event->IsTriggable() || event->IsActive())
+								{
+									for (size_t n = 0; n < event->action_.size(); n++)
+									{
+										OSCAction* action = event->action_[n];
+										if (action->base_type_ == OSCAction::BaseType::PRIVATE)
+										{
+											OSCPrivateAction* pa = (OSCPrivateAction*)action;
+											if (!pa->object_->containsEvent(event))
+											{
+												pa->object_->addEvent(event);
+												break;
+											}
+
+										}
+									}
+								}
+
+								// First evaluate which events are active
+								if (event->IsTriggable())
+								{
+									// Check event conditions
+									if (event->start_trigger_->Evaluate(&storyBoard, simulationTime_) == true)
+									{
+										bool startEvent = false;
+
+										// Check priority
+										if (event->priority_ == Event::Priority::OVERWRITE)
+										{
+											// Activate trigged event
+											if (event->IsActive())
+											{
+												LOG("Can't overwrite own running event (%s) - skip trig", event->name_.c_str());
+											}
+											else
+											{
+												// Deactivate any currently active event
+												for (size_t n = 0; n < maneuver->event_.size(); n++)
+												{
+													if (maneuver->event_[n]->IsActive())
+													{
+														//remove event from objectEvents vector
+														for (size_t o = 0; o < maneuver->event_[n]->action_.size(); o++)
+														{
+															OSCAction* action = maneuver->event_[n]->action_[o];
+															if (action->base_type_ == OSCAction::BaseType::PRIVATE)
+															{
+																OSCPrivateAction* pa = (OSCPrivateAction*)action;
+																pa->object_->removeEvent(event);
+
+																break;
+															}
+														}
+
+														maneuver->event_[n]->End(simulationTime_);
+														LOG("Event %s ended, overwritten by event %s",
+															maneuver->event_[n]->name_.c_str(), event->name_.c_str());
+													}
+												}
+
+												startEvent = true;
+											}
+										}
+										else if (event->priority_ == Event::Priority::SKIP)
+										{
+											if (maneuver->IsAnyEventActive())
+											{
+												LOG("Event is running, skipping trigged %s", event->name_.c_str());
+											}
+											else
+											{
+												startEvent = true;
+											}
+										}
+										else if (event->priority_ == Event::Priority::PARALLEL)
+										{
+											// Don't care if any other action is ongoing, launch anyway
+											if (event->IsActive())
+											{
+												LOG("Event %s already running, trigger ignored", event->name_.c_str());
+											}
+											else if (maneuver->IsAnyEventActive())
+											{
+												LOG("Event(s) ongoing, %s will run in parallel", event->name_.c_str());
+											}
+
+											startEvent = true;
+										}
+										else
+										{
+											LOG("Unknown event priority: %d", event->priority_);
+										}
+
+										if (startEvent)
+										{
+											event->Start(simulationTime_, deltaSimTime);
+										}
+									}
+								}
+							}
 						}
-						maneuver->event_[m]->UpdateState();
+						if (mg->AreAllManeuversComplete())
+						{
+							mg->End(simulationTime_);
+						}
 					}
 				}
 			}
+		}
+
+		for (size_t j = 0; j < story->act_.size(); j++)
+		{
+			// Then step events
+			Act* act = story->act_[j];
 
 			// Maneuvers
 			if (act->IsActive())
@@ -328,111 +431,11 @@ int ScenarioEngine::step(double deltaSimTime)
 				{
 					for (size_t l = 0; l < act->maneuverGroup_[k]->maneuver_.size(); l++)
 					{
-						OSCManeuver *maneuver = act->maneuverGroup_[k]->maneuver_[l];
+						OSCManeuver* maneuver = act->maneuverGroup_[k]->maneuver_[l];
 
 						for (size_t m = 0; m < maneuver->event_.size(); m++)
 						{
-							Event *event = maneuver->event_[m];
-
-							//add event to objectEvents vector
-							if (event->IsTriggable() || event->IsActive())
-							{
-								for (size_t n = 0; n < event->action_.size(); n++)
-								{
-									OSCAction* action = event->action_[n];
-									if (action->base_type_ == OSCAction::BaseType::PRIVATE)
-									{
-										OSCPrivateAction* pa = (OSCPrivateAction*)action;
-										if (!pa->object_->containsEvent(event))
-										{
-											pa->object_->addEvent(event);
-											break;
-										}
-
-									}
-								}
-							}
-
-							if (event->IsTriggable())
-							{
-								// Check event conditions
-								if (event->start_trigger_->Evaluate(&storyBoard, simulationTime_) == true)
-								{
-									bool startEvent = false;
-
-									// Check priority
-									if (event->priority_ == Event::Priority::OVERWRITE)
-									{
-										// Activate trigged event
-										if (event->IsActive())
-										{
-											LOG("Can't overwrite own running event (%s) - skip trig", event->name_.c_str());
-										}
-										else
-										{
-											// Deactivate any currently active event
-											for (size_t n = 0; n < maneuver->event_.size(); n++)
-											{
-												if (maneuver->event_[n]->IsActive())
-												{
-													//remove event from objectEvents vector
-													for (size_t o = 0; o < maneuver->event_[n]->action_.size(); o++)
-													{
-														OSCAction* action = maneuver->event_[n]->action_[o];
-														if (action->base_type_ == OSCAction::BaseType::PRIVATE)
-														{
-															OSCPrivateAction* pa = (OSCPrivateAction*)action;
-															pa->object_->removeEvent(event);
-
-															break;
-														}
-													}
-
-													maneuver->event_[n]->End();
-													LOG("Event %s ended, overwritten by event %s",
-														maneuver->event_[n]->name_.c_str(), event->name_.c_str());
-												}
-											}
-
-											startEvent = true;
-										}
-									}
-									else if (event->priority_ == Event::Priority::SKIP)
-									{
-										if (maneuver->IsAnyEventActive())
-										{
-											LOG("Event is running, skipping trigged %s", event->name_.c_str());
-										}
-										else
-										{
-											startEvent = true;
-										}
-									}
-									else if (event->priority_ == Event::Priority::PARALLEL)
-									{
-										// Don't care if any other action is ongoing, launch anyway
-										if (event->IsActive())
-										{
-											LOG("Event %s already running, trigger ignored", event->name_.c_str());
-										}
-										else if (maneuver->IsAnyEventActive())
-										{
-											LOG("Event(s) ongoing, %s will run in parallel", event->name_.c_str());
-										}
-
-										startEvent = true;
-									}
-									else
-									{
-										LOG("Unknown event priority: %d", event->priority_);
-									}
-
-									if (startEvent)
-									{
-										event->Start(simulationTime_, deltaSimTime);
-									}
-								}
-							}
+							Event* event = maneuver->event_[m];
 
 							// Update (step) all active actions, for all objects connected to the action
 							if (event->IsActive())
@@ -446,7 +449,8 @@ int ScenarioEngine::step(double deltaSimTime)
 										// Try one
 										OSCAction* action = event->action_[n];
 										OSCPrivateAction* pa = (OSCPrivateAction*)action;
-										if (trueTime_ <= simulationTime_ || pa->object_->IsGhost())
+										if (ghost_mode_ != GhostMode::RESTARTING ||
+											((action->base_type_ == OSCAction::BaseType::PRIVATE) && pa->object_->IsGhost()))
 										{
 											event->action_[n]->Step(simulationTime_, deltaSimTime);
 
@@ -456,27 +460,6 @@ int ScenarioEngine::step(double deltaSimTime)
 										{
 											active = true;
 										}
-
-										// Try two
-										/*OSCAction* action = event->action_[n];
-										OSCPrivateAction* pa = (OSCPrivateAction*)action;
-										if (pa->object_->IsGhost())
-										{
-											event->action_[n]->Step(deltaSimTime, getSimulationTime());
-
-											active = active || (event->action_[n]->IsActive());
-										}
-										else
-										{
-											event->action_[n]->Step(deltaSimTime, GetTrueTime());
-
-											active = active || (event->action_[n]->IsActive());
-										}*/
-
-										// Original
-										/*event->action_[n]->Step(deltaSimTime, getSimulationTime());
-
-										active = active || (event->action_[n]->IsActive());*/
 									}
 								}
 								if (!active)
@@ -494,7 +477,7 @@ int ScenarioEngine::step(double deltaSimTime)
 									}
 
 									// Actions done -> Set event done
-									event->End();
+									event->End(simulationTime_);
 								}
 							}
 						}
@@ -504,14 +487,30 @@ int ScenarioEngine::step(double deltaSimTime)
 		}
 	}
 
-	for (size_t i = 0; i < entities.object_.size(); i++)
+	simulationTime_ += deltaSimTime;
+
+	if (ghost_mode_ == GhostMode::RESTARTING)
 	{
-		Object* obj = entities.object_[i];
+		if (simulationTime_ > trueTime_ - SMALL_NUMBER)
+		{
+			ghost_mode_ = GhostMode::NORMAL;
+		}
+	}
+
+	if (ghost_mode_ == GhostMode::NORMAL)
+	{
+		trueTime_ = simulationTime_;
+	}
+
+	for (size_t i = 0; i < entities_.object_.size(); i++)
+	{
+		Object* obj = entities_.object_[i];
 		// Do not move objects when speed is zero,
 		// and only ghosts allowed to execute before time == 0
 		if (!(obj->IsControllerActiveOnDomains(ControlDomains::DOMAIN_BOTH) && obj->GetControllerMode() == Controller::Mode::MODE_OVERRIDE) &&
 			fabs(obj->speed_) > SMALL_NUMBER &&
-			(trueTime_ <= simulationTime_ || obj->IsGhost()))
+			(ghost_mode_ == GhostMode::NORMAL || obj->IsGhost()) &&
+			!obj->TowVehicle())  // update trailers later
 		{
 			defaultController(obj, deltaSimTime);
 		}
@@ -538,12 +537,18 @@ int ScenarioEngine::step(double deltaSimTime)
 			{
 				scenarioGateway.updateObjectWheelRotation(obj->id_, simulationTime_, obj->wheel_rot_);
 			}
+
+			if (obj->CheckDirtyBits(Object::DirtyBit::VISIBILITY))
+			{
+				scenarioGateway.updateObjectVisibilityMask(obj->id_, obj->visibilityMask_);
+			}
 		}
 		else
 		{
 			// Object not reported yet, do that
 			scenarioGateway.reportObject(obj->id_, obj->name_, static_cast<int>(obj->type_), obj->category_, obj->model_id_,
-				obj->GetActivatedControllerType(), obj->boundingbox_, static_cast<int>(obj->scaleMode_), simulationTime_, obj->speed_, obj->wheel_angle_, obj->wheel_rot_, &obj->pos_);
+				obj->GetActivatedControllerType(), obj->boundingbox_, static_cast<int>(obj->scaleMode_), obj->visibilityMask_,
+				simulationTime_, obj->speed_, obj->wheel_angle_, obj->wheel_rot_, &obj->pos_);
 		}
 	}
 
@@ -551,20 +556,48 @@ int ScenarioEngine::step(double deltaSimTime)
 	{
 		if (scenarioReader->controller_[i]->Active())
 		{
-			if (simulationTime_ >= 0)
+			if (ghost_mode_ == GhostMode::NORMAL)
 			{
-				if (trueTime_ <= simulationTime_)
-				{
-					scenarioReader->controller_[i]->Step(deltaSimTime);
-				}
+				scenarioReader->controller_[i]->Step(deltaSimTime);
+			}
+		}
+	}
+
+	// Update any trailers now that tow vehicles have been updated by Default or custom controllers
+	for (size_t i = 0; i < entities_.object_.size(); i++)
+	{
+		Object* obj = entities_.object_[i];
+		Vehicle* trailer = (Vehicle*)obj->TrailerVehicle();
+
+		if (!obj->TowVehicle() && obj->TrailerVehicle())
+		{
+			// Found a front tow vehicle, update trailers
+			Vehicle* tow_vehicle = (Vehicle*)obj;
+			while (trailer)
+			{
+				// Calculate new trailer position and orientation
+				ObjectState* o = scenarioGateway.getObjectStatePtrById(tow_vehicle->id_);
+				SE_Vector v0(tow_vehicle->trailer_hitch_->dx_, 0.0);
+
+				// Fetch updated state of tow vehicle from gateway
+				roadmanager::Position* tow_pos = &o->state_.pos;
+				v0 = v0.Rotate(tow_pos->GetH()) + SE_Vector(tow_pos->GetX(), tow_pos->GetY());
+				SE_Vector v1 = SE_Vector(trailer->pos_.GetX(), trailer->pos_.GetY()) - v0;
+				v1.SetLength(trailer->trailer_coupler_->dx_);
+				scenarioGateway.updateObjectWorldPosXYH(trailer->GetId(), getSimulationTime(), v0.x() + v1.x(), v0.y() + v1.y(),
+					GetAngleInInterval2PI(atan2(v1.y(), v1.x()) + M_PI));
+				trailer->SetSpeed(tow_vehicle->GetSpeed());
+
+				tow_vehicle = trailer;
+				trailer = (Vehicle*)trailer->TrailerVehicle();
 			}
 		}
 	}
 
 	// Check some states
-	for (size_t i = 0; i < entities.object_.size(); i++)
+	for (size_t i = 0; i < entities_.object_.size(); i++)
 	{
-		Object* obj = entities.object_[i];
+		Object* obj = entities_.object_[i];
 
 		// Off road?
 		if (obj->pos_.IsOffRoad())
@@ -592,6 +625,12 @@ int ScenarioEngine::step(double deltaSimTime)
 			obj->SetStandStill(false);
 		}
 	}
+
+	// This timestep calculation is due to the Ghost vehicle
+	// If both times are equal, it is a normal scenario, or no Ghost teleportation is ongoing -> Step as usual
+	// Else if we can take a step, and still not reach the point of teleportation -> Step only simulationTime (That the Ghost runs on)
+	// Else, the only thing left is that the next step will take us above the point of teleportation -> Step to that point instead and go on from there
+
 
 	if (all_done)
 	{
@@ -627,9 +666,15 @@ void ScenarioEngine::parseScenario()
 		LOG_AND_QUIT("OpenSCENARIO v%d.%d not supported. Please migrate scenario to v1.0 or v1.1 and try again.",
 			scenarioReader->GetVersionMajor(), scenarioReader->GetVersionMinor());
 	}
-	LOG("Loading %s (v%d.%d)", FileNameOf(scenarioReader->getScenarioFilename()).c_str(), scenarioReader->GetVersionMajor(), scenarioReader->GetVersionMinor());
+	LOG("Loading %s (v%d.%d)", scenarioReader->getScenarioFilename().c_str(), scenarioReader->GetVersionMajor(), scenarioReader->GetVersionMinor());
 
 	scenarioReader->parseGlobalParameterDeclarations();
+
+	// Now that parameter declaration has been parsed, call any registered callbacks before applying the parameters
+	if (paramDeclCallback.func != nullptr)
+	{
+		paramDeclCallback.func(paramDeclCallback.data);
+	}
 
 	// Init road manager
 	scenarioReader->parseRoadNetwork(roadNetwork);
@@ -662,6 +707,7 @@ void ScenarioEngine::parseScenario()
 				located = true;
 				if (roadmanager::Position::LoadOpenDrive(file_name_candidates[i].c_str()) == true)
 				{
+					LOG("Loaded OpenDRIVE: %s", file_name_candidates[i].c_str());
 					break;
 				}
 				else
@@ -689,9 +735,9 @@ void ScenarioEngine::parseScenario()
 
 	scenarioReader->parseInit(init);
 	scenarioReader->parseStoryBoard(storyBoard);
-	storyBoard.entities_ = &entities;
+	storyBoard.entities_ = &entities_;
 
-	// Finally, now when all entities have been loaded, initialize the controllers
+	// Now when all entities have been loaded, initialize the controllers
 	if (!disable_controllers_)
 	{
 		for (size_t i = 0; i < scenarioReader->controller_.size(); i++)
@@ -704,9 +750,9 @@ void ScenarioEngine::parseScenario()
 		}
 
 		// find out maximum headstart time for ghosts
-		for (size_t i = 0; i < entities.object_.size(); i++)
+		for (size_t i = 0; i < entities_.object_.size(); i++)
 		{
-			Object* obj = entities.object_[i];
+			Object* obj = entities_.object_[i];
 
 			if (obj->GetAssignedControllerType() == Controller::Type::CONTROLLER_TYPE_FOLLOW_GHOST ||
 				(obj->GetAssignedControllerType() == Controller::Type::CONTROLLER_TYPE_EXTERNAL &&
@@ -719,11 +765,21 @@ void ScenarioEngine::parseScenario()
 					if (obj->ghost_->GetHeadstartTime() > GetHeadstartTime())
 					{
 						SetHeadstartTime(obj->ghost_->GetHeadstartTime());
-						SetSimulationTime(-obj->ghost_->GetHeadstartTime());
-						SetTrueTime(0);
+						SetGhostRestart();
 					}
 				}
 			}
+		}
+	}
+
+	// Align trailers
+	for (size_t i = 0; i < entities_.object_.size(); i++)
+	{
+		Object* obj = entities_.object_[i];
+		if (!obj->TowVehicle() && obj->TrailerVehicle())
+		{
+			// Found a front tow vehicle, update trailers
+			((Vehicle*)obj)->AlignTrailers();
 		}
 	}
 }
@@ -733,21 +789,17 @@ int ScenarioEngine::defaultController(Object* obj, double dt)
 	int retval = 0;
 	double steplen = obj->speed_ * dt;
 
-	// Add or subtract stepsize according to curvature and offset, in order to keep constant speed
-	double curvature = obj->pos_.GetCurvature();
-	double offset = obj->pos_.GetT();
-	if (abs(curvature) > SMALL_NUMBER)
-	{
-		// Approximate delta length by sampling curvature in current position
-		steplen += steplen * curvature * offset;
-	}
-
 	if (!obj->CheckDirtyBits(Object::DirtyBit::LONGITUDINAL)) // No action has updated longitudinal dimension
 	{
 		if (obj->GetControllerMode() == Controller::Mode::MODE_ADDITIVE ||
 			!obj->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LONG))
 		{
-			obj->MoveAlongS(steplen);
+			Vehicle* tow_vehicle = (Vehicle*)obj->TowVehicle();
+			if (tow_vehicle == nullptr)
+			{
+				obj->MoveAlongS(steplen, true);
+				obj->SetDirtyBits(Object::DirtyBit::LONGITUDINAL);
+			}
 		}
 	}
 
@@ -792,9 +844,9 @@ int ScenarioEngine::defaultController(Object* obj, double dt)
 
 void ScenarioEngine::prepareGroundTruth(double dt)
 {
-	for (size_t i = 0; i < entities.object_.size(); i++)
+	for (size_t i = 0; i < entities_.object_.size(); i++)
 	{
-		Object *obj = entities.object_[i];
+		Object *obj = entities_.object_[i];
 		ObjectState *o;
 
 		// Fetch external states from gateway
@@ -832,55 +884,52 @@ void ScenarioEngine::prepareGroundTruth(double dt)
 
 		if (dt > SMALL_NUMBER)
 		{
-			if (!obj->CheckDirtyBits(Object::DirtyBit::VELOCITY))
+			if (obj->IsGhost() || (getSimulationTime() > SMALL_NUMBER && ghost_mode_ == GhostMode::NORMAL)) // For non ghost vehicles, update only when no ghost restart is ongoing
 			{
-				// If not already reported, calculate linear velocity
-				obj->SetVel(dx / dt, dy / dt, 0.0);
-			}
-
-			if (!obj->CheckDirtyBits(Object::DirtyBit::ACCELERATION))
-			{
-				// If not already reported, calculate linear acceleration
-				obj->SetAcc((obj->pos_.GetVelX() - obj->state_old.vel_x) / dt, (obj->pos_.GetVelY() - obj->state_old.vel_y) / dt, 0.0);
-			}
-
-			double heading_rate_new = GetAngleDifference(obj->pos_.GetH(), obj->state_old.h) / dt;
-			if (!obj->CheckDirtyBits(Object::DirtyBit::ANGULAR_RATE))
-			{
-				// If not already reported, calculate angular velocity/rate
-				obj->SetAngularVel(heading_rate_new, 0.0, 0.0);
-			}
-
-			if (!obj->CheckDirtyBits(Object::DirtyBit::ANGULAR_ACC))
-			{
-				// If not already reported, calculate angular acceleration
-				obj->SetAngularAcc(GetAngleDifference(heading_rate_new, obj->state_old.h_rate) / dt, 0.0, 0.0);
-			}
-
-			// Update wheel rotations of internal scenario objects
-			if (!obj->CheckDirtyBits(Object::DirtyBit::WHEEL_ANGLE))
-			{
-				// An improvised calculation of a steering angle based on yaw rate and enitity speed
-				double steeringAngleTarget = SIGN(obj->GetSpeed()) * M_PI * heading_rate_new / MAX(fabs(obj->GetSpeed()), SMALL_NUMBER);
-				double steeringAngleDiff = steeringAngleTarget - obj->wheel_angle_;
-				// Turn wheel gradually towards target
-				double steeringAngleStep = SIGN(steeringAngleDiff) * 0.5 * dt;
-
-				if (abs(steeringAngleStep) > abs(obj->wheel_angle_))
+				if (!obj->CheckDirtyBits(Object::DirtyBit::VELOCITY))
 				{
-					obj->wheel_angle_ = 0.0;
+					// If not already reported, calculate linear velocity
+					obj->SetVel(dx / dt, dy / dt, 0.0);
 				}
-				else
+
+				if (!obj->CheckDirtyBits(Object::DirtyBit::ACCELERATION))
 				{
+					// If not already reported, calculate linear acceleration
+					obj->SetAcc((obj->pos_.GetVelX() - obj->state_old.vel_x) / dt, (obj->pos_.GetVelY() - obj->state_old.vel_y) / dt, 0.0);
+				}
+
+				double heading_rate_new = GetAngleDifference(obj->pos_.GetH(), obj->state_old.h) / dt;
+				if (!obj->CheckDirtyBits(Object::DirtyBit::ANGULAR_RATE))
+				{
+					// If not already reported, calculate angular velocity/rate
+					obj->SetAngularVel(heading_rate_new, 0.0, 0.0);
+				}
+
+				if (!obj->CheckDirtyBits(Object::DirtyBit::ANGULAR_ACC))
+				{
+					// If not already reported, calculate angular acceleration
+					obj->SetAngularAcc(GetAngleDifference(heading_rate_new, obj->state_old.h_rate) / dt, 0.0, 0.0);
+				}
+
+				// Update wheel rotations of internal scenario objects
+				if (!obj->CheckDirtyBits(Object::DirtyBit::WHEEL_ANGLE))
+				{
+					// An improvised calculation of a steering angle based on yaw rate and enitity speed
+					double steeringAngleTarget = SIGN(obj->GetSpeed()) * M_PI * heading_rate_new / MAX(fabs(obj->GetSpeed()), SMALL_NUMBER);
+					double steeringAngleDiff = steeringAngleTarget - obj->wheel_angle_;
+
+					// Turn wheel gradually towards target
+					double steeringAngleStep = SIGN(steeringAngleDiff) * MIN(abs(steeringAngleDiff), 0.5 * dt);
+
 					obj->wheel_angle_ += steeringAngleStep;
+					obj->SetDirtyBits(Object::DirtyBit::WHEEL_ANGLE);
 				}
-				obj->SetDirtyBits(Object::DirtyBit::WHEEL_ANGLE);
-			}
 
-			if (!obj->CheckDirtyBits(Object::DirtyBit::WHEEL_ROTATION))
-			{
-				obj->wheel_rot_ = fmod(obj->wheel_rot_ + obj->speed_ * dt / WHEEL_RADIUS, 2 * M_PI);
-				obj->SetDirtyBits(Object::DirtyBit::WHEEL_ROTATION);
+				if (!obj->CheckDirtyBits(Object::DirtyBit::WHEEL_ROTATION))
+				{
+					obj->wheel_rot_ = fmod(obj->wheel_rot_ + obj->speed_ * dt / WHEEL_RADIUS, 2 * M_PI);
+					obj->SetDirtyBits(Object::DirtyBit::WHEEL_ROTATION);
+				}
 			}
 		}
 		else
@@ -919,12 +968,15 @@ void ScenarioEngine::prepareGroundTruth(double dt)
 			obj->odometer_ += abs(sqrt(dx * dx + dy * dy));  // odometer always measure all movements as positive, I guess...
 		}
 
-		if (obj->trail_.GetNumberOfVertices() == 0 || simulationTime_ - obj->trail_.GetVertex(-1)->time > TRAJECTORY_SAMPLE_TIME)
+		if (!(obj->IsGhost() && GetGhostMode() == GhostMode::RESTART))  // skip ghost sample during restart
 		{
-			// Only add trail vertex when speed is not stable at 0
-			if (obj->trail_.GetNumberOfVertices() == 0 || fabs(obj->trail_.GetVertex(-1)->speed) > SMALL_NUMBER || fabs(obj->GetSpeed()) > SMALL_NUMBER)
+			if (obj->trail_.GetNumberOfVertices() == 0 || simulationTime_ - obj->trail_.GetVertex(-1)->time > GHOST_TRAIL_SAMPLE_TIME)
 			{
-				obj->trail_.AddVertex({ 0.0, obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetZ(), obj->pos_.GetH(), simulationTime_, obj->GetSpeed(), 0.0, false });
+				// Only add trail vertex when speed is not stable at 0
+				if (obj->trail_.GetNumberOfVertices() == 0 || fabs(obj->trail_.GetVertex(-1)->speed) > SMALL_NUMBER || fabs(obj->GetSpeed()) > SMALL_NUMBER)
+				{
+					obj->trail_.AddVertex({ 0.0, obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetZ(), obj->pos_.GetH(), simulationTime_, obj->GetSpeed(), 0.0, false });
+				}
 			}
 		}
 
@@ -955,17 +1007,17 @@ void ScenarioEngine::ReplaceObjectInTrigger(Trigger* trigger, Object* obj1, Obje
 			if (cond->base_type_ == OSCCondition::ConditionType::BY_ENTITY)
 			{
 				TrigByEntity* trig = (TrigByEntity*)cond;
-				/*for (size_t k = 0; k < trig->triggering_entities_.entity_.size(); k++)
-				{
-					if (trig->triggering_entities_.entity_[k].object_ == obj1)
-					{
-						trig->triggering_entities_.entity_[k].object_ = obj2;
-					}
-				}*/
+
 				if (trig->type_ == TrigByEntity::EntityConditionType::COLLISION ||
-					trig->type_ == TrigByEntity::EntityConditionType::REACH_POSITION)
+					trig->type_ == TrigByEntity::EntityConditionType::REACH_POSITION ||
+					trig->type_ == TrigByEntity::EntityConditionType::TRAVELED_DISTANCE ||
+					trig->type_ == TrigByEntity::EntityConditionType::SPEED ||
+					trig->type_ == TrigByEntity::EntityConditionType::ACCELERATION ||
+					trig->type_ == TrigByEntity::EntityConditionType::END_OF_ROAD ||
+					trig->type_ == TrigByEntity::EntityConditionType::OFF_ROAD ||
+					trig->type_ == TrigByEntity::EntityConditionType::STAND_STILL)
 				{
-					LOG("Handing over trigger to Ghost-------------------------------------");
+					LOG("Handing over trigger %s to ghost", cond->name_.c_str());
 
 					for (size_t k = 0; k < trig->triggering_entities_.entity_.size(); k++)
 					{
@@ -973,53 +1025,18 @@ void ScenarioEngine::ReplaceObjectInTrigger(Trigger* trigger, Object* obj1, Obje
 						{
 							trig->triggering_entities_.entity_[k].object_ = obj2;
 						}
-						// Changes added to do action when target is triggering
-
-						// This else should be somewhere else
-						//else if (trig->triggering_entities_.entity_[k].object_ != obj1)
-						//{
-						//	TeleportAction* myNewAction = new TeleportAction;
-						//	roadmanager::Position* pos = new roadmanager::Position();
-						//	pos->SetInertiaPos(0, 0, 0);
-						//	pos->SetRelativePosition(&obj1->pos_, roadmanager::Position::PositionType::RELATIVE_OBJECT);
-						//	myNewAction->position_ = pos;
-						//	myNewAction->type_ = OSCPrivateAction::ActionType::TELEPORT;
-						//	myNewAction->object_ = obj2;
-
-						//	myNewAction->scenarioEngine_ = this;
-						//	//myNewAction->object_ = entities.object_[1];
-						//	//event->action_.push_back(myNewAction);
-						//	event->action_.insert(event->action_.begin(), myNewAction);
-						//}
-						// Stop changes
+						else
+						{
+							CreateGhostTeleport(obj1, obj2, event);
+							LOG("Created new teleport action for ghost and %s trigger (entity %s)",
+								cond->name_.c_str(), trig->triggering_entities_.entity_[k].object_->GetName().c_str());
+						}
 					}
 				}
-				else {
-					TeleportAction* myNewAction = new TeleportAction;
-					roadmanager::Position* pos = new roadmanager::Position();
-					pos->SetOrientationType(roadmanager::Position::OrientationType::ORIENTATION_RELATIVE);
-					pos->SetInertiaPos(0, 0, 0);
-					pos->SetRelativePosition(&obj1->pos_, roadmanager::Position::PositionType::RELATIVE_OBJECT);
-					
-					myNewAction->position_ = pos;
-					myNewAction->type_ = OSCPrivateAction::ActionType::TELEPORT;
-					myNewAction->object_ = obj2;
-					myNewAction->scenarioEngine_ = this;
-					myNewAction->name_ = "AddedGhostTeleport";
-					//myNewAction->object_ = entities.object_[1];
-
-					//event->action_.push_back(myNewAction);
-					event->action_.insert(event->action_.begin(), myNewAction);
-
-					/*LongSpeedAction* myNewSpeedAction = new LongSpeedAction;
-
-					myNewSpeedAction->type_ = OSCPrivateAction::ActionType::LONG_SPEED;
-
-					event->action_.insert(event->action_.begin(), myNewSpeedAction);*/
-
-
-					//maneuver->event_.push_back(teleportEvent);
-					LOG("Created new action-------------------------------------------");
+				else if(event != nullptr)
+				{
+					CreateGhostTeleport(obj1, obj2, event);
+					LOG("Created new teleport action for ghost and %s trigger", cond->name_.c_str());
 				}
 			}
 			else if (cond->base_type_ == OSCCondition::ConditionType::BY_VALUE)
@@ -1029,11 +1046,32 @@ void ScenarioEngine::ReplaceObjectInTrigger(Trigger* trigger, Object* obj1, Obje
 				{
 					((TrigBySimulationTime*)(trig))->value_ += timeOffset;
 				}
+				else if(event != nullptr)
+				{
+					CreateGhostTeleport(obj1, obj2, event);
+					LOG("Created new teleport action for ghost and %s trigger", cond->name_.c_str());
+				}
 			}
 		}
 	}
 }
 
+void ScenarioEngine::CreateGhostTeleport(Object* obj1, Object* obj2, Event* event)
+{
+	TeleportAction* myNewAction = new TeleportAction;
+	roadmanager::Position* pos = new roadmanager::Position();
+	pos->SetOrientationType(roadmanager::Position::OrientationType::ORIENTATION_RELATIVE);
+	pos->SetInertiaPos(0, 0, 0);
+	pos->SetRelativePosition(&obj1->pos_, roadmanager::Position::PositionType::RELATIVE_OBJECT);
+
+	myNewAction->position_ = pos;
+	myNewAction->type_ = OSCPrivateAction::ActionType::TELEPORT;
+	myNewAction->object_ = obj2;
+	myNewAction->scenarioEngine_ = this;
+	myNewAction->name_ = "AddedGhostTeleport";
+
+	event->action_.insert(event->action_.begin(), myNewAction);
+}
 void ScenarioEngine::SetupGhost(Object* object)
 {
 	// FollowGhostController special treatment:
@@ -1047,7 +1085,7 @@ void ScenarioEngine::SetupGhost(Object* object)
 	ghost->controller_ = 0;
 	ghost->isGhost_ = true;
 	ghost->SetHeadstartTime(object->headstart_time_);
-	entities.addObject(ghost);
+	entities_.addObject(ghost, true);
 	object->SetHeadstartTime(0);
 
 	int numberOfInitActions = (int)init.private_action_.size();
@@ -1111,6 +1149,7 @@ void ScenarioEngine::SetupGhost(Object* object)
 										pa->type_ == OSCPrivateAction::ActionType::LAT_LANE_OFFSET ||
 										pa->type_ == OSCPrivateAction::ActionType::SYNCHRONIZE ||
 										pa->type_ == OSCPrivateAction::ActionType::FOLLOW_TRAJECTORY ||
+										pa->type_ == OSCPrivateAction::ActionType::ASSIGN_ROUTE ||
 										pa->type_ == OSCPrivateAction::ActionType::TELEPORT)
 									{
 										// Replace object
@@ -1157,28 +1196,34 @@ void ScenarioEngine::ResetEvents()
 							for (size_t n = 0; n < event->action_.size(); n++)
 							{
 								OSCAction* action = event->action_[n];
-								OSCPrivateAction* pa = (OSCPrivateAction*)action;
-								if (pa->type_ == OSCPrivateAction::ActionType::TELEPORT)
+								if (action->base_type_ == OSCAction::BaseType::PRIVATE)
 								{
-									NoTele = false;
+									OSCPrivateAction* pa = (OSCPrivateAction*)action;
+									if (pa->type_ == OSCPrivateAction::ActionType::TELEPORT)
+									{
+										NoTele = false;
+									}
 								}
 							}
 							for (size_t n = 0; n < event->action_.size(); n++)
 							{
 								OSCAction* action = event->action_[n];
-								OSCPrivateAction* pa = (OSCPrivateAction*)action;
-
-								// If the event doesnt contain a teleport action, and the trigger is not triggable, we reser it, making it able to tigger again
-								if (NoTele && pa->object_->IsGhost() && event->start_trigger_->Evaluate(&storyBoard, simulationTime_) == false)
+								if (action->base_type_ == OSCAction::BaseType::PRIVATE)
 								{
-									printf("Reset event %s: \n", event->name_.c_str());
-									event->Reset();
+									OSCPrivateAction* pa = (OSCPrivateAction*)action;
+
+									// If the event doesnt contain a teleport action, and the trigger is not triggable, we reser it, making it able to tigger again
+									if (NoTele && pa->object_->IsGhost() && event->start_trigger_->Evaluate(&storyBoard, simulationTime_) == false)
+									{
+										printf("Reset event %s: \n", event->name_.c_str());
+										event->Reset();
+									}
+									// if (event->start_trigger_->Evaluate(&storyBoard, simulationTime_) == true)
+									// {
+									// 	printf("End event %s: \n", event->name_.c_str());
+									// 	event->End();
+									// }
 								}
-								// if (event->start_trigger_->Evaluate(&storyBoard, simulationTime_) == true)
-								// {
-								// 	printf("End event %s: \n", event->name_.c_str());
-								// 	event->End();
-								// }
 							}
 						}
 					}
@@ -1186,4 +1231,56 @@ void ScenarioEngine::ResetEvents()
 			}
 		}
 	}
+}
+
+int ScenarioEngine::DetectCollisions()
+{
+	collision_pair_.clear();
+	for (size_t i = 0; i < entities_.object_.size(); i++)
+	{
+		Object* obj0 = entities_.object_[i];
+		for (size_t j = i+1; j < entities_.object_.size(); j++)
+		{
+			Object* obj1 = entities_.object_[j];
+			if (obj0->Collision(obj1))
+			{
+				collision_pair_.push_back({ obj0, obj1 });
+				if (std::find(obj0->collisions_.begin(), obj0->collisions_.end(), obj1) == obj0->collisions_.end())
+				{
+					// was not overlapping last timestep, but are now
+					LOG("Collision between %s and %s", obj0->GetName().c_str(), obj1->GetName().c_str());
+					obj0->collisions_.push_back(obj1);
+					obj1->collisions_.push_back(obj0);
+				}
+			}
+			else
+			{
+				if (std::find(obj0->collisions_.begin(), obj0->collisions_.end(), obj1) != obj0->collisions_.end())
+				{
+					// was overlapping last frame, but not anymore
+					LOG("Collision between %s and %s dissolved", obj0->GetName().c_str(), obj1->GetName().c_str());
+					obj0->collisions_.erase(std::remove(obj0->collisions_.begin(), obj0->collisions_.end(), obj1), obj0->collisions_.end());
+					obj1->collisions_.erase(std::remove(obj1->collisions_.begin(), obj1->collisions_.end(), obj0), obj1->collisions_.end());
+				}
+			}
+		}
+	}
+
+	// Check for and clear any vanished objects from collision lists
+	for (size_t i = 0; i < entities_.object_.size(); i++)
+	{
+		for (size_t j = 0; j < entities_.object_[i]->collisions_.size(); j++)
+		{
+			Object* obj = entities_.object_[i];
+			if (std::find(entities_.object_.begin(), entities_.object_.end(), obj->collisions_[j]) == entities_.object_.end())
+			{
+				// object previously collided with pivot object has vanished from the set of entities, remove it from collision list
+				LOG("Unregister collision between %s and vanished entity", obj->GetName().c_str());
+				obj->collisions_.erase(obj->collisions_.begin() + j);
+				j--;
+			}
+		}
+	}
+
+	return 0;
 }

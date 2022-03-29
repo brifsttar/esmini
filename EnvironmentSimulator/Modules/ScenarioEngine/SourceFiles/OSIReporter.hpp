@@ -24,6 +24,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <map>
 #include <math.h>
 
 #define DEFAULT_OSI_TRACE_FILENAME "ground_truth.osi"
@@ -135,6 +136,7 @@ public:
 	int GetSocket() { return sendSocket; }
 	bool IsFileOpen() { return osi_file.is_open(); }
 	void ReportSensors(std::vector<ObjectSensor*> sensor);
+	int GetCounter() { return osi_update_counter_; }
 
 	/**
 	Set explicit timestap

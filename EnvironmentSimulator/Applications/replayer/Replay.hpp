@@ -29,60 +29,52 @@ namespace scenarioengine
 		char model_filename[REPLAY_FILENAME_SIZE];
 	} ReplayHeader;
 
-	typedef enum  // copy key enums from OSG GUIEventAdapter
+	typedef struct
 	{
-		KEY_Left = 0xFF51,        /* Left arrow */
-		KEY_Up = 0xFF52,          /* Up arrow */
-		KEY_Right = 0xFF53,       /* Right arrow */
-		KEY_Down = 0xFF54,        /* Down arrow */
-		KEY_Space = 0x20,         /* Space */
-
-		// Mod key types
-		KEY_Shift_L = 0xFFE1,     /* Left shift */
-		KEY_Shift_R = 0xFFE2,     /* Right shift */
-		KEY_Control_L = 0xFFE3,   /* Left control */
-		KEY_Control_R = 0xFFE4,   /* Right control */
-	} KeyType;
-
-	typedef enum
-	{
-		MODKEY_LEFT_SHIFT = 0x0001,
-		MODKEY_RIGHT_SHIFT = 0x0002,
-		MODKEY_LEFT_CTRL = 0x0004,
-		MODKEY_RIGHT_CTRL = 0x0008,
-		MODKEY_CTRL = (MODKEY_LEFT_CTRL | MODKEY_RIGHT_CTRL),
-		MODKEY_SHIFT = (MODKEY_LEFT_SHIFT | MODKEY_RIGHT_SHIFT),
-	} ModKeyMask;
+		ObjectStateStructDat state;
+		double odometer;
+	} ReplayEntry;
 
 	class Replay
 	{
 	public:
 		ReplayHeader header_;
-		std::vector<ObjectStateStructDat> data_;
+		std::vector<ReplayEntry> data_;
 
 		Replay(std::string filename);
+		Replay(const std::string directory, const std::string scenario);
 		~Replay();
 
 		/**
 			Go to specific time
 			@param time timestamp (0 = beginning, -1 end)
+			@param stop_at_next_frame If true move max to next/previous time frame
 		*/
-		void GoToTime(double time);
-		void GoToDeltaTime(double dt);
+		void GoToTime(double time, bool stop_at_next_frame = false);
+		void GoToDeltaTime(double dt, bool stop_at_next_frame = false);
+		void GetReplaysFromDirectory(const std::string dir, const std::string sce);
+		size_t GetNumberOfScenarios();
 		void GoToStart();
 		void GoToEnd();
 		void GoToNextFrame();
 		void GoToPreviousFrame();
-		ObjectStateStructDat * GetState(int id);
+		int FindNextTimestamp(bool wrap = false);
+		int FindPreviousTimestamp(bool wrap = false);
+		ReplayEntry* GetEntry(int id);
+		ObjectStateStructDat* GetState(int id);
 		void SetStartTime(double time);
 		void SetStopTime(double time);
 		double GetStartTime() { return startTime_; }
+		double GetStopTime() { return stopTime_; }
 		double GetTime() { return time_; }
 		int GetIndex() { return index_; }
 		void SetRepeat(bool repeat) { repeat_ = repeat; }
+		void CleanEntries(std::vector<ReplayEntry>& entries);
+		void BuildData(std::vector<std::pair<std::string, std::vector<ReplayEntry>>>& scenarios);
 
 private:
 		std::ifstream file_;
+		std::vector<std::string> scenarios_;
 		double time_;
 		double startTime_;
 		double stopTime_;

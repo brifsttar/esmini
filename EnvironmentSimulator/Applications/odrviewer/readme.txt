@@ -10,14 +10,24 @@ Options:
       Show this help message
   --odr <odr_filename>
       OpenDRIVE filename (required)
+  --capture_screen
+      Continuous screen capture. Warning: Many .tga files will be created
   --density [density]  (default = 1.000000)
       density (cars / 100 m)
+  --enforce_generate_model
+      Generate road 3D model even if --model is specified
   --disable_log
       Prevent logfile from being created
+  --disable_off_screen
+      Disable off-screen rendering, potentially gaining performance
   --disable_stdout
       Prevent messages to stdout
+  --fixed_timestep <timestep>
+      Run simulation decoupled from realtime, with specified timesteps
   --generate_no_road_objects
       Do not generate any OpenDRIVE road objects (e.g. when part of referred 3D model)
+  --ground_plane
+      Add a large flat ground surface
   --logfile_path <path>
       logfile path/filename, e.g. "../esmini.log" (default: log.txt)
   --model <model_filename>
@@ -42,10 +52,11 @@ Options:
       Show version and quit
 
 Additional OSG graphics options:
-  --clear-color <color>         Set the background color of the viewer in the form "r,g,b[,a]"
-  --screen <num>                Set the screen to use when multiple screens are present
-  --window <x y w h>            Set the position (x,y) and size (w,h) of the viewer window
-  --borderless-window <x y w h> Set the position(x, y) and size(w, h) of a borderless viewer window
+  --clear-color <color>                      Set the background color of the viewer in the form "r,g,b[,a]"
+  --screen <num>                             Set the screen to use when multiple screens are present
+  --window <x y w h>                         Set the position x, y and size w, h of the viewer window. -1 -1 -1 -1 for fullscreen.
+  --borderless-window <x y w h>              Set the position x, y and size w, h of a borderless viewer window. -1 -1 -1 -1 for fullscreen.
+  --SingleThreaded                           Run application and all graphics tasks in one single thread.
   
 For a complete list of OSG options and environment variables, see here:
 https://github.com/esmini/esmini/blob/master/docs/osg_options_and_env_variables.txt  
@@ -74,6 +85,7 @@ Key shortcuts
     u:           Toggle show / hide OSI road lines
     y:           Toggle show / hide OSI road points
     p:           Toggle show / hide environment 3D model
+    i:           Toggle info text showing time and speed
     , (comma):   Toggle entity view : Model / None
     ESC:         quit
 
@@ -104,6 +116,7 @@ Key shortcuts
         l: Toggle light
         w: Toggle geometry mode(shading, wireframe, dots)
         c: Save screenshot in JPEG format - in the folder where the application was started from
+        C: Toggle continuous screen capture
         h: Help
 
 Mouse control

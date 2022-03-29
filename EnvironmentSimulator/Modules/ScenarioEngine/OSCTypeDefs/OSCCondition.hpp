@@ -31,6 +31,15 @@ namespace scenarioengine
 	class OSCCondition
 	{
 	public:
+		static void (*conditionCallback)(const char* name, double timestamp);
+
+		enum class ConditionState
+		{
+			IDLE,
+			EVALUATED,
+			TIMER,
+			TRIGGERED
+		};
 
 		typedef enum
 		{
@@ -51,12 +60,12 @@ namespace scenarioengine
 		ConditionType base_type_;
 		std::string name_;
 		double delay_;
-		bool evaluated_;
 		bool last_result_;  // result from last evaluation
 		ConditionEdge edge_;
 		SE_SimulationTimer timer_;
+		ConditionState state_;
 
-		OSCCondition(ConditionType base_type) : base_type_(base_type), evaluated_(false),
+		OSCCondition(ConditionType base_type) : base_type_(base_type), state_(ConditionState::IDLE),
 			last_result_(false), edge_(ConditionEdge::NONE) {}
 
 		bool Evaluate(StoryBoard *storyBoard, double sim_time);
@@ -129,10 +138,7 @@ namespace scenarioengine
 
 		TrigByEntity(EntityConditionType type) : OSCCondition(OSCCondition::ConditionType::BY_ENTITY), type_(type) {}
 
-		void Print()
-		{
-			LOG("");
-		}
+		void print() {}
 	};
 
 	class TrigByTimeHeadway : public TrigByEntity
@@ -174,9 +180,12 @@ namespace scenarioengine
 		OSCPosition *position_;
 		double tolerance_;
 		double dist_;
+		double angularTolerance_;
+		bool checkOrientation_;
 
 		bool CheckCondition(StoryBoard* storyBoard, double sim_time);
-		TrigByReachPosition() : dist_(0), TrigByEntity(TrigByEntity::EntityConditionType::REACH_POSITION) {}
+		TrigByReachPosition() : dist_(0), tolerance_(1.0), angularTolerance_(0.05), checkOrientation_(false) ,
+			TrigByEntity(TrigByEntity::EntityConditionType::REACH_POSITION) {}
 		void Log();
 	};
 
@@ -355,13 +364,13 @@ namespace scenarioengine
 			UNDEFINED_ELEMENT_TRANSITION
 		} CondElementState;
 
-		CondElementState state_;
+		CondElementState element_state_;
 		StoryBoardElement::ElementType element_type_;
 		std::string element_name_;
 
 		bool CheckCondition(StoryBoard* storyBoard, double sim_time);
 		TrigByState(CondElementState state, StoryBoardElement::ElementType element_type, std::string element_name) :
-			OSCCondition(BY_STATE), state_(state), element_type_(element_type), element_name_(element_name) {}
+			OSCCondition(BY_STATE), element_state_(state), element_type_(element_type), element_name_(element_name) {}
 		std::string CondElementState2Str(CondElementState state);
 		void Log();
 	};

@@ -16,6 +16,8 @@
 using namespace scenarioengine;
 using namespace roadmanager;
 
+void (*OSCCondition::conditionCallback)(const char* name, double timestamp) = nullptr;
+
 std::string Rule2Str(Rule rule)
 {
 	if (rule == Rule::GREATER_THAN)
@@ -53,19 +55,19 @@ bool EvaluateRule(double a, double b, Rule rule)
 {
 	if (rule == Rule::GREATER_THAN)
 	{
-		return a > b;
+		return a > b + SMALL_NUMBER;
 	}
 	else if (rule == Rule::GREATER_OR_EQUAL)
 	{
-		return a >= b;
+		return a >= b - SMALL_NUMBER;
 	}
 	else if (rule == Rule::LESS_THAN)
 	{
-		return a < b;
+		return a < b - SMALL_NUMBER;
 	}
 	else if (rule == Rule::LESS_OR_EQUAL)
 	{
-		return a <= b;
+		return a <= b + SMALL_NUMBER;
 	}
 	else if (rule == Rule::EQUAL_TO)
 	{
@@ -84,17 +86,29 @@ bool EvaluateRule(double a, double b, Rule rule)
 
 bool EvaluateRule(int a, int b, Rule rule)
 {
-	if (rule == Rule::EQUAL_TO)
-	{
-		return a == b;
-	}
-	else if (rule == Rule::GREATER_THAN)
+	if (rule == Rule::GREATER_THAN)
 	{
 		return a > b;
+	}
+	else if (rule == Rule::GREATER_OR_EQUAL)
+	{
+		return a >= b;
 	}
 	else if (rule == Rule::LESS_THAN)
 	{
 		return a < b;
+	}
+	else if (rule == Rule::LESS_OR_EQUAL)
+	{
+		return a <= b;
+	}
+	else if (rule == Rule::EQUAL_TO)
+	{
+		return (a == b);
+	}
+	else if (rule == Rule::NOT_EQUAL_TO)
+	{
+		return !(a == b);
 	}
 	else
 	{
@@ -105,17 +119,29 @@ bool EvaluateRule(int a, int b, Rule rule)
 
 bool EvaluateRule(std::string a, std::string b, Rule rule)
 {
-	if (rule == Rule::EQUAL_TO)
-	{
-		return a == b;
-	}
-	else if (rule == Rule::GREATER_THAN)
+	if (rule == Rule::GREATER_THAN)
 	{
 		return a > b;
+	}
+	else if (rule == Rule::GREATER_OR_EQUAL)
+	{
+		return a >= b;
 	}
 	else if (rule == Rule::LESS_THAN)
 	{
 		return a < b;
+	}
+	else if (rule == Rule::LESS_OR_EQUAL)
+	{
+		return a <= b;
+	}
+	else if (rule == Rule::EQUAL_TO)
+	{
+		return (a == b);
+	}
+	else if (rule == Rule::NOT_EQUAL_TO)
+	{
+		return !(a == b);
 	}
 	else
 	{
@@ -126,19 +152,29 @@ bool EvaluateRule(std::string a, std::string b, Rule rule)
 
 bool EvaluateRule(bool a, bool b, Rule rule)
 {
-	if (rule == Rule::EQUAL_TO)
+	if (rule == Rule::GREATER_THAN)
 	{
-		return a == b;
+		return a == true && b == false;
 	}
-	else if (rule == Rule::GREATER_THAN)
+	else if (rule == Rule::GREATER_OR_EQUAL)
 	{
-		// Strange for booleans
-		return a != b;
+		return a == b || (a == true && b == false);
 	}
 	else if (rule == Rule::LESS_THAN)
 	{
-		// Strange for booleans
-		return a != b;
+		return a == false && b == true;
+	}
+	else if (rule == Rule::LESS_OR_EQUAL)
+	{
+		return a == b || (a == false && b == true);
+	}
+	else if (rule == Rule::EQUAL_TO)
+	{
+		return (a == b);
+	}
+	else if (rule == Rule::NOT_EQUAL_TO)
+	{
+		return !(a == b);
 	}
 	else
 	{
@@ -158,27 +194,30 @@ bool OSCCondition::CheckEdge(bool new_value, bool old_value, OSCCondition::Condi
 	{
 		return new_value;
 	}
-	else if (evaluated_ && edge == OSCCondition::ConditionEdge::RISING_OR_FALLING)
+	else if (state_ == ConditionState::EVALUATED)
 	{
-		return new_value != old_value;
-	}
-	else if (evaluated_ && edge == OSCCondition::ConditionEdge::FALLING)
-	{
-		if (new_value == false && old_value == true)
+		if (edge == OSCCondition::ConditionEdge::RISING_OR_FALLING)
 		{
-			return true;
+			return new_value != old_value;
 		}
-	}
-	else if (evaluated_ && edge == OSCCondition::ConditionEdge::RISING)
-	{
-		if (new_value == true && old_value == false)
+		else if (edge == OSCCondition::ConditionEdge::FALLING)
 		{
-			return true;
+			if (new_value == false && old_value == true)
+			{
+				return true;
+			}
 		}
-	}
-	else if(evaluated_)
-	{
-		LOG("Invalid edge: %d", edge);
+		else if (edge == OSCCondition::ConditionEdge::RISING)
+		{
+			if (new_value == true && old_value == false)
+			{
+				return true;
+			}
+		}
+		else
+		{
+			LOG("Invalid edge: %d", edge);
+		}
 	}
 
 	return false;
@@ -225,36 +264,54 @@ bool OSCCondition::Evaluate(StoryBoard *storyBoard, double sim_time)
 	(void)storyBoard;
 	(void)sim_time;
 
-	if (timer_.Started())
+	if (state_ == ConditionState::TIMER)
 	{
 		if (timer_.Expired(sim_time))
 		{
 			LOG("%s timer expired at %.2f seconds", name_.c_str(), timer_.Elapsed(sim_time));
-			last_result_ = true;
 			timer_.Reset();
+			state_ = ConditionState::TRIGGERED;
+
+			// Trigger the global condition callback
+			if (conditionCallback != nullptr)
+			{
+				conditionCallback(name_.c_str(), sim_time);
+			}
+
+			return true;
 		}
 		else
 		{
-			last_result_ = false;
+			return false;
 		}
-		return last_result_;
 	}
 
 	bool result = CheckCondition(storyBoard, sim_time);
 	bool trig = CheckEdge(result, last_result_, edge_);
+	last_result_ = result;
 
-	evaluated_ = true;
+	if (state_ < ConditionState::EVALUATED)
+	{
+		state_ = ConditionState::EVALUATED;
+	}
 
-	if (delay_ > 0 && trig && last_result_ == false)
+	if (delay_ > 0 && trig && state_ < ConditionState::TIMER)
 	{
 		timer_.Start(sim_time, delay_);
+		state_ = ConditionState::TIMER;
 		LOG("%s timer %.2fs started", name_.c_str(), delay_);
-		last_result_ = false;
-		return last_result_;
+		return false;
 	}
-	else
+
+	if (trig)
 	{
-		last_result_ = result;
+		state_ = ConditionState::TRIGGERED;
+
+		// Trigger the global condition callback
+		if (conditionCallback != nullptr)
+		{
+			conditionCallback(name_.c_str(), sim_time);
+		}
 	}
 
 	return trig;
@@ -271,7 +328,12 @@ bool ConditionGroup::Evaluate(StoryBoard *storyBoard, double sim_time)
 	for (size_t i = 0; i < condition_.size(); i++)
 	{
 		// AND operator, all must be true
-		result &= condition_[i]->Evaluate(storyBoard, sim_time);
+		if (result == true || condition_[i]->delay_ > 0.0)
+		{
+			// When at least one condition in the group is false,
+			// only conditions with timer needs to be evaluated
+			result &= condition_[i]->Evaluate(storyBoard, sim_time);
+		}
 	}
 
 	return result;
@@ -328,13 +390,13 @@ bool TrigByState::CheckCondition(StoryBoard *storyBoard, double sim_time)
 
 	if (element_type_ == StoryBoardElement::ElementType::STORY)
 	{
-		if (evaluated_ == false)
+		if (state_ < ConditionState::EVALUATED)
 		{
-			result = state_ == CondElementState::START_TRANSITION;
+			result = element_state_ == CondElementState::START_TRANSITION;
 		}
 		else
 		{
-			result = state_ == CondElementState::RUNNING;
+			result = element_state_ == CondElementState::RUNNING;
 		}
 	}
 	else
@@ -346,6 +408,10 @@ bool TrigByState::CheckCondition(StoryBoard *storyBoard, double sim_time)
 		else if (element_type_ == StoryBoardElement::ElementType::ACT)
 		{
 			element = storyBoard->FindActByName(element_name_);
+		}
+		else if (element_type_ == StoryBoardElement::ElementType::MANEUVER_GROUP)
+		{
+			element = storyBoard->FindManeuverGroupByName(element_name_);
 		}
 		else if (element_type_ == StoryBoardElement::ElementType::EVENT)
 		{
@@ -363,37 +429,37 @@ bool TrigByState::CheckCondition(StoryBoard *storyBoard, double sim_time)
 			return false;
 		}
 
-		if (state_ == CondElementState::STANDBY)
+		if (element_state_ == CondElementState::STANDBY)
 		{
 			result = element->state_ == StoryBoardElement::State::STANDBY;
 		}
-		else if (state_ == CondElementState::RUNNING)
+		else if (element_state_ == CondElementState::RUNNING)
 		{
 			result = element->state_ == StoryBoardElement::State::RUNNING;
 		}
-		else if (state_ == CondElementState::COMPLETE)
+		else if (element_state_ == CondElementState::COMPLETE)
 		{
 			result = element->state_ == StoryBoardElement::State::COMPLETE;
 		}
-		else if (state_ == CondElementState::END_TRANSITION)
+		else if (element_state_ == CondElementState::END_TRANSITION)
 		{
 			result = element->transition_ == StoryBoardElement::Transition::END_TRANSITION;
 		}
-		else if (state_ == CondElementState::SKIP_TRANSITION)
+		else if (element_state_ == CondElementState::SKIP_TRANSITION)
 		{
 			result = element->transition_ == StoryBoardElement::Transition::SKIP_TRANSITION;
 		}
-		else if (state_ == CondElementState::START_TRANSITION)
+		else if (element_state_ == CondElementState::START_TRANSITION)
 		{
 			result = element->transition_ == StoryBoardElement::Transition::START_TRANSITION;
 		}
-		else if (state_ == CondElementState::STOP_TRANSITION)
+		else if (element_state_ == CondElementState::STOP_TRANSITION)
 		{
 			result = element->transition_ == StoryBoardElement::Transition::STOP_TRANSITION;
 		}
 		else
 		{
-			LOG("Invalid state: %d", state_);
+			LOG("Invalid state: %d", element_state_);
 		}
 	}
 
@@ -403,7 +469,7 @@ bool TrigByState::CheckCondition(StoryBoard *storyBoard, double sim_time)
 void TrigByState::Log()
 {
 	LOG("%s == %s, element: %s state: %s, edge: %s", name_.c_str(), last_result_ ? "true" : "false",
-		element_name_.c_str(), CondElementState2Str(state_).c_str(), Edge2Str().c_str());
+		element_name_.c_str(), CondElementState2Str(element_state_).c_str(), Edge2Str().c_str());
 }
 
 std::string TrigByState::CondElementState2Str(CondElementState state)
@@ -479,7 +545,7 @@ bool TrigByParameter::CheckCondition(StoryBoard* storyBoard, double sim_time)
 	OSCParameterDeclarations::ParameterStruct* pe = parameters_->getParameterEntry(name_);
 	if (pe == 0)
 	{
-		if (evaluated_ == false)  // print only once
+		if (state_ < ConditionState::EVALUATED)  // print only once
 		{
 			LOG("Parameter %s not found", name_.c_str());
 		}
@@ -532,10 +598,13 @@ bool TrigByTimeHeadway::CheckCondition(StoryBoard *storyBoard, double sim_time)
 	for (size_t i = 0; i < triggering_entities_.entity_.size(); i++)
 	{
 		Object* trigObj = triggering_entities_.entity_[i].object_;
+		if (!trigObj->IsActive() || object_ && !object_->IsActive())
+		{
+			continue;
+		}
 
 		if (trigObj->Distance(object_, cs_, relDistType_, freespace_, rel_dist) != 0)
 		{
-			LOG("Failed to measure distance. Set to large number.");
 			rel_dist = LARGE_NUMBER;
 		}
 
@@ -587,10 +656,19 @@ bool TrigByTimeToCollision::CheckCondition(StoryBoard* storyBoard, double sim_ti
 	for (size_t i = 0; i < triggering_entities_.entity_.size(); i++)
 	{
 		Object* trigObj = triggering_entities_.entity_[i].object_;
+		if (!trigObj->IsActive())
+		{
+			continue;
+		}
+
 		int retVal = 0;
 
 		if (object_ != nullptr)
 		{
+			if (!object_->IsActive())
+			{
+				continue;
+			}
 			retVal = trigObj->Distance(object_, cs_, relDistType_, freespace_, rel_dist);
 		}
 		else
@@ -600,7 +678,6 @@ bool TrigByTimeToCollision::CheckCondition(StoryBoard* storyBoard, double sim_ti
 		}
 		if (retVal != 0)
 		{
-			LOG("Failed to measure distance. Set to large number.");
 			rel_dist = LARGE_NUMBER;
 		}
 
@@ -669,6 +746,11 @@ bool TrigByReachPosition::CheckCondition(StoryBoard *storyBoard, double sim_time
 	for (size_t i = 0; i < triggering_entities_.entity_.size(); i++)
 	{
 		Object* trigObj = triggering_entities_.entity_[i].object_;
+		if (!trigObj->IsActive())
+		{
+			continue;
+		}
+
 		Position* pos = position_->GetRMPos();
 		if (pos == nullptr)
 		{
@@ -678,7 +760,24 @@ bool TrigByReachPosition::CheckCondition(StoryBoard *storyBoard, double sim_time
 		dist_ = fabs(trigObj->pos_.getRelativeDistance(pos->GetX(), pos->GetY(), x, y));
 		if (dist_ < tolerance_)
 		{
-			result = true;
+			// Check for any orientation condition
+			if (checkOrientation_)
+			{
+				if (abs(trigObj->pos_.GetH() - pos->GetH()) < angularTolerance_ &&
+					abs(trigObj->pos_.GetP() - pos->GetP()) < angularTolerance_ &&
+					abs(trigObj->pos_.GetR() - pos->GetR()) < angularTolerance_)
+				{
+					result = true;
+				}
+				else
+				{
+					result = false;
+				}
+			}
+			else
+			{
+				result = true;
+			}
 		}
 
 		if (result == true)
@@ -697,8 +796,28 @@ bool TrigByReachPosition::CheckCondition(StoryBoard *storyBoard, double sim_time
 
 void TrigByReachPosition::Log()
 {
-	LOG("%s == %s, distance %.2f < tolerance (%.2f), edge: %s", name_.c_str(), last_result_ ? "true" : "false",
-		dist_, tolerance_, Edge2Str().c_str());
+	if (checkOrientation_)
+	{
+		if (position_->GetRMPos()->GetOrientationType() == Position::OrientationType::ORIENTATION_ABSOLUTE)
+		{
+			LOG("%s == %s, distance %.2f < tolerance (%.2f), abs orientation [%.2f, %.2f, %.2f] (tolerance %.2f), edge: % s",
+				name_.c_str(), last_result_ ? "true" : "false", dist_, tolerance_,
+				triggered_by_entities_[0]->pos_.GetH(), triggered_by_entities_[0]->pos_.GetP(), triggered_by_entities_[0]->pos_.GetR(),
+				angularTolerance_, Edge2Str().c_str());
+		}
+		else
+		{
+			LOG("%s == %s, distance %.2f < tolerance (%.2f), rel orientation [%.2f, %.2f, %.2f] (tolerance %.2f), edge: % s",
+				name_.c_str(), last_result_ ? "true" : "false", dist_, tolerance_,
+				triggered_by_entities_[0]->pos_.GetHRelative(), triggered_by_entities_[0]->pos_.GetPRelative(), triggered_by_entities_[0]->pos_.GetRRelative(),
+				angularTolerance_, Edge2Str().c_str());
+		}
+	}
+	else
+	{
+		LOG("%s == %s, distance %.2f < tolerance (%.2f), edge: %s", name_.c_str(), last_result_ ? "true" : "false",
+			dist_, tolerance_, Edge2Str().c_str());
+	}
 }
 
 bool TrigByDistance::CheckCondition(StoryBoard *storyBoard, double sim_time)
@@ -714,10 +833,13 @@ bool TrigByDistance::CheckCondition(StoryBoard *storyBoard, double sim_time)
 	for (size_t i = 0; i < triggering_entities_.entity_.size(); i++)
 	{
 		Object* trigObj = triggering_entities_.entity_[i].object_;
+		if (!trigObj->IsActive())
+		{
+			continue;
+		}
 
 		if (trigObj->Distance(pos->GetX(), pos->GetY(), cs_, relDistType_, freespace_, dist_) != 0)
 		{
-			LOG("Failed to measure distance. Set to large number.");
 			dist_ = LARGE_NUMBER;
 		}
 		else
@@ -760,12 +882,15 @@ bool TrigByRelativeDistance::CheckCondition(StoryBoard *storyBoard, double sim_t
 	for (size_t i = 0; i < triggering_entities_.entity_.size(); i++)
 	{
 		Object* trigObj = triggering_entities_.entity_[i].object_;
+		if (!(trigObj->IsActive() && object_->IsActive()))
+		{
+			continue;
+		}
 
 		roadmanager::CoordinateSystem cs = cs_;
 
 		if (trigObj->Distance(object_, cs, relDistType_, freespace_, rel_dist_) != 0)
 		{
-			LOG("Failed to measure distance. Set to large number.");
 			rel_dist_ = LARGE_NUMBER;
 		}
 		else
@@ -808,11 +933,17 @@ bool TrigByCollision::CheckCondition(StoryBoard* storyBoard, double sim_time)
 
 	for (size_t i = 0; i < triggering_entities_.entity_.size(); i++)
 	{
-		if (object_)
+		Object* trigObj = triggering_entities_.entity_[i].object_;
+		if (!trigObj->IsActive())
 		{
-			if (triggering_entities_.entity_[i].object_->Collision(object_))
+			continue;
+		}
+
+		if (object_ && object_->IsActive())
+		{
+			if (trigObj->Collision(object_))
 			{
-				CollisionPair p = { triggering_entities_.entity_[i].object_, object_ };
+				CollisionPair p = { trigObj, object_ };
 				collision_pair_.push_back(p);
 				result = true;
 			}
@@ -822,14 +953,32 @@ bool TrigByCollision::CheckCondition(StoryBoard* storyBoard, double sim_time)
 			// check all instances of specifed object type
 			for (size_t j = 0; j < storyBoard->entities_->object_.size(); j++)
 			{
-				if (storyBoard->entities_->object_[j] != triggering_entities_.entity_[i].object_ &&
-					storyBoard->entities_->object_[j]->type_ == type_)
+				if (storyBoard->entities_->object_[j] != trigObj &&
+					storyBoard->entities_->object_[j]->type_ == type_ &&
+					storyBoard->entities_->object_[j]->IsActive())
 				{
-					if (triggering_entities_.entity_[i].object_->Collision(storyBoard->entities_->object_[j]))
+					if (SE_Env::Inst().GetCollisionDetection() == false)
 					{
-						CollisionPair p = { triggering_entities_.entity_[i].object_, storyBoard->entities_->object_[j] };
+						if (trigObj->Collision(storyBoard->entities_->object_[j]))
+						{
+							result = true;
+						}
+					}
+					else
+					{
+						// reuse results from global collision detection
+						for (size_t k = 0; k < trigObj->collisions_.size(); k++)
+						{
+							if (trigObj->collisions_[k] == storyBoard->entities_->object_[j])
+							{
+								result = true;
+							}
+						}
+					}
+					if (result == true)
+					{
+						CollisionPair p = { trigObj, storyBoard->entities_->object_[j] };
 						collision_pair_.push_back(p);
-						result = true;
 					}
 				}
 			}
@@ -837,7 +986,7 @@ bool TrigByCollision::CheckCondition(StoryBoard* storyBoard, double sim_time)
 
 		if (result == true)
 		{
-			triggered_by_entities_.push_back(triggering_entities_.entity_[i].object_);
+			triggered_by_entities_.push_back(trigObj);
 		}
 
 		if (EvalDone(result, triggering_entity_rule_))
@@ -871,6 +1020,11 @@ bool TrigByTraveledDistance::CheckCondition(StoryBoard* storyBoard, double sim_t
 
 	for (size_t i = 0; i < triggering_entities_.entity_.size(); i++)
 	{
+		if (!triggering_entities_.entity_[i].object_->IsActive())
+		{
+			continue;
+		}
+
 		odom_ = triggering_entities_.entity_[i].object_->odometer_;
 		result = odom_ >= value_;
 
@@ -905,6 +1059,11 @@ bool TrigByEndOfRoad::CheckCondition(StoryBoard* storyBoard, double sim_time)
 
 	for (size_t i = 0; i < triggering_entities_.entity_.size(); i++)
 	{
+		if (!triggering_entities_.entity_[i].object_->IsActive())
+		{
+			continue;
+		}
+
 		if (triggering_entities_.entity_[i].object_->IsEndOfRoad())
 		{
 			current_duration_ = sim_time - triggering_entities_.entity_[i].object_->GetEndOfRoadTimestamp();
@@ -943,6 +1102,11 @@ bool TrigByStandStill::CheckCondition(StoryBoard* storyBoard, double sim_time)
 
 	for (size_t i = 0; i < triggering_entities_.entity_.size(); i++)
 	{
+		if (!triggering_entities_.entity_[i].object_->IsActive())
+		{
+			continue;
+		}
+
 		if (triggering_entities_.entity_[i].object_->IsStandStill())
 		{
 			current_duration_ = sim_time - triggering_entities_.entity_[i].object_->GetStandStillTimestamp();
@@ -981,6 +1145,11 @@ bool TrigByOffRoad::CheckCondition(StoryBoard* storyBoard, double sim_time)
 
 	for (size_t i = 0; i < triggering_entities_.entity_.size(); i++)
 	{
+		if (!triggering_entities_.entity_[i].object_->IsActive())
+		{
+			continue;
+		}
+
 		if (triggering_entities_.entity_[i].object_->IsOffRoad())
 		{
 			current_duration_ = sim_time - triggering_entities_.entity_[i].object_->GetOffRoadTimestamp();
@@ -1019,6 +1188,11 @@ bool TrigByAcceleration::CheckCondition(StoryBoard* storyBoard, double sim_time)
 
 	for (size_t i = 0; i < triggering_entities_.entity_.size(); i++)
 	{
+		if (!triggering_entities_.entity_[i].object_->IsActive())
+		{
+			continue;
+		}
+
 		current_acceleration_ = sqrt(pow(triggering_entities_.entity_[i].object_->pos_.GetAccX(), 2) +
 			pow(triggering_entities_.entity_[i].object_->pos_.GetAccY(), 2));
 
@@ -1055,6 +1229,11 @@ bool TrigBySpeed::CheckCondition(StoryBoard* storyBoard, double sim_time)
 
 	for (size_t i = 0; i < triggering_entities_.entity_.size(); i++)
 	{
+		if (!triggering_entities_.entity_[i].object_->IsActive())
+		{
+			continue;
+		}
+
 		current_speed_ = triggering_entities_.entity_[i].object_->GetSpeed();
 
 		result = EvaluateRule(current_speed_, value_, rule_);
@@ -1090,6 +1269,11 @@ bool TrigByRelativeSpeed::CheckCondition(StoryBoard* storyBoard, double sim_time
 
 	for (size_t i = 0; i < triggering_entities_.entity_.size(); i++)
 	{
+		if (!triggering_entities_.entity_[i].object_->IsActive())
+		{
+			continue;
+		}
+
 		if (object_)
 		{
 			current_rel_speed_ = triggering_entities_.entity_[i].object_->GetSpeed() - object_->GetSpeed();

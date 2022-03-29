@@ -44,6 +44,7 @@ static const bool freerun = true;
 static double density = 1.0;  // Cars per 100 m
 static double global_speed_factor = 1.0;
 static int first_car_in_focus = -1;
+static double fixed_timestep = -1.0;
 roadmanager::Road::RoadRule rule = roadmanager::Road::RoadRule::ROAD_RULE_UNDEFINED;
 
 double deltaSimTime;  // external - used by Viewer::RubberBandCamera
@@ -275,7 +276,7 @@ void updateCar(roadmanager::OpenDrive *odrManager, Car *car, double dt)
 		ds *= -1;
 	}
 
-	if (car->pos->MoveAlongS(ds) != roadmanager::Position::ErrorCode::ERROR_NO_ERROR)
+	if ((int)car->pos->MoveAlongS(ds) < 0)
 	{
 		if (openEnds.size() == 0)
 		{
@@ -323,7 +324,7 @@ void updateCar(roadmanager::OpenDrive *odrManager, Car *car, double dt)
 	if (car->model->txNode_ != 0)
 	{
 		double h, p, r;
-		ZYZ2EulerAngles(car->pos->GetHRoad(), car->pos->GetPRoad(), car->pos->GetHRelative(), h, p, r);
+		R0R12EulerAngles(car->pos->GetHRoad(), car->pos->GetPRoad(), car->pos->GetRRoad(), car->pos->GetHRelative(), 0.0, 0.0, h, p, r);
 
 		car->model->SetPosition(car->pos->GetX(), car->pos->GetY(), car->pos->GetZ());
 		car->model->SetRotation(h, p, r);
@@ -344,10 +345,15 @@ int main(int argc, char** argv)
 	// use an ArgumentParser object to manage the program arguments.
 	opt.AddOption("help", "Show this help message");
 	opt.AddOption("odr", "OpenDRIVE filename (required)", "odr_filename");
+	opt.AddOption("capture_screen", "Continuous screen capture. Warning: Many .tga files will be created");
 	opt.AddOption("density", "density (cars / 100 m)", "density", std::to_string(density));
+	opt.AddOption("enforce_generate_model", "Generate road 3D model even if --model is specified");
 	opt.AddOption("disable_log", "Prevent logfile from being created");
+	opt.AddOption("disable_off_screen", "Disable off-screen rendering, potentially gaining performance");
 	opt.AddOption("disable_stdout", "Prevent messages to stdout");
+	opt.AddOption("fixed_timestep", "Run simulation decoupled from realtime, with specified timesteps", "timestep");
 	opt.AddOption("generate_no_road_objects", "Do not generate any OpenDRIVE road objects (e.g. when part of referred 3D model)");
+	opt.AddOption("ground_plane", "Add a large flat ground surface");
 	opt.AddOption("logfile_path", "logfile path/filename, e.g. \"../esmini.log\" (default: log.txt)", "path");
 	opt.AddOption("model", "3D Model filename", "model_filename");
 	opt.AddOption("osi_lines", "Show OSI road lines (toggle during simulation by press 'u') ");
@@ -380,6 +386,12 @@ int main(int argc, char** argv)
 	}
 
 	std::string arg_str;
+
+	if ((arg_str = opt.GetOptionArg("fixed_timestep")) != "")
+	{
+		fixed_timestep = atof(arg_str.c_str());
+		printf("Run simulation decoupled from realtime, with fixed timestep: %.2f", fixed_timestep);
+	}
 
 	if (opt.GetOptionSet("disable_stdout"))
 	{
@@ -462,6 +474,11 @@ int main(int argc, char** argv)
 		}
 	}
 
+	if (opt.GetOptionSet("disable_off_screen"))
+	{
+		SE_Env::Inst().SetDisableOffScreen(true);
+	}
+
 	roadmanager::Position *lane_pos = new roadmanager::Position();
 	roadmanager::Position *track_pos = new roadmanager::Position();
 
@@ -485,6 +502,12 @@ int main(int argc, char** argv)
 
 		viewer->SetWindowTitleFromArgs(args);
 		viewer->RegisterKeyEventCallback(FetchKeyEvent, nullptr);
+
+		if (opt.GetOptionSet("capture_screen"))
+		{
+			LOG("Activate continuous screen capture");
+			viewer->SaveImagesToFile(-1);
+		}
 
 		if (opt.GetOptionSet("road_features"))
 		{
@@ -528,19 +551,27 @@ int main(int argc, char** argv)
 
 		while (!viewer->osgViewer_->done())
 		{
-			// Get milliseconds since Jan 1 1970
-			now = SE_getSystemTime();
-			deltaSimTime = (now - lastTimeStamp) / 1000.0;  // step size in seconds
-			lastTimeStamp = now;
-			if (deltaSimTime > maxStepSize) // limit step size
+			if (fixed_timestep > 0)
 			{
-				deltaSimTime = maxStepSize;
+				deltaSimTime = fixed_timestep;
 			}
-			else if (deltaSimTime < minStepSize)  // avoid CPU rush, sleep for a while
+			else
 			{
-				SE_sleep(now - lastTimeStamp);
-				deltaSimTime = minStepSize;
+				// Get milliseconds since Jan 1 1970
+				now = SE_getSystemTime();
+				deltaSimTime = (now - lastTimeStamp) / 1000.0;  // step size in seconds
+				lastTimeStamp = now;
+				if (deltaSimTime > maxStepSize) // limit step size
+				{
+					deltaSimTime = maxStepSize;
+				}
+				else if (deltaSimTime < minStepSize)  // avoid CPU rush, sleep for a while
+				{
+					SE_sleep(now - lastTimeStamp);
+					deltaSimTime = minStepSize;
+				}
 			}
+
 
 			if (!(run_only_once && !first_time))
 			{
