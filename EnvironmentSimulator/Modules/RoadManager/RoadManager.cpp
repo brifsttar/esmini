@@ -7120,7 +7120,7 @@ int Position::TeleportTo(Position* position)
 	return 0;
 }
 
-int Position::MoveToConnectingRoad(RoadLink *road_link, ContactPointType &contact_point_type, Junction::JunctionStrategyType strategy)
+Position::ReturnCode Position::MoveToConnectingRoad(RoadLink *road_link, ContactPointType &contact_point_type, Junction::JunctionStrategyType strategy, bool actualDistance)
 {
 	Road *road = GetOpenDrive()->GetRoadByIdx(track_idx_);
 	Road *next_road = 0;
@@ -7391,7 +7391,7 @@ double Position::DistanceToDS(double ds)
 	return ds;
 }
 
-Position::ErrorCode Position::MoveAlongS(double ds, double dLaneOffset, Junction::JunctionStrategyType strategy)
+Position::ReturnCode Position::MoveAlongS(double ds, double dLaneOffset, Junction::JunctionStrategyType strategy, bool actualDistance)
 {
 	RoadLink *link;
 	int max_links = 8;  // limit lookahead through junctions/links
@@ -7517,7 +7517,7 @@ Lane* roadmanager::Position::GetLane() const {
 	return GetRoad()->GetDrivingLaneByIdx(GetS(), GetLaneId());
 }
 
-Position::ErrorCode Position::SetLanePos(int track_id, int lane_id, double s, double offset, int lane_section_idx)
+Position::ReturnCode Position::SetLanePos(int track_id, int lane_id, double s, double offset, int lane_section_idx)
 {
 	offset_ = offset;
 	ReturnCode retvalue = ReturnCode::OK;

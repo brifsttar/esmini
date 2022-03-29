@@ -1805,7 +1805,7 @@ namespace roadmanager
 			double distance;
 		};
 
-		enum class ErrorCode
+		enum class ReturnCode
 		{
 			ERROR_OFF_ROAD = -4,
 			ERROR_END_OF_ROUTE = -3,
@@ -1911,10 +1911,8 @@ namespace roadmanager
 		*/
 		ReturnCode XYZH2TrackPos(double x, double y, double z, double h, bool connectedOnly = false, int roadId = -1, bool check_overlapping_roads = false);
 
-		int MoveToConnectingRoad(RoadLink *road_link, ContactPointType &contact_point_type, Junction::JunctionStrategyType strategy = Junction::STRAIGHT);
+		ReturnCode MoveToConnectingRoad(RoadLink *road_link, ContactPointType &contact_point_type, Junction::JunctionStrategyType strategy = Junction::STRAIGHT, bool actualDistance = true);
 		int TeleportTo(Position* pos);
-
-		ReturnCode MoveToConnectingRoad(RoadLink *road_link, ContactPointType &contact_point_type, double junctionSelectorAngle = -1.0);
 
 		void SetRelativePosition(Position* rel_pos, PositionType type)
 		{
@@ -2113,7 +2111,7 @@ namespace roadmanager
 		*/
 		ReturnCode MoveAlongS(double ds, bool actualDistance = true)
 		{
-			return MoveAlongS(ds, 0.0, -1.0, actualDistance);
+			return MoveAlongS(ds, 0.0, Junction::JunctionStrategyType::STRAIGHT, actualDistance);
 		}
 
 		/**
