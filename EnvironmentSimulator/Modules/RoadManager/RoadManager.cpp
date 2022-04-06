@@ -4519,10 +4519,15 @@ int RoadPath::Calculate(double &dist, bool bothDirections, double maxDist)
 				if (node->previous == 0)
 				{
 					// This is the first node - inspect whether it is in front or behind start position
-					if ((node->link == startRoad->GetLink(LinkType::PREDECESSOR) &&
-						abs(startPos_->GetHRelative()) > M_PI_2 && abs(startPos_->GetHRelative()) < 3 * M_PI / 2) ||
-						((node->link == startRoad->GetLink(LinkType::SUCCESSOR) &&
-						(abs(startPos_->GetHRelative()) < M_PI_2 || abs(startPos_->GetHRelative()) > 3 * M_PI / 2))))
+					bool isPred = node->link == startRoad->GetLink(LinkType::PREDECESSOR);
+					bool isGTPi2 = abs(startPos_->GetHRelative()) > M_PI_2;
+					bool isLT3Pi2 = abs(startPos_->GetHRelative()) < 3 * M_PI / 2;
+					bool isSucc = node->link == startRoad->GetLink(LinkType::SUCCESSOR);
+					bool isLTPi2 = !isGTPi2;
+					bool isGT3Pi2 = !isLT3Pi2;
+					bool isPredAndBack = isPred && isGTPi2 && isLT3Pi2;
+					bool isSuccAndFront = isSucc && (isLTPi2 || isGT3Pi2);
+					if (isPredAndBack || isSuccAndFront)
 					{
 						direction_ = 1;
 					}
@@ -4530,18 +4535,20 @@ int RoadPath::Calculate(double &dist, bool bothDirections, double maxDist)
 					{
 						direction_ = -1;
 					}
+					firstNode_ = node;
 				}
 				node = node->previous;
 			}
 		}
 	}
 
-	// Compensate for heading of the start position
+	dist = direction_ * tmpDist;
+
+	// Also take intial heading of the start position into consideration for the sign of the distance
 	if (startPos_->GetHRelativeDrivingDirection() > M_PI_2 && startPos_->GetHRelativeDrivingDirection() < 3 * M_PI_2)
 	{
-		direction_ *= -1;
+		dist *= -1;
 	}
-	dist = direction_ * tmpDist;
 
 	return found ? 0 : -1;
 }
@@ -8332,19 +8339,26 @@ bool Position::Delta(Position* pos_b, PositionDiff &diff, bool bothDirections, d
 
 		if (path->visited_.size() > 0) {
 			RoadPath::PathNode* lastNode = path->visited_.back();
-			RoadPath::PathNode* firstNode = lastNode;
-			while (firstNode->previous) {
-				firstNode = firstNode->previous;
+			RoadPath::PathNode* firstNode = path->firstNode_;
+			if (firstNode == nullptr)
+			{
+				LOG("Missing first node in path");
+				return false;
+			}
+			if (lastNode == nullptr)
+			{
+				LOG("Missing last node in path");
+				return false;
 			}
 			bool isPathForward = firstNode->link->GetType() == LinkType::SUCCESSOR;
 			bool isPathBackward = firstNode->link->GetType() == LinkType::PREDECESSOR;
 			bool isConnectedToEnd = lastNode->link->GetContactPointType() == ContactPointType::CONTACT_POINT_END;
 			bool isConnectedToStart = lastNode->link->GetContactPointType() == ContactPointType::CONTACT_POINT_START;
-			bool isHeadToToe = isPathForward && isConnectedToEnd;
-			bool isToeToHead = isPathBackward && isConnectedToStart;
+			bool isHeadToHead = isPathForward && isConnectedToEnd;
+			bool isToeToToe = isPathBackward && isConnectedToStart;
 
 			// If start and end roads are oppotite directed, inverse one side for delta calculations
-			if (isHeadToToe || isToeToHead) {
+			if (isHeadToHead || isToeToToe) {
 				laneIdB = -laneIdB;
 				tB = -tB;
 			}
@@ -8379,8 +8393,9 @@ bool Position::Delta(Position* pos_b, PositionDiff &diff, bool bothDirections, d
 		diff.dLaneId = 0;
 		diff.ds = LARGE_NUMBER;
 		diff.dt = LARGE_NUMBER;
-		getRelativeDistance(pos_b->GetX(), pos_b->GetY(), diff.dx, diff.dy);
 	}
+
+	getRelativeDistance(pos_b->GetX(), pos_b->GetY(), diff.dx, diff.dy);
 
 	delete path;
 
