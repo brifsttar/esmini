@@ -7521,8 +7521,12 @@ Position::ReturnCode Position::MoveAlongS(double ds, double dLaneOffset, Junctio
 	return ret_val;
 }
 
-Lane* roadmanager::Position::GetLane() const {
-	return GetRoad()->GetDrivingLaneByIdx(GetS(), GetLaneId());
+Lane* Position::GetLane() const {
+	Road* r = GetRoad();
+	if (!r) return nullptr;
+	LaneSection* ls = r->GetLaneSectionByS(GetS());
+	if (!ls) return nullptr;
+	return ls->GetLaneById(GetLaneId());
 }
 
 Position::ReturnCode Position::SetLanePos(int track_id, int lane_id, double s, double offset, int lane_section_idx)
