@@ -1290,11 +1290,11 @@ namespace roadmanager
 
 		void Print();
 		void SetId(int id) { id_ = id; }
-		int GetId() { return id_; }
-		RoadRule GetRule() { return rule_; }
+		int GetId() const { return id_; }
+		RoadRule GetRule() const { return rule_; }
 		void SetName(std::string name) { name_ = name; }
 		Geometry *GetGeometry(int idx);
-		int GetNumberOfGeometries() { return (int)geometry_.size(); }
+		int GetNumberOfGeometries() const { return (int)geometry_.size(); }
 
 		/**
 		Retrieve the lanesection specified by vector element index (idx)
@@ -1539,9 +1539,9 @@ namespace roadmanager
 
 		Junction(int id, std::string name, JunctionType type) : id_(id), name_(name), type_(type) {SetGlobalId();}
 		~Junction();
-		int GetId() { return id_; }
-		std::string GetName() { return name_; }
-		int GetNumberOfConnections() { return (int)connection_.size(); }
+		int GetId() const { return id_; }
+		std::string GetName() const { return name_; }
+		int GetNumberOfConnections() const { return (int)connection_.size(); }
 		int GetNumberOfRoadConnections(int roadId, int laneId);
 		LaneRoadLaneConnection GetRoadConnectionByIdx(int roadId, int laneId, int idx,
 			int laneTypeMask = Lane::LaneType::LANE_TYPE_ANY_DRIVING);
