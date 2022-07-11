@@ -8272,6 +8272,7 @@ roadmanager::Position::NextJunction roadmanager::Position::GetNextJunction() con
 	LinkType lt = SIGN(GetLaneId()) < 0 ? SUCCESSOR : PREDECESSOR;
 	ContactPointType cpt;
 	Road* r = GetRoad();
+	if (r == nullptr) return next;
 	while(true) {
 		if (!r->GetLink(lt)) {
 			break;
