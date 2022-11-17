@@ -1105,8 +1105,8 @@ INSTANTIATE_TEST_SUITE_P(LaneRoadMarkTypeLineTests,LaneRoadMarkTypeLineTest,::te
 
 class LaneRoadMarkTypeTest : public ::testing::Test {
     protected:
-    void SetUp() override { lane_test_0 = new LaneRoadMarkType("test", 0.2); }
-    LaneRoadMarkType* lane_test_0;
+    void SetUp() override { lane_test_0 = std::make_unique<LaneRoadMarkType>("test", 0.2); }
+    std::unique_ptr<LaneRoadMarkType> lane_test_0;
 };
 
 TEST_F(LaneRoadMarkTypeTest, DefaultConstructor) {
@@ -1115,7 +1115,7 @@ TEST_F(LaneRoadMarkTypeTest, DefaultConstructor) {
 }
 
 TEST_F(LaneRoadMarkTypeTest,AddLine) {
-    LaneRoadMarkTypeLine * line_0 = new LaneRoadMarkTypeLine(100,100,0,0,LaneRoadMarkTypeLine::NO_PASSING,2);
+    std::shared_ptr<LaneRoadMarkTypeLine> line_0 = std::make_shared<LaneRoadMarkTypeLine>(100,100,0,0,LaneRoadMarkTypeLine::NO_PASSING,2);
     lane_test_0->AddLine(line_0);
     EXPECT_EQ(lane_test_0->GetNumberOfRoadMarkTypeLines(), 1);
 
@@ -1152,7 +1152,7 @@ TEST_P(LaneRoadMarkTest, DefaultConstructor) {
     EXPECT_EQ(lane_test_0.GetWidth(),std::get<6>(GetParam()));
     EXPECT_EQ(lane_test_0.GetHeight(),std::get<7>(GetParam()));
 
-    LaneRoadMarkType * type_test_0 = new LaneRoadMarkType("test", 0.2);
+    std::shared_ptr<LaneRoadMarkType> type_test_0 = std::make_shared<LaneRoadMarkType>("test", 0.2);
     lane_test_0.AddType(type_test_0);
     EXPECT_EQ(lane_test_0.GetNumberOfRoadMarkTypes(),1);
     EXPECT_EQ(lane_test_0.GetLaneRoadMarkTypeByIdx(0)->GetName(),type_test_0->GetName());
@@ -1289,13 +1289,11 @@ LaneTestFixture::~LaneTestFixture()
 TEST_F(LaneTestFixture, TestLaneBaseGetConstructor)
 {
     ASSERT_EQ(lane.GetId(), 0);
-    ASSERT_EQ(lane.GetOffsetFromRef(), 0.0);
     ASSERT_EQ(lane.GetLaneType(), Lane::LaneType::LANE_TYPE_NONE);
     ASSERT_EQ(lane.GetGlobalId(), 0.0);
 
     Lane lane_second = Lane(1, Lane::LaneType::LANE_TYPE_DRIVING);
     ASSERT_EQ(lane_second.GetId(), 1);
-    ASSERT_EQ(lane_second.GetOffsetFromRef(), 0.0);
     ASSERT_EQ(lane_second.GetLaneType(), Lane::LaneType::LANE_TYPE_DRIVING);
     ASSERT_EQ(lane_second.GetGlobalId(), 0.0);
 }
@@ -1319,9 +1317,6 @@ TEST_F(LaneTestFixture, TestLaneAddFunctions)
     ASSERT_EQ(lane.GetNumberOfLaneWidths(), 1);
     ASSERT_EQ(lane.GetNumberOfRoadMarks(), 1);
 
-    delete lanelink;
-    delete lanewidth;
-    delete laneroadmark;
 }
 
 TEST_F(LaneTestFixture, TestLaneGetLink)
@@ -1334,8 +1329,6 @@ TEST_F(LaneTestFixture, TestLaneGetLink)
     LaneLink *mylanelink_second = lane.GetLink(LinkType::SUCCESSOR);
     ASSERT_EQ(mylanelink_second->GetType(), LinkType::SUCCESSOR);
     ASSERT_EQ(mylanelink_second->GetId(), 3);
-
-    delete lanelink;
 }
 
 TEST_F(LaneTestFixture, TestLaneGetWidth)
@@ -1392,9 +1385,6 @@ TEST_F(LaneTestFixture, TestLaneGetWidth)
     ASSERT_EQ(mylanewidth_s_final->poly3_.GetC(), 4.0);
     ASSERT_EQ(mylanewidth_s_final->poly3_.GetD(), -5.0);
     ASSERT_EQ(mylanewidth_s_final->poly3_.GetPscale(), 1.0);
-
-    delete lanewidth;
-    delete lanewidth_second;
 }
 
 TEST_F(LaneTestFixture, TestLaneGetRoadMark)
@@ -1417,7 +1407,6 @@ TEST_F(LaneTestFixture, TestLaneGetRoadMark)
     ASSERT_EQ(mylaneroadmark->GetMaterial(), LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL);
     ASSERT_EQ(mylaneroadmark->GetLaneChange(), LaneRoadMark::RoadMarkLaneChange::BOTH);
 
-    delete laneroadmark;
 }
 
 TEST_F(LaneTestFixture, TestLaneGetRoadMark2)
@@ -1432,8 +1421,6 @@ TEST_F(LaneTestFixture, TestLaneGetRoadMark2)
 
     LaneRoadMark *mylaneroadmark = lane.GetLaneRoadMarkByIdx(0);
     ASSERT_EQ(mylaneroadmark->GetType(), LaneRoadMark::RoadMarkType::BROKEN_BROKEN);
-
-    delete laneroadmark;
 }
 
 TEST_F(LaneTestFixture, TestLaneGetRoadMark3)
@@ -1448,8 +1435,6 @@ TEST_F(LaneTestFixture, TestLaneGetRoadMark3)
 
     LaneRoadMark *mylaneroadmark = lane.GetLaneRoadMarkByIdx(0);
     ASSERT_EQ(mylaneroadmark->GetType(), LaneRoadMark::RoadMarkType::SOLID_SOLID);
-
-    delete laneroadmark;
 }
 
 TEST_F(LaneTestFixture, TestLaneGetRoadMark4)
@@ -1464,8 +1449,6 @@ TEST_F(LaneTestFixture, TestLaneGetRoadMark4)
 
     LaneRoadMark *mylaneroadmark = lane.GetLaneRoadMarkByIdx(0);
     ASSERT_EQ(mylaneroadmark->GetType(), LaneRoadMark::RoadMarkType::BROKEN_SOLID);
-
-    delete laneroadmark;
 }
 
 /*
@@ -1504,11 +1487,11 @@ TEST_F(LaneTestFixture, TestLaneGetLineGlobalIds)
     RoadMarkColor::STANDARD_COLOR, LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL, LaneRoadMark::RoadMarkLaneChange::BOTH,
     2.0, 2.0);
 
-    LaneRoadMarkType *laneroadmarktype = new LaneRoadMarkType("type1", 1.0);
-    LaneRoadMarkType *laneroadmarktype_second = new LaneRoadMarkType("type2", 1.0);
+    std::shared_ptr<LaneRoadMarkType> laneroadmarktype = std::make_shared<LaneRoadMarkType>("type1", 1.0);
+    std::shared_ptr<LaneRoadMarkType> laneroadmarktype_second = std::make_shared<LaneRoadMarkType>("type2", 1.0);
 
-    LaneRoadMarkTypeLine *laneRoadMarktypeline = new LaneRoadMarkTypeLine(3.0, 1.0, 0.5, 0.0, LaneRoadMarkTypeLine::RoadMarkTypeLineRule::CAUTION, 1.0);
-    LaneRoadMarkTypeLine *laneRoadMarktypeline_second = new LaneRoadMarkTypeLine(3.0, 1.0, 0.5, 50.0, LaneRoadMarkTypeLine::RoadMarkTypeLineRule::CAUTION, 1.0);
+    std::shared_ptr<LaneRoadMarkTypeLine> laneRoadMarktypeline = std::make_shared<LaneRoadMarkTypeLine>(3.0, 1.0, 0.5, 0.0, LaneRoadMarkTypeLine::RoadMarkTypeLineRule::CAUTION, 1.0);
+    std::shared_ptr<LaneRoadMarkTypeLine> laneRoadMarktypeline_second = std::make_shared<LaneRoadMarkTypeLine>(3.0, 1.0, 0.5, 50.0, LaneRoadMarkTypeLine::RoadMarkTypeLineRule::CAUTION, 1.0);
 
     laneroadmark->AddType(laneroadmarktype);
     laneroadmark->AddType(laneroadmarktype_second);
@@ -1533,19 +1516,13 @@ TEST_F(LaneTestFixture, TestLaneGetLineGlobalIds)
     ASSERT_THAT(laneroadmarktype_second->GetLaneRoadMarkTypeLineByIdx(0)->GetGlobalId(), 1);
 
     delete odr;
-    delete laneroadmark;
-    delete laneroadmark_second;
-
-    delete laneroadmarktype;
-    delete laneroadmarktype_second;
-
-    delete laneRoadMarktypeline;
-    delete laneRoadMarktypeline_second;
 }
 
 TEST(RoadTest, RoadWidthAllLanes)
 {
-    roadmanager::OpenDrive* odr = new OpenDrive("../../../resources/xodr/soderleden.xodr");
+    ASSERT_EQ(roadmanager::Position::LoadOpenDrive("../../../resources/xodr/soderleden.xodr"), true);
+    roadmanager::OpenDrive* odr = Position::GetOpenDrive();
+    ASSERT_NE(odr, nullptr);
 
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 5);
@@ -1557,7 +1534,7 @@ TEST(RoadTest, RoadWidthAllLanes)
     EXPECT_NEAR(road->GetWidth(0, 1), 2.3, 1e-5);
     EXPECT_NEAR(road->GetWidth(0, 0), 8.1, 1e-5);
 
-    delete odr;
+    odr->Clear();
 }
 
 TEST(RoadTest, RoadWidthDrivingLanes)
@@ -1754,12 +1731,12 @@ TEST(NurbsTest, TestNurbsPosition)
     EXPECT_DOUBLE_EQ(v.y, -4.0);
 
     n.Evaluate(0.5 * n.GetLength(), Shape::TrajectoryParamType::TRAJ_PARAM_TYPE_S, v);
-    EXPECT_NEAR(v.x, 0.0, 1e-5);
-    EXPECT_NEAR(v.y, 0.0, 1e-5);
+    EXPECT_NEAR(v.x, 0.0, 1e-3);
+    EXPECT_NEAR(v.y, 0.0, 1e-3);
 
     n.Evaluate(1.0 * n.GetLength(), Shape::TrajectoryParamType::TRAJ_PARAM_TYPE_S, v);
-    EXPECT_NEAR(v.x, 4.0, 1e-5);
-    EXPECT_NEAR(v.y, 4.0, 1e-5);
+    EXPECT_NEAR(v.x, 4.0, 1e-3);
+    EXPECT_NEAR(v.y, 4.0, 1e-3);
 
     n.Evaluate(0.40045 * n.GetLength(), Shape::TrajectoryParamType::TRAJ_PARAM_TYPE_S, v);
     EXPECT_NEAR(v.x, -1.248623, 1e-5);
@@ -2223,6 +2200,147 @@ TEST(RoadPosTest, TestPrioStraightRoadInJunction)
     EXPECT_EQ(pos.GetTrackId(), 9);
 }
 
+class StarRoadTestFixture : public testing::Test
+{
+public:
+    StarRoadTestFixture();
+    void Check(double a, double b, double c, double d, double e);
+protected:
+    OpenDrive* odr;
+    Position pos;
+    double lane_width;
+};
+
+StarRoadTestFixture::StarRoadTestFixture() : lane_width(3.5)
+{
+    Position::GetOpenDrive()->LoadOpenDriveFile("../../../EnvironmentSimulator/Unittest/xodr/star.xodr");
+}
+
+void StarRoadTestFixture::Check(double x, double y, double h, double p_road, double p)
+{
+    EXPECT_NEAR(pos.GetX(), x, 1E-3);
+    EXPECT_NEAR(pos.GetY(), y, 1E-3);
+    EXPECT_NEAR(pos.GetH(), h, 1E-3);
+    EXPECT_NEAR(pos.GetPRoad(), p_road, 1E-3);
+    EXPECT_NEAR(pos.GetP(), p, 1E-3);
+    EXPECT_NEAR(pos.GetR(), 0.0, 1E-3);
+}
+
+TEST_F(StarRoadTestFixture, TestRelativeRoadPos)
+{
+    odr = Position::GetOpenDrive();
+    ASSERT_NE(odr, nullptr);
+    EXPECT_EQ(odr->GetNumOfRoads(), 24);
+
+    // Road heading pi/2 downhill - RHT
+    // right side
+    pos.SetHeadingRelative(0.0);
+    pos.SetTrackPos(7, 10.0, -lane_width/2.0);
+    Check(lane_width / 2.0, 20.0, M_PI / 2, 0.55, 0.55);
+    pos.SetLanePos(7, -1, 10.0, 0.0);
+    Check(lane_width / 2.0, 20.0, M_PI / 2, 0.55, 0.55);
+    // left side (facing uphill)
+    pos.SetHeadingRelative(M_PI);
+    pos.SetTrackPos(7, 10.0, lane_width / 2.0);
+    Check(-lane_width / 2.0, 20.0, 3 * M_PI / 2, 0.55, 2 * M_PI - 0.55);
+    pos.SetLanePos(7, 1, 10.0, 0.0);
+    Check(-lane_width / 2.0, 20.0, 3 * M_PI / 2, 0.55, 2 * M_PI - 0.55);
+
+    // Road heading pi/2 downhill - LHT
+    // right side
+    pos.SetHeadingRelative(M_PI);
+    pos.SetTrackPos(7, 10.0, -lane_width / 2.0);
+    Check(lane_width / 2.0, 20.0, 3 * M_PI / 2, 0.55, 2 * M_PI - 0.55);
+    // left side (facing uphill)
+    pos.SetHeadingRelative(0.0);
+    pos.SetTrackPos(7, 10.0, lane_width / 2.0);
+    Check(-lane_width / 2.0, 20.0, M_PI / 2, 0.55, 0.55);
+
+    // Road heading 3pi/2 uphill - LHT
+    // right side
+    pos.SetHeadingRelative(0.0);
+    pos.SetTrackPos(20, 10.0, -lane_width / 2.0);
+    Check(-lane_width / 2.0, -20.0, 3 * M_PI / 2, -0.55, 2 * M_PI - 0.55);
+    // left side (facing uphill)
+    pos.SetHeadingRelative(M_PI);
+    pos.SetTrackPos(20, 10.0, lane_width / 2.0);
+    Check(lane_width / 2.0, -20.0, M_PI / 2, -0.55, 0.55);
+}
+
+TEST(OSIPointTest, MixedRoads)
+{
+    ASSERT_EQ(roadmanager::Position::LoadOpenDrive("../../../EnvironmentSimulator/Unittest/xodr/mixed_roads.xodr"), true);
+    roadmanager::OpenDrive* odr = Position::GetOpenDrive();
+    ASSERT_NE(odr, nullptr);
+
+    ASSERT_NE(odr, nullptr);
+    EXPECT_EQ(odr->GetNumOfRoads(), 4);
+
+    Road* road = odr->GetRoadByIdx(0);
+    EXPECT_EQ(road->GetId(), 0);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(0).x, 0.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(0).y, 1.5, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(0).z, 0.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(4).x, 18.119, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(4).y, 3.181, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(4).z, 0.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(10).x, 40.423, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(10).y, 11.275, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(10).z, 0.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(12).x, 46.744, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(12).y, 14.436, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(12).z, 0.0, 1e-3);
+
+    road = odr->GetRoadByIdx(1);
+    EXPECT_EQ(road->GetId(), 1);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(0).x, 0.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(0).y, -8.5, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(0).z, 0.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(1).x, 19.875, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(1).y, -8.5, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(1).z, 0.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(2).x, 20.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(2).y, -8.5, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(2).z, 2.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(3).x, 50.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(3).y, -8.5, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(3).z, 2.0, 1e-3);
+
+    road = odr->GetRoadByIdx(2);
+    EXPECT_EQ(road->GetId(), 2);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(0).x, 0.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(0).y, -18.5, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(0).z, 0.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(4).x, 20.116, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(4).y, -19.507, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(4).z, 2.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(7).x, 39.167, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(7).y, -22.343, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(7).z, 2.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(9).x, 49.852, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(9).y, -24.764, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(9).z, 2.0, 1e-3);
+
+    road = odr->GetRoadByIdx(3);
+    EXPECT_EQ(road->GetId(), 3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(2)->GetOSIPoints()->GetPoint(0).x, 0.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(2)->GetOSIPoints()->GetPoint(0).y, -41.5, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(2)->GetOSIPoints()->GetPoint(0).z, 0.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(2)->GetOSIPoints()->GetPoint(4).x, 56.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(2)->GetOSIPoints()->GetPoint(4).y, -41.5, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(2)->GetOSIPoints()->GetPoint(4).z, 0.397, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(2)->GetOSIPoints()->GetPoint(9).x, 69.875, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(2)->GetOSIPoints()->GetPoint(9).y, -41.5, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(2)->GetOSIPoints()->GetPoint(9).z, 3.484, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(2)->GetOSIPoints()->GetPoint(21).x, 150.0, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(2)->GetOSIPoints()->GetPoint(21).y, -41.5, 1e-3);
+    EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(2)->GetOSIPoints()->GetPoint(21).z, 10.0, 1e-3);
+
+    odr->Clear();
+}
+
+
+
 // Uncomment to print log output to console
 //#define LOG_TO_CONSOLE
 
@@ -2242,7 +2360,7 @@ int main(int argc, char **argv)
     }
 #endif
 
-    //testing::GTEST_FLAG(filter) = "*TestPrioStraightRoadInJunction*";
+    //testing::GTEST_FLAG(filter) = "*RoadWidthAllLanes*";
 
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

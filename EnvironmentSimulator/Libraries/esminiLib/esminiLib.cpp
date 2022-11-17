@@ -76,7 +76,7 @@ static void resetScenario(void)
 	}
 	if (argv_)
 	{
-		for (int i = 0; i < argc_; i++)
+		for (int i = 0; i < args_v.size(); i++)
 		{
 			free(argv_[i]);
 		}
@@ -86,8 +86,10 @@ static void resetScenario(void)
 	}
 	args_v.clear();
 
-	// Reset (global) condition callback
+	// Reset (global) callbacks
 	OSCCondition::conditionCallback = nullptr;
+    StoryBoardElement::stateChangeCallback = nullptr;
+
 	time_stamp = 0;
 }
 
@@ -152,6 +154,8 @@ static void copyStateFromScenarioGateway(SE_ScenarioObjectState *state, ObjectSt
 	state->height = gw_state->info.boundingbox.dimensions_.height_;
 	state->objectType = gw_state->info.obj_type;
 	state->objectCategory = gw_state->info.obj_category;
+	state->wheel_angle = (float)gw_state->info.wheel_angle;
+	state->wheel_rot = (float)gw_state->info.wheel_rot;
 }
 
 static int getObjectById(int object_id, Object*& obj)
@@ -204,8 +208,9 @@ static int GetRoadInfoAtDistance(int object_id, float lookahead_distance, SE_Roa
 	}
 
 	roadmanager::Position *pos = &player->scenarioGateway->getObjectStatePtrByIdx(object_id)->state_.pos;
+	roadmanager::Position::ReturnCode retval = pos->GetProbeInfo(lookahead_distance, &s_data, (roadmanager::Position::LookAheadMode)lookAheadMode);
 
-	if (pos->GetProbeInfo(lookahead_distance, &s_data, (roadmanager::Position::LookAheadMode)lookAheadMode) != roadmanager::Position::ReturnCode::ERROR_GENERIC)
+	if (retval != roadmanager::Position::ReturnCode::ERROR_GENERIC)
 	{
 		// Copy data
 		r_data->local_pos_x = (float)s_data.relative_pos[0];
@@ -230,7 +235,8 @@ static int GetRoadInfoAtDistance(int object_id, float lookahead_distance, SE_Roa
 
 // Add visualization of forward looking road sensor probe
 #ifdef _USE_OSG
-		if (player->viewer_ && player->viewer_->entities_[object_id]->GetType() == viewer::EntityModel::EntityType::VEHICLE)
+		if (player->viewer_ && object_id < player->viewer_->entities_.size() &&
+			player->viewer_->entities_[object_id]->GetType() == viewer::EntityModel::EntityType::VEHICLE)
 		{
 			viewer::CarModel *model = (viewer::CarModel *)player->viewer_->entities_[object_id];
 			model->steering_sensor_->Show();
@@ -242,22 +248,9 @@ static int GetRoadInfoAtDistance(int object_id, float lookahead_distance, SE_Roa
 			player->viewer_->UpdateSensor(model->steering_sensor_);
 		}
 #endif
-
-		if (pos->GetStatusBitMask() & static_cast<int>(roadmanager::Position::PositionStatusMode::POS_STATUS_END_OF_ROAD))
-		{
-			return static_cast<int>(roadmanager::Position::ReturnCode::ERROR_END_OF_ROAD);
-		}
-		else if (pos->GetStatusBitMask() & static_cast<int>(roadmanager::Position::PositionStatusMode::POS_STATUS_END_OF_ROUTE))
-		{
-			return static_cast<int>(roadmanager::Position::ReturnCode::ERROR_END_OF_ROUTE);
-		}
-		else
-		{
-			return 0;  // OK
-		}
 	}
 
-	return -1;  // Error
+	return static_cast<int>(retval);
 }
 
 static int GetRoadInfoAlongGhostTrail(int object_id, float lookahead_distance, SE_RoadInfo *r_data, float *speed_ghost)
@@ -345,15 +338,15 @@ static int GetRoadInfoAtGhostTrailTime(int object_id, float time, SE_RoadInfo* r
 		return -1;
 	}
 
-	Object* ghost = 0;
-	if (obj->GetAssignedControllerType() != Controller::Type::CONTROLLER_TYPE_DEFAULT)
+	Object* ghost = obj->GetGhost();
+	if (ghost == nullptr)
 	{
-		ghost = obj->GetGhost();
-		if (ghost == 0)
+		if (obj->GetAssignedControllerType() != Controller::Type::CONTROLLER_TYPE_DEFAULT)
 		{
 			LOG("Ghost object not available for object id %d", object_id);
-			return -1;
 		}
+
+		return -1;
 	}
 
 	int index_out;
@@ -448,6 +441,11 @@ extern "C"
 		SE_Env::Inst().SetLogFilePath(logFilePath);
 	}
 
+	SE_DLL_API void SE_SetDatFilePath(const char* datFilePath)
+	{
+		SE_Env::Inst().SetDatFilePath(datFilePath);
+	}
+
 	SE_DLL_API unsigned int SE_GetSeed()
 	{
 		return SE_Env::Inst().GetSeed();
@@ -474,8 +472,11 @@ extern "C"
 	{
 		resetScenario();
 
-		// Add "esmini" as first arg
-		AddArgument("esmini");
+		if (argv && !strncmp(argv[0], "--", 2))
+		{
+			// Application name argument missing. Add something.
+			AddArgument("esmini");
+		}
 
 		for (int i = 0; i < argc; i++)
 		{
@@ -541,14 +542,14 @@ extern "C"
 #endif
 		resetScenario();
 
-		AddArgument("viewer"); // name of application
+		AddArgument("esmini(lib)"); // name of application
 		AddArgument("--osc_str");
 		AddArgument(oscAsXMLString, false);
 
 		if (record)
 		{
 			AddArgument("--record");
-			AddArgument("simulation.dat", false);
+			AddArgument(SE_Env::Inst().GetDatFilePath().c_str(), false);
 		}
 
 		AddCommonArguments(disable_ctrls, use_viewer, threads, record);
@@ -571,14 +572,22 @@ extern "C"
 #endif
 		resetScenario();
 
-		AddArgument("viewer"); // name of application
+		AddArgument("esmini(lib)"); // name of application
 		AddArgument("--osc");
 		AddArgument(oscFilename, false);
 
 		if (record)
 		{
 			AddArgument("--record");
-			std::string datFilename = FileNameWithoutExtOf(oscFilename) + ".dat";
+			std::string datFilename;
+			if (SE_Env::Inst().GetDatFilePath().empty())
+			{
+				datFilename = FileNameWithoutExtOf(oscFilename) + ".dat";
+			}
+			else
+			{
+				datFilename = SE_Env::Inst().GetDatFilePath();
+			}
 			AddArgument(datFilename.c_str(), false);
 		}
 
@@ -776,6 +785,7 @@ extern "C"
 	SE_DLL_API void SE_Close()
 	{
 		resetScenario();
+		RegisterParameterDeclarationCallback(nullptr, nullptr);
 	}
 
 	SE_DLL_API void SE_LogToConsole(bool mode)
@@ -837,6 +847,16 @@ extern "C"
 		}
 
 		return (float)player->scenarioEngine->getSimulationTime();
+	}
+
+	SE_DLL_API double SE_GetSimulationTimeDouble()
+	{
+		if (player == nullptr)
+		{
+			return 0.0;
+		}
+
+		return player->scenarioEngine->getSimulationTime();
 	}
 
 	SE_DLL_API float SE_GetSimTimeStep()
@@ -931,7 +951,7 @@ extern "C"
 			{
 				vehicle = new Vehicle();
 				object_id = player->scenarioEngine->entities_.addObject(vehicle, true);
-				vehicle->name_ = "swarm" + std::to_string(object_id);
+				vehicle->name_ = name;
 				vehicle->scaleMode_ = EntityScaleMode::BB_TO_MODEL;
 				vehicle->model_id_ = model_id;
 				vehicle->model3d_ = SE_Env::Inst().GetModelFilenameById(model_id);
@@ -978,7 +998,7 @@ extern "C"
 		return -1;
 	}
 
-	SE_DLL_API int SE_ReportObjectPos(int object_id, float timestamp, float x, float y, float z, float h, float p, float r, float speed)
+	SE_DLL_API int SE_ReportObjectPos(int object_id, float timestamp, float x, float y, float z, float h, float p, float r)
 	{
 		Object* obj = nullptr;
 		if (getObjectById(object_id, obj) == -1)
@@ -986,37 +1006,33 @@ extern "C"
 			return -1;
 		}
 
-		player->scenarioGateway->reportObject(object_id, obj->name_, obj->type_, obj->category_, obj->model_id_,
-			obj->GetActivatedControllerType(), obj->boundingbox_, static_cast<int>(obj->scaleMode_), obj->visibilityMask_,
-			timestamp, speed, obj->wheel_angle_, obj->wheel_rot_, x, y, z, h, p, r);
+		player->scenarioGateway->updateObjectWorldPos(object_id, timestamp, x, y, z, h, p, r);
 
 		return 0;
 	}
 
-	SE_DLL_API int SE_ReportObjectPosXYH(int object_id, float timestamp, float x, float y, float h, float speed)
+	SE_DLL_API int SE_ReportObjectPosXYH(int object_id, float timestamp, float x, float y, float h)
 	{
 		Object* obj = nullptr;
 		if (getObjectById(object_id, obj) == -1)
 		{
 			return -1;
 		}
-		player->scenarioGateway->reportObject(object_id, obj->name_, obj->type_, obj->category_, obj->model_id_,
-			obj->GetActivatedControllerType(), obj->boundingbox_, static_cast<int>(obj->scaleMode_), obj->visibilityMask_,
-			timestamp, speed, obj->wheel_angle_, obj->wheel_rot_, x, y, h);
+
+		player->scenarioGateway->updateObjectWorldPosXYH(object_id, timestamp, x, y, h);
 
 		return 0;
 	}
 
-	SE_DLL_API int SE_ReportObjectRoadPos(int object_id, float timestamp, int roadId, int laneId, float laneOffset, float s, float speed)
+	SE_DLL_API int SE_ReportObjectRoadPos(int object_id, float timestamp, int roadId, int laneId, float laneOffset, float s)
 	{
 		Object* obj = nullptr;
 		if (getObjectById(object_id, obj) == -1)
 		{
 			return -1;
 		}
-		player->scenarioGateway->reportObject(object_id, obj->name_, obj->type_, obj->category_, obj->model_id_,
-			obj->GetActivatedControllerType(), obj->boundingbox_, static_cast<int>(obj->scaleMode_), obj->visibilityMask_,
-			timestamp, speed, obj->wheel_angle_, obj->wheel_rot_, roadId, laneId, laneOffset, s);
+
+		player->scenarioGateway->updateObjectLanePos(object_id, timestamp, roadId, laneId, laneOffset, s);
 
 		return 0;
 	}
@@ -1028,9 +1044,7 @@ extern "C"
 		{
 			return -1;
 		}
-		player->scenarioGateway->reportObject(object_id, obj->name_, obj->type_, obj->category_, obj->model_id_,
-			obj->GetActivatedControllerType(), obj->boundingbox_, static_cast<int>(obj->scaleMode_),
-			obj->visibilityMask_, 0.0, speed, obj->wheel_angle_, obj->wheel_rot_, &obj->pos_);
+		player->scenarioGateway->updateObjectSpeed(object_id, 0.0, speed);
 
 		return 0;
 	}
@@ -1073,7 +1087,7 @@ extern "C"
 			return -1;
 		}
 		player->scenarioGateway->updateObjectVel(object_id, 0.0, x_vel, y_vel, z_vel);
-		// Also update accelerations directly in scenario object, in case we're in a callback
+		// Also update velocities directly in scenario object, in case we're in a callback
 		obj->SetVel(x_vel, y_vel, z_vel);
 
 
@@ -1174,6 +1188,24 @@ extern "C"
 		}
 
 		return player->scenarioGateway->getObjectStatePtrByIdx(index)->state_.info.id;
+	}
+
+	SE_DLL_API int SE_GetIdByName(const char* name)
+	{
+		if (player == nullptr)
+		{
+			return -1;
+		}
+
+		for (size_t i = 0; player->scenarioEngine && i < player->scenarioEngine->entities_.object_.size(); i++)
+		{
+			if (player->scenarioEngine->entities_.object_[i]->GetName() == name)
+			{
+				return player->scenarioEngine->entities_.object_[i]->GetId();
+			}
+		}
+
+		return -1;
 	}
 
 	SE_DLL_API int SE_GetObjectState(int object_id, SE_ScenarioObjectState *state)
@@ -1613,6 +1645,16 @@ extern "C"
 		}
 	}
 
+	SE_DLL_API void SE_FlushOSIFile()
+	{
+#ifdef _USE_OSI
+		if (player != nullptr && player->osiReporter != nullptr)
+		{
+			player->osiReporter->FlushOSIFile();
+		}
+#endif // _USE_OSI
+	}
+
 	SE_DLL_API int SE_FetchSensorObjectList(int sensor_id, int *list)
 	{
 		if (player != nullptr)
@@ -1653,12 +1695,7 @@ extern "C"
 			}
 		}
 
-		if (GetRoadInfoAtDistance(object_id, adjustedLookaheadDistance, data, lookAheadMode) != 0)
-		{
-			return -1;
-		}
-
-		return 0;
+		return GetRoadInfoAtDistance(object_id, adjustedLookaheadDistance, data, lookAheadMode);
 	}
 
 	SE_DLL_API int SE_GetRoadInfoAlongGhostTrail(int object_id, float lookahead_distance, SE_RoadInfo *data, float *speed_ghost)
@@ -1720,10 +1757,10 @@ extern "C"
 		OSCCondition::conditionCallback = fnPtr;
 	}
 
-	SE_DLL_API void SE_RegisterEventCallback(void (*fnPtr)(const char* name, double timestamp, bool start))
-	{
-		Event::eventCallback = fnPtr;
-	}
+    SE_DLL_API void SE_RegisterStoryBoardElementStateChangeCallback(void (*fnPtr)(const char* name, int type, int state))
+    {
+        StoryBoardElement::stateChangeCallback = fnPtr;
+    }
 
 	SE_DLL_API int SE_GetNumberOfRoadSigns(int road_id)
 	{
@@ -1835,7 +1872,7 @@ extern "C"
 	{
 		if (handleSimpleVehicle)
 		{
-			free((vehicle::Vehicle *)handleSimpleVehicle);
+			delete((vehicle::Vehicle *)handleSimpleVehicle);
 			handleSimpleVehicle = 0;
 		}
 	}
@@ -1945,8 +1982,14 @@ extern "C"
 		state->h = (float)((vehicle::Vehicle *)handleSimpleVehicle)->heading_;
 		state->p = (float)((vehicle::Vehicle *)handleSimpleVehicle)->pitch_;
 		state->speed = (float)((vehicle::Vehicle *)handleSimpleVehicle)->speed_;
-		state->whee_rotation = (float)((vehicle::Vehicle*)handleSimpleVehicle)->wheelRotation_;
-		state->whee_angle = (float)((vehicle::Vehicle*)handleSimpleVehicle)->wheelAngle_;
+		state->wheel_rotation = (float)((vehicle::Vehicle*)handleSimpleVehicle)->wheelRotation_;
+		state->wheel_angle = (float)((vehicle::Vehicle*)handleSimpleVehicle)->wheelAngle_;
+	}
+
+	SE_DLL_API int SE_SetOffScreenRendering(bool state)
+	{
+		SE_Env::Inst().SetOffScreenRendering(state);
+		return 0;
 	}
 
 	SE_DLL_API int SE_SaveImagesToRAM (bool state)
@@ -2040,6 +2083,61 @@ extern "C"
 		return -1;
 #endif
 	}
+
+	SE_DLL_API int SE_AddCustomFixedCamera(double x, double y, double z, double h, double p)
+	{
+#ifdef _USE_OSG
+		if (player)
+		{
+			player->AddCustomFixedCamera(x, y, z, h, p);
+		}
+		else
+		{
+			return -1;
+		}
+
+		return 0;
+#else
+		return -1;
+#endif
+	}
+
+	SE_DLL_API int SE_AddCustomSemiFixedCamera(double x, double y, double z)
+	{
+#ifdef _USE_OSG
+		if (player)
+		{
+			player->AddCustomSemiFixedCamera(x, y, z);
+		}
+		else
+		{
+			return -1;
+		}
+
+		return 0;
+#else
+		return -1;
+#endif
+	}
+
+	SE_DLL_API int SE_AddCustomFixedTopCamera(double x, double y, double z, double rot)
+	{
+#ifdef _USE_OSG
+		if (player)
+		{
+			player->AddCustomFixedTopCamera(x, y, z, rot);
+		}
+		else
+		{
+			return -1;
+		}
+
+		return 0;
+#else
+		return -1;
+#endif
+	}
+
 
 	SE_DLL_API int SE_SetCameraMode(int mode)
 	{

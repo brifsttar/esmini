@@ -54,6 +54,8 @@ namespace ESMini
         public float height;
         public int   objectType;     // Main type according to entities.hpp / Object / Type (NONE=0, VEHICLE=1, PEDESTRIAN=2, MISC_OBJECT=3)
         public int   objectCategory; // Sub category within type, according to entities.hpp / Vehicle, Pedestrian, MiscObject / Category
+        public float wheel_angle;
+        public float wheel_rotation;
     };
 
     [StructLayout(LayoutKind.Sequential)]
@@ -127,6 +129,28 @@ public static class ESMiniLib
         /// <param name="user_data">Optional pointer to a local data object that will be passed as argument in the callback.
         /// Set 0/NULL if not needed.</param>
         public static extern void SE_RegisterParameterDeclarationCallback(Action<IntPtr> callback, IntPtr user_data);
+
+        public delegate void ConditionCallback(string name, double timestamp);
+        [DllImport(LIB_NAME, EntryPoint = "SE_RegisterConditionCallback")]
+        /// <summary>
+        /// Registers a function to be called back from esmini every time a condition is triggered.
+        /// The name of the respective condition and the current timestamp will be returned.
+        /// Registered callbacks will be cleared between SE_Init calls.
+        /// </summary>
+        /// <param name="cc">The callback function to be invoked</param>
+        public static extern void SE_RegisterConditionCallback(ConditionCallback cc);
+
+        public delegate void EventCallback(string name, double timeStamp, bool isStart);
+        [DllImport(LIB_NAME, EntryPoint = "SE_RegisterEventCallback")]
+        /// <summary>
+        /// Registers a function to be called back from esmini every time an event starts or ends.
+        /// The name of the respective event, the current timestamp and whether the event
+        /// starts(true) or ends(false) will be returned.
+        /// In case an event starts and ends within the same simulation step, only the end-transition may occur.
+        /// Registered callbacks will be cleared between SE_Init calls.
+        /// </summary>
+        /// <param name="cc">The callback function to be invoked</param>
+        public static extern void SE_RegisterEventCallback(EventCallback ec);
 
         [DllImport(LIB_NAME, EntryPoint = "SE_Init")]
         /// <summary>Initialize the scenario engine</summary>

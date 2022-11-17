@@ -31,6 +31,18 @@ namespace scenarioengine
 		} Actor;
 
 		ManeuverGroup() : StoryBoardElement(StoryBoardElement::ElementType::MANEUVER_GROUP) {}
+		~ManeuverGroup() 
+		{
+			for (auto* entry : actor_)
+            {
+				delete entry;
+			}
+			for (auto* entry : maneuver_)
+            {
+				delete entry;
+			}
+		}
+
 		Object* FindActorByName(std::string name)
 		{
 			for (size_t i = 0; i < actor_.size(); i++)
@@ -58,11 +70,12 @@ namespace scenarioengine
 		bool AreAllManeuversComplete();
 
 		void UpdateState();
+		void Start(double simTime, double dt);
+		void End(double simTime);
+		void Stop();
 
 		std::vector<Actor*> actor_;
-		std::vector<OSCManeuver*> maneuver_;
-
-		std::string name_;
+		std::vector<Maneuver*> maneuver_;
 	};
 
 	class Act: public StoryBoardElement
@@ -74,6 +87,15 @@ namespace scenarioengine
 		Trigger *stop_trigger_;
 
 		Act() : start_trigger_(0), stop_trigger_(0), StoryBoardElement(StoryBoardElement::ElementType::ACT) {}
+		~Act()
+		{
+			for (auto* entry : maneuverGroup_)
+			{
+				delete entry;
+			}
+			delete start_trigger_;
+			delete stop_trigger_;
+		}
 
 		void UpdateState();
 	};
@@ -82,10 +104,18 @@ namespace scenarioengine
 	{
 	public:
 		Story(std::string name) {}
+		~Story()
+		{
+			for (auto* entry : act_)
+			{
+				delete entry;
+			}
+		}
 
 		OSCParameterDeclarations parameter_declarations_;
 		Act* FindActByName(std::string name);
 		ManeuverGroup* FindManeuverGroupByName(std::string name);
+		Maneuver* FindManeuverByName(std::string name);
 		Event* FindEventByName(std::string name);
 		OSCAction* FindActionByName(std::string name);
 		void Print();
@@ -98,8 +128,17 @@ namespace scenarioengine
 	{
 	public:
 		StoryBoard() : stop_trigger_(0) {}
+		~StoryBoard() 
+		{ 
+			for (auto* entry : story_) 
+			{ 
+				delete entry;
+			}
+			delete stop_trigger_;
+		}
 		Act* FindActByName(std::string name);
 		ManeuverGroup* FindManeuverGroupByName(std::string name);
+		Maneuver* FindManeuverByName(std::string name);
 		Event* FindEventByName(std::string name);
 		OSCAction* FindActionByName(std::string name);
 		Entities* entities_;

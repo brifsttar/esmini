@@ -5,6 +5,7 @@
 #include "osi_object.pb.h"
 #include "osi_sensorview.pb.h"
 #include "osi_version.pb.h"
+#include "Replay.hpp"
 #include "esminiLib.hpp"
 #include "RoadManager.hpp"
 #include <vector>
@@ -216,6 +217,73 @@ TEST(OSIintersections, motorway)
 	SE_Close();
 }
 
+
+
+TEST(OSIStationaryObjects, square_building)
+{
+
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/Junction_with_building0.xosc";
+	const char *Scenario_file = scenario_file.c_str();
+	SE_Init(Scenario_file, 0, 0, 0, 0);
+	SE_StepDT(0.001f);
+	SE_UpdateOSIGroundTruth();
+
+	osi3::GroundTruth osi_gt;
+	int sv_size = 0;
+	const char *gt = SE_GetOSIGroundTruth(&sv_size);
+	osi_gt.ParseFromArray(gt, sv_size);
+	ASSERT_EQ(osi_gt.stationary_object_size(),1);
+	for (int i = 0; i < osi_gt.stationary_object_size(); i++)
+	{
+		EXPECT_EQ(osi_gt.stationary_object(i).base().base_polygon_size(), 0);
+		EXPECT_EQ(osi_gt.stationary_object(i).base().position().x(),80);
+		EXPECT_EQ(osi_gt.stationary_object(i).base().position().y(),20);
+		EXPECT_EQ(osi_gt.stationary_object(i).base().dimension().length(),30);
+		EXPECT_EQ(osi_gt.stationary_object(i).base().dimension().width(),20);
+		EXPECT_EQ(osi_gt.stationary_object(i).base().dimension().height(),4);
+		EXPECT_EQ(osi_gt.stationary_object(i).classification().type(),osi3::StationaryObject_Classification_Type_TYPE_BUILDING);
+	}
+
+	SE_Close();
+}
+
+
+class OSIStationaryObjectsOutline : public ::testing::TestWithParam<std::tuple<std::string>>
+{
+};
+
+
+TEST_P(OSIStationaryObjectsOutline, object_with_outline)
+{
+
+	std::string scenario_file = std::get<0>(GetParam());
+	const char *Scenario_file = scenario_file.c_str();
+	ASSERT_EQ(SE_Init(Scenario_file, 0, 0, 0, 0),0 ) ;
+	SE_StepDT(0.001f);
+	SE_UpdateOSIGroundTruth();
+
+	osi3::GroundTruth osi_gt;
+	int sv_size = 0;
+	const char *gt = SE_GetOSIGroundTruth(&sv_size);
+	osi_gt.ParseFromArray(gt, sv_size);
+	ASSERT_EQ(osi_gt.stationary_object_size(),1);
+	for (int i = 0; i < osi_gt.stationary_object_size(); i++)
+	{
+		EXPECT_EQ(osi_gt.stationary_object(i).base().base_polygon_size(), 8);
+		EXPECT_EQ(osi_gt.stationary_object(i).base().base_polygon(0).x(), 20);
+		EXPECT_EQ(osi_gt.stationary_object(i).base().base_polygon(0).y(), 0);
+		EXPECT_EQ(osi_gt.stationary_object(i).base().dimension().height(), 4);
+		EXPECT_NEAR(osi_gt.stationary_object(i).base().position().x(), 10.0, 0.1);
+		EXPECT_NEAR(osi_gt.stationary_object(i).base().position().y(), -25.0, 0.1);
+	}
+
+	SE_Close();
+}
+
+
+INSTANTIATE_TEST_SUITE_P(OSIStationaryObjects, OSIStationaryObjectsOutline, ::testing::Values(std::make_tuple("../../../EnvironmentSimulator/Unittest/xosc/Weird_looking_building_road_coord.xosc"),
+	std::make_tuple("../../../EnvironmentSimulator/Unittest/xosc/Weird_looking_building_local_coord.xosc")));
+
 TEST(OSIintersections, multilane)
 {
 	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/multilane_3way_intersection_osi.xosc";
@@ -258,9 +326,13 @@ TEST(GetOSIRoadLaneTest, lane_no_obj)
 
 	SE_Init(Scenario_file, 0, 0, 0, 0);
 	SE_OSIFileOpen("gt.osi");
+	ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
+	EXPECT_EQ(fileStatus.st_size, 0);  // so far, nothing has been saved
 
 	SE_StepDT(0.001f);
-	SE_UpdateOSIGroundTruth();
+	SE_FlushOSIFile();
+	ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
+	EXPECT_EQ(fileStatus.st_size, 71678);  // initial OSI size, including static content
 
 	int road_lane_size;
 
@@ -270,11 +342,16 @@ TEST(GetOSIRoadLaneTest, lane_no_obj)
 	EXPECT_EQ(road_lane, nullptr);
 
 	SE_StepDT(0.001f);  // Step for write another frame to osi file
+	SE_FlushOSIFile();
+	ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
+	EXPECT_EQ(fileStatus.st_size, 72141);  // slight growth due to only dynamic updates
+
+	SE_StepDT(0.001f);  // Step for write another frame to osi file
+	SE_FlushOSIFile();
+	ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
+	EXPECT_EQ(fileStatus.st_size, 72605);  // slight growth due to only dynamic updates
 
 	SE_Close();
-
-	ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
-	EXPECT_EQ(fileStatus.st_size, 69725);  // slight growth due to only dynamic updates
 }
 
 TEST(GetOSIRoadLaneTest, lane_id)
@@ -721,6 +798,9 @@ TEST_P(GetGroundTruthTests, receive_GroundTruth)
 	EXPECT_EQ(ego_yoffset, std::get<3>(GetParam()).centerOffsetY);
 	EXPECT_EQ(ego_zoffset, std::get<3>(GetParam()).centerOffsetZ);
 	EXPECT_EQ(map_reference, std::get<4>(GetParam()));
+
+
+	SE_Close();
 }
 
 INSTANTIATE_TEST_SUITE_P(EsminiAPITests, GetGroundTruthTests, ::testing::Values(std::make_tuple("../../../resources/xosc/cut-in.xosc", 14, 2, bounding_box{5.04f, 2.0f, 1.5f, 1.4f, 0.0f, 0.75f}, "+proj=utm +lat_0=37.3542934123933 +lon_0=-122.0859797650754"), std::make_tuple("../../../resources/xosc/straight_500m.xosc", 6, 2, bounding_box{5.0f, 2.0f, 1.8f, 1.4f, 0.0f, 0.9f}, "+proj=utm +lat_0=37.3542934123933 +lon_0=-122.0859797650754"), std::make_tuple("../../../resources/xosc/highway_merge.xosc", 33, 6, bounding_box{5.04f, 2.0f, 1.5f, 1.4f, 0.0f, 0.75f}, "+proj=utm +lat_0=37.3542934123933 +lon_0=-122.0859797650754")));
@@ -736,6 +816,75 @@ TEST(GetGroundTruthTests, receive_GroundTruth_no_init)
 
 	EXPECT_EQ(sv_size, 0);
 	EXPECT_EQ(sv, nullptr);
+}
+
+TEST(GroundTruthTests, check_GroundTruth_including_init_state)
+{
+	osi3::GroundTruth* osi_gt_ptr;
+	osi3::GroundTruth osi_gt;
+	struct stat fileStatus;
+	double seconds = 0.0, obj_x, obj_y, obj_z;
+	double x_vals[] = { 51.400, 51.600, 51.800 };
+	double time_stamps[] = { 0.00, 0.01, 0.02 };
+
+	SE_Init("../../../resources/xosc/cut-in_simple.xosc", 0, 0, 0, 0);
+	SE_OSIFileOpen("gt.osi");
+	SE_UpdateOSIGroundTruth();
+
+	osi_gt_ptr = (osi3::GroundTruth*)SE_GetOSIGroundTruthRaw();
+
+	for (int i = 0; i < 3; i++)
+	{
+		EXPECT_EQ(osi_gt_ptr->mutable_moving_object()->size(), 2);
+		seconds = osi_gt_ptr->mutable_timestamp()->seconds() + 1E-9 * osi_gt_ptr->mutable_timestamp()->nanos();
+		EXPECT_NEAR(seconds, time_stamps[i], 1E-5);
+		obj_x = osi_gt_ptr->mutable_moving_object(0)->mutable_base()->mutable_position()->x();
+		obj_y = osi_gt_ptr->mutable_moving_object(0)->mutable_base()->mutable_position()->y();
+		obj_z = osi_gt_ptr->mutable_moving_object(0)->mutable_base()->mutable_position()->z();
+		EXPECT_NEAR(obj_x, x_vals[i], 1E-5);
+		EXPECT_NEAR(obj_y, -1.535, 1E-5);
+		EXPECT_NEAR(obj_z, 0.0, 1E-5);
+
+		if (i < 2)  // skip step of the last round
+		{
+			SE_StepDT(0.01f);
+		}
+	}
+
+	SE_Close();
+
+	ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
+	EXPECT_EQ(fileStatus.st_size, 19231);
+
+	// Read OSI file
+	FILE* file = fopen("gt.osi", "rb");
+	ASSERT_NE(file, nullptr);
+
+	const int max_msg_size = 10000;
+	int msg_size;
+	char msg_buf[max_msg_size];
+
+	for (int i = 0; i < 3; i++)
+	{
+		ASSERT_EQ(fread((char*)(&msg_size), 1, sizeof(msg_size), file), sizeof(msg_size));
+
+		// Read OSI message
+		ASSERT_LE(msg_size, max_msg_size);
+		EXPECT_EQ(fread(msg_buf, 1, msg_size, file), msg_size);
+		osi_gt.ParseFromArray(msg_buf, msg_size);
+
+		EXPECT_EQ(osi_gt.mutable_moving_object()->size(), 2);
+		seconds = osi_gt.mutable_timestamp()->seconds() + 1E-9 * osi_gt.mutable_timestamp()->nanos();
+		EXPECT_NEAR(seconds, time_stamps[i], 1E-5);
+		obj_x = osi_gt.mutable_moving_object(0)->mutable_base()->mutable_position()->x();
+		obj_y = osi_gt.mutable_moving_object(0)->mutable_base()->mutable_position()->y();
+		obj_z = osi_gt.mutable_moving_object(0)->mutable_base()->mutable_position()->z();
+		EXPECT_NEAR(obj_x, x_vals[i], 1E-5);
+		EXPECT_NEAR(obj_y, -1.535, 1E-5);
+		EXPECT_NEAR(obj_z, 0.0, 1E-5);
+	}
+
+	fclose(file);
 }
 
 TEST(GetMiscObjFromGroundTruth, receive_miscobj)
@@ -787,6 +936,8 @@ TEST(GetMiscObjFromGroundTruth, receive_miscobj)
 	EXPECT_EQ(miscobj_roll, 5.0 - 2 * M_PI);  // Aligned to the road (so if road roll is 1.0 total roll will be 6.0)
 	EXPECT_EQ(miscobj_pitch, 5.0 - 2 * M_PI); // Aligned to the road (so if road pitch is 1.0 total pitch will be 6.0)
 	EXPECT_EQ(miscobj_yaw, 5.0 - 2 * M_PI);
+
+	SE_Close();
 }
 
 TEST(TestGetAndSet, SetOSITimestampTest)
@@ -1004,17 +1155,16 @@ TEST(ParameterTest, SetParameterValuesBeforeInit)
 {
 	double positions[3][2] = {
 		{5.34382, 186.68216},  // TargetSpeedFactor = 1.1
-		{8.69330, 240.68001},  // TargetSpeedFactor = 1.5
+		{8.69330, 240.68063},  // TargetSpeedFactor = 1.5
 		{5.46731, 201.38162}  // TargetSpeedFactor = Default = 1.2
 	};
 	SE_ScenarioObjectState state;
 
 	std::string scenario_file = "../../../resources/xosc/cut-in.xosc";
 
-	SE_RegisterParameterDeclarationCallback(paramDeclCallback, 0);
-
 	for (int i = 0; i < 3 && SE_GetQuitFlag() != 1; i++)
 	{
+		SE_RegisterParameterDeclarationCallback(paramDeclCallback, 0);
 		ASSERT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
 		ASSERT_EQ(SE_GetNumberOfObjects(), 2);
 
@@ -1080,6 +1230,8 @@ TEST(TestGetAndSet, OverrideActionTest)
 	EXPECT_DOUBLE_EQ(list.clutch.value, 0.7);
 	EXPECT_EQ(list.steeringWheel.active, false);
 	EXPECT_NEAR(list.steeringWheel.value, 2 * M_PI, 0.01);
+
+	SE_Close();
 }
 
 TEST(TestGetAndSet, PropertyTest)
@@ -1123,6 +1275,8 @@ TEST(TestGetAndSet, PropertyTest)
 	//object -1 and 3, does not exist
 	EXPECT_EQ(SE_GetNumberOfProperties(3), -1);
 	EXPECT_EQ(SE_GetNumberOfProperties(-1), -1);
+
+	SE_Close();
 }
 
 TEST(RoadSign, TestValidityRecord)
@@ -1133,7 +1287,7 @@ TEST(RoadSign, TestValidityRecord)
 	int n_Objects = SE_GetNumberOfObjects();
 	EXPECT_EQ(n_Objects, 2);
 
-	EXPECT_EQ(SE_GetNumberOfRoadSigns(1), 12);
+	EXPECT_EQ(SE_GetNumberOfRoadSigns(1), 15);
 	EXPECT_EQ(SE_GetNumberOfRoadSignValidityRecords(1, 0), 2);
 
 	SE_RoadObjValidity validityRec;
@@ -1329,6 +1483,8 @@ TEST(ObjectIds,check_ids)
 	ASSERT_EQ(SE_GetId(0),0);
 	ASSERT_EQ(SE_GetId(1),2);
 	ASSERT_EQ(SE_GetId(2),1);
+
+	SE_Close();
 }
 
 TEST(OSILaneParing, highway_split)
@@ -1962,10 +2118,14 @@ TEST(OSILaneParing, simple_4way_intersection)
 	SE_Close();
 }
 
+
 TEST(OSILaneParing, Signs)
 {
-	std::string scenario_file = "../../../resources/xosc/distance_test.xosc";
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/sign_test.xosc";
 	const char* Scenario_file = scenario_file.c_str();
+
+	SE_AddPath("../../../resources");
+
 	int i_init = SE_Init(Scenario_file, 0, 0, 0, 0);
 	ASSERT_EQ(i_init, 0);
 	SE_StepDT(0.001f);
@@ -1976,18 +2136,21 @@ TEST(OSILaneParing, Signs)
 	const char* gt = SE_GetOSIGroundTruth(&sv_size);
 	osi_gt.ParseFromArray(gt, sv_size);
 	// order: id, type, country, subtypevalue, text, pitch, roll, height, s, t, zOffset
-	std::vector<std::tuple<int, osi3::TrafficSign_MainSign_Classification_Type, double, std::string, double, double, double, double, double, double>> signs = { std::make_tuple(0, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DANGER_SPOT, -1, "", 0.0, 0.0, 0.61, 0.0, 3.57, 1.7),
-																																					std::make_tuple(1, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DANGER_SPOT, -1, "", 0.0, 0.0, 0.61, 0.0, 3.57, 1.7),
-																																					std::make_tuple(2, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_ZEBRA_CROSSING, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
-																																					std::make_tuple(3, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
-																																					std::make_tuple(4, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_HILL_UPWARDS, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
-																																					std::make_tuple(5, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DOUBLE_TURN_LEFT, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
-																																					std::make_tuple(6, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DOUBLE_TURN_RIGHT, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
-																																					std::make_tuple(7, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
-																																					std::make_tuple(8, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
-																																					std::make_tuple(9, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
-																																					std::make_tuple(10, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 500.0, 3.57, 1.7),
-																																					std::make_tuple(11, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 500.0, 3.57, 1.7) };
+	std::vector<std::tuple<int, osi3::TrafficSign_MainSign_Classification_Type, double, std::string, double, double, double, double, double, double>> signs =
+	{
+		std::make_tuple(0, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DANGER_SPOT, 0, "", 0.0, 0.0, 0.61, 0.0, 3.57, 1.7),
+		std::make_tuple(1, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DANGER_SPOT, 0, "", 0.0, 0.0, 0.61, 0.0, 3.57, 1.7),
+		std::make_tuple(2, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_ZEBRA_CROSSING, 11, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
+		std::make_tuple(3, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, 0, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
+		std::make_tuple(4, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_HILL_UPWARDS, 0, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
+		std::make_tuple(5, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DOUBLE_TURN_LEFT, 10, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
+		std::make_tuple(6, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DOUBLE_TURN_RIGHT, 20, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
+		std::make_tuple(7, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, 0, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
+		std::make_tuple(8, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, 0, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
+		std::make_tuple(9, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, 0, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
+		std::make_tuple(10, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, 0, "", 0.0, 0.0, 0.61, 500.0, 3.57, 1.7),
+		std::make_tuple(11, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, 0, "", 0.0, 0.0, 0.61, 500.0, 3.57, 1.7)
+	};
 
 	int sign_id = 0;
 	osi3::TrafficSign_MainSign_Classification_Type type = osi3::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN;
@@ -2031,7 +2194,7 @@ TEST(OSILaneParing, Signs)
 
 void objectCallback(SE_ScenarioObjectState* state, void* my_data)
 {
-	SE_ReportObjectRoadPos(state->id, state->timestamp, state->roadId, 5, -2.3f, state->s, state->speed);
+	SE_ReportObjectRoadPos(state->id, state->timestamp, state->roadId, 5, -2.3f, state->s);
 }
 
 TEST(GatewayTest, TestReportToGatewayInCallback)
@@ -2053,6 +2216,8 @@ TEST(GatewayTest, TestReportToGatewayInCallback)
 	SE_GetObjectState(0, &state);
 	ASSERT_EQ(state.laneId, 5);
 	ASSERT_FLOAT_EQ(state.laneOffset, -2.3f);
+
+	SE_Close();
 }
 
 static void ghostParamDeclCB(void* user_arg)
@@ -2132,7 +2297,7 @@ TEST(ExternalController, TestExternalDriver)
 			double throttle = throttleWeight * (targetSpeed - vehicleState.speed);
 
 			// Step vehicle model with driver input, but wait until time > 0
-			if (SE_GetSimulationTime() > 0 && !SE_GetPauseFlag())
+			if (SE_GetSimulationTime() > SMALL_NUMBER && !SE_GetPauseFlag())
 			{
 				SE_SimpleVehicleControlAnalog(vehicleHandle, dt, throttle, steerAngle);
 			}
@@ -2145,16 +2310,16 @@ TEST(ExternalController, TestExternalDriver)
 				if (abs(SE_GetSimulationTime() - 11.0f) < SMALL_NUMBER)
 				{
 					SE_GetObjectState(0, &objectState);
-					EXPECT_NEAR(objectState.x, 215.891, 1e-3);
-					EXPECT_NEAR(objectState.y, 113.789, 1e-3);
+					EXPECT_NEAR(objectState.x, 215.890, 1e-3);
+					EXPECT_NEAR(objectState.y, 113.784, 1e-3);
 					EXPECT_NEAR(objectState.h, 1.362, 1e-3);
 					EXPECT_NEAR(objectState.p, 6.246, 1e-3);
 				}
 				else if (abs(SE_GetSimulationTime() - 30.0f) < SMALL_NUMBER)
 				{
 					SE_GetObjectState(0, &objectState);
-					EXPECT_NEAR(objectState.x, 356.204, 1e-3);
-					EXPECT_NEAR(objectState.y, 330.068, 1e-3);
+					EXPECT_NEAR(objectState.x, 356.184, 1e-3);
+					EXPECT_NEAR(objectState.y, 330.082, 1e-3);
 					EXPECT_NEAR(objectState.h, 5.641, 1e-3);
 					EXPECT_NEAR(objectState.p, 0.046, 1e-3);
 				}
@@ -2165,31 +2330,31 @@ TEST(ExternalController, TestExternalDriver)
 				if (abs(SE_GetSimulationTime() - 11.0f) < SMALL_NUMBER)
 				{
 					SE_GetObjectState(0, &objectState);
-					EXPECT_NEAR(objectState.x, 202.6710, 1e-3);
-					EXPECT_NEAR(objectState.y, 83.453, 1e-3);
-					EXPECT_NEAR(objectState.h, 1.137, 1e-3);
+					EXPECT_NEAR(objectState.x, 202.458, 1e-3);
+					EXPECT_NEAR(objectState.y, 82.982, 1e-3);
+					EXPECT_NEAR(objectState.h, 1.134, 1e-3);
 					EXPECT_NEAR(objectState.p, 6.262, 1e-3);
 					if (ghostMode[i] == true)
 					{
 						SE_RoadInfo road_info2;
 						SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed2);
-						EXPECT_NEAR(road_info2.global_pos_x, 206.761, 1e-3);
-						EXPECT_NEAR(road_info2.global_pos_y, 92.555, 1e-3);
+						EXPECT_NEAR(road_info2.global_pos_x, 206.759, 1e-3);
+						EXPECT_NEAR(road_info2.global_pos_y, 92.559, 1e-3);
 					}
 				}
 				else if (abs(SE_GetSimulationTime() - 30.0f) < SMALL_NUMBER)
 				{
 					SE_GetObjectState(0, &objectState);
-					EXPECT_NEAR(objectState.x, 383.001, 1e-3);
-					EXPECT_NEAR(objectState.y, 300.194, 1e-3);
-					EXPECT_NEAR(objectState.h, 5.259, 1e-3);
+					EXPECT_NEAR(objectState.x, 381.944, 1e-3);
+					EXPECT_NEAR(objectState.y, 301.903, 1e-3);
+					EXPECT_NEAR(objectState.h, 5.274, 1e-3);
 					EXPECT_NEAR(objectState.p, 0.025, 1e-3);
 					if (ghostMode[i] == true)
 					{
 						SE_RoadInfo road_info3;
 						SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info3, &speed2);
-						EXPECT_NEAR(road_info3.global_pos_x, 388.722, 1e-3);
-						EXPECT_NEAR(road_info3.global_pos_y, 290.307, 1e-3);
+						EXPECT_NEAR(road_info3.global_pos_x, 388.364, 1e-3);
+						EXPECT_NEAR(road_info3.global_pos_y, 290.976, 1e-3);
 					}
 				}
 			}
@@ -2200,40 +2365,42 @@ TEST(ExternalController, TestExternalDriver)
 				if (abs(SE_GetSimulationTime() - 11.0f) < SMALL_NUMBER)
 				{
 					SE_GetObjectState(0, &objectState);
-					EXPECT_NEAR(objectState.x, 203.726, 1e-3);
-					EXPECT_NEAR(objectState.y, 85.548, 1e-3);
-					EXPECT_NEAR(objectState.h, 1.148, 1e-3);
+					EXPECT_NEAR(objectState.x, 203.196, 1e-3);
+					EXPECT_NEAR(objectState.y, 84.473, 1e-3);
+					EXPECT_NEAR(objectState.h, 1.142, 1e-3);
 					EXPECT_NEAR(objectState.p, 6.262, 1e-3);
 					if (ghostMode[i] == true)
 					{
 						SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed3);
-						EXPECT_NEAR(road_info2.global_pos_x, 207.471, 1e-3);
-						EXPECT_NEAR(road_info2.global_pos_y, 94.426, 1e-3);
+						EXPECT_NEAR(road_info2.global_pos_x, 206.759, 1e-3);
+						EXPECT_NEAR(road_info2.global_pos_y, 92.559, 1e-3);
 					}
 				}
 				else if (abs(SE_GetSimulationTime() - 30.0f) < SMALL_NUMBER)
 				{
 					SE_GetObjectState(0, &objectState);
-					EXPECT_NEAR(objectState.x, 383.025, 1e-3);
-					EXPECT_NEAR(objectState.y, 301.087, 1e-3);
-					EXPECT_NEAR(objectState.h, 5.257, 1e-3);
-					EXPECT_NEAR(objectState.p, 0.025, 1e-3);
+					EXPECT_NEAR(objectState.x, 382.098, 1e-3);
+					EXPECT_NEAR(objectState.y, 302.465, 1e-3);
+					EXPECT_NEAR(objectState.h, 5.271, 1e-3);
+					EXPECT_NEAR(objectState.p, 0.026, 1e-3);
 					if (ghostMode[i] == true)
 					{
 						SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed3);
-						EXPECT_NEAR(road_info2.global_pos_x, 390.909, 1e-3);
-						EXPECT_NEAR(road_info2.global_pos_y, 285.810, 1e-3);
+						EXPECT_NEAR(road_info2.global_pos_x, 388.363, 1e-3);
+						EXPECT_NEAR(road_info2.global_pos_y, 290.976, 1e-3);
 					}
 				}
 			}
 
 			// Report updated vehicle position and heading. z, pitch and roll will be aligned to the road
-			SE_ReportObjectPosXYH(0, 0, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
-			SE_ReportObjectWheelStatus(0, vehicleState.whee_rotation, vehicleState.whee_angle);
+			SE_ReportObjectPosXYH(0, 0, vehicleState.x, vehicleState.y, vehicleState.h);
+			SE_ReportObjectWheelStatus(0, vehicleState.wheel_rotation, vehicleState.wheel_angle);
+			SE_ReportObjectSpeed(0, vehicleState.speed);
 
 			// Finally, update scenario using same time step as for vehicle model
 			SE_StepDT(dt);
 		}
+		SE_SimpleVehicleDelete(vehicleHandle);
 		SE_Close();
 	}
 }
@@ -2273,7 +2440,7 @@ TEST(SimpleVehicleTest, TestControl)
 	{
 		SE_SimpleVehicleControlTarget(vehicleHandle, dt, 30.0, 0.2);
 		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
-		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h);
 
 		SE_StepDT(dt);
 	}
@@ -2287,7 +2454,7 @@ TEST(SimpleVehicleTest, TestControl)
 	{
 		SE_SimpleVehicleControlTarget(vehicleHandle, dt, 60.0, -0.2);
 		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
-		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h);
 
 		SE_StepDT(dt);
 	}
@@ -2303,7 +2470,8 @@ TEST(SimpleVehicleTest, TestControl)
 	{
 		SE_SimpleVehicleControlTarget(vehicleHandle, dt, 80.0, 0.0);
 		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
-		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h);
+		SE_ReportObjectSpeed(0, vehicleState.speed);
 
 		SE_StepDT(dt);
 	}
@@ -2320,7 +2488,8 @@ TEST(SimpleVehicleTest, TestControl)
 	{
 		SE_SimpleVehicleControlBinary(vehicleHandle, dt, 0, 0);
 		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
-		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h);
+		SE_ReportObjectSpeed(0, vehicleState.speed);
 
 		SE_StepDT(dt);
 	}
@@ -2337,7 +2506,8 @@ TEST(SimpleVehicleTest, TestControl)
 	{
 		SE_SimpleVehicleControlAnalog(vehicleHandle, dt, 0, 0);   // no throttle -> engine brake applied
 		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
-		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h);
+		SE_ReportObjectSpeed(0, vehicleState.speed);
 
 		SE_StepDT(dt);
 	}
@@ -2348,14 +2518,26 @@ TEST(SimpleVehicleTest, TestControl)
 	EXPECT_NEAR(vehicleState.h, 1.924, 1e-3);
 	EXPECT_NEAR(vehicleState.speed, 3.459, 1e-3);
 
+	SE_SimpleVehicleDelete(vehicleHandle);
 	SE_Close();
 }
 
-TEST(APITest, TestGetName)
+class APITestCutIn : public testing::Test
 {
-	std::string scenario_file = "../../../resources/xosc/cut-in.xosc";
+protected:
+	static void SetUpTestSuite()
+	{
+		EXPECT_EQ(SE_Init("../../../resources/xosc/cut-in.xosc", 0, 0, 0, 0), 0);
+	}
 
-	EXPECT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+	static void TearDownTestSuite()
+	{
+		SE_Close();
+	}
+};
+
+TEST_F(APITestCutIn, TestGetName)
+{
 	ASSERT_EQ(SE_GetNumberOfObjects(), 2);
 
 	EXPECT_STREQ(SE_GetObjectName(0), "Ego");
@@ -2365,8 +2547,13 @@ TEST(APITest, TestGetName)
 	EXPECT_STREQ(SE_GetObjectName(1), "OverTaker");
 	EXPECT_STREQ(SE_GetObjectTypeName(1), "car_red");
 	EXPECT_STREQ(SE_GetObjectModelFileName(1), "car_red.osgb");
+}
 
-	SE_Close();
+TEST_F(APITestCutIn, TestGetIdByName)
+{
+	EXPECT_EQ(SE_GetIdByName("OverTaker"), 1);
+	EXPECT_EQ(SE_GetIdByName("Ego"), 0);
+	EXPECT_EQ(SE_GetIdByName("NotExisting"), -1);
 }
 
 TEST(APITest, TestGetRoute)
@@ -2437,6 +2624,7 @@ TEST(APITest, TestFetchImage)
 	};
 
 	ASSERT_EQ(SE_InitWithArgs(sizeof(args)/sizeof(char*), args), 0);
+	SE_SaveImagesToRAM(true);
 
 	ASSERT_EQ(SE_GetNumberOfObjects(), 2);
 
@@ -2460,6 +2648,7 @@ TEST(APITest, TestFetchImage)
 	// Verify that any screenshot file is old, since that feature has not been enabled yet
 	EXPECT_EQ(CheckFileExists(screenshotFilename0, oldModTime), false);
 
+	//SE_sleep(500);
 	SE_StepDT(0.1f);  // Step once to create another image
 	SE_FetchImage(&image);
 	SE_WritePPM("offscreen1.ppm", image.width, image.height, image.data, image.pixelSize, image.pixelFormat, true);
@@ -2565,11 +2754,12 @@ TEST(DirectJunctionTest, TestVariousRoutes)
 
 	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/direct_junction.xosc";
 
-	SE_RegisterParameterDeclarationCallback(paramDeclCallbackSetRoute, &positions);
+
 	SE_AddPath("../../../resources/models");
 
 	for (int i = 0; i < (int)(sizeof(positions) / sizeof(double[8])); i++)
-	{
+	{	
+		SE_RegisterParameterDeclarationCallback(paramDeclCallbackSetRoute, &positions);
 		ASSERT_EQ(SE_Init(scenario_file.c_str(), 1, 0, 0, 0), 0);
 		ASSERT_EQ(SE_GetNumberOfObjects(), 1);
 
@@ -2587,12 +2777,681 @@ TEST(DirectJunctionTest, TestVariousRoutes)
 	}
 }
 
+static void ReadDat(std::string filename, std::vector<scenarioengine::ReplayEntry>& entries)
+{
+	std::ifstream file;
+	scenarioengine::DatHeader header;
+
+	file.open(filename, std::ofstream::binary);
+	ASSERT_EQ(file.fail(), false);
+
+	file.read((char*)&header, sizeof(header));
+
+	scenarioengine::ReplayEntry entry;
+
+	while (!file.eof())
+	{
+		file.read((char*)&entry.state, sizeof(entry.state));
+
+		if (!file.eof())
+		{
+			entries.push_back(entry);
+		}
+	}
+	file.close();
+}
+
+TEST(ExternalControlTest, TestTimings)
+{
+	// This test case imitates a custom application controlling the Ego vehicle
+	// It makes use of the esmini ghost feature to provide input to a driver model
+	// Ego vehicle state is reported for each time step.
+
+	SE_ScenarioObjectState ego_state;
+	SE_RoadInfo road_info;
+	double duration = 10.0;
+	float dt = 0.1f;
+	float ghost_speed;
+
+	const char* args[2][5] =
+	{
+		{
+			"--osc ../../../EnvironmentSimulator/Unittest/xosc/timing_scenario0.xosc",
+			"--record sim.dat",
+			"--fixed_timestep 0.1",
+			//"--window 60 60 800 400",
+			"--csv_logger csv_log.csv",
+			"--osi_file gt.osi"
+		},
+		{
+			"--osc ../../../EnvironmentSimulator/Unittest/xosc/timing_scenario_with_restarts.xosc",
+			"--record sim.dat",
+			"--fixed_timestep 0.1",
+			//"--window 60 60 800 400",
+			"--csv_logger csv_log.csv",
+			"--osi_file gt.osi"
+		}
+	};
+
+	SE_AddPath("../../../resources/xodr");
+
+	for (int j = 0; j < 2; j++)
+	{
+		ASSERT_EQ(SE_InitWithArgs(sizeof(args[j]) / sizeof(char*), args[j]), 0);
+		ASSERT_EQ(SE_GetNumberOfObjects(), 3);
+
+		// show some road features, including road sensor
+		SE_ViewerShowFeature(4 + 8, true);  // NODE_MASK_TRAIL_DOTS (1 << 2) & NODE_MASK_ODR_FEATURES (1 << 3),
+
+		// Initialize the vehicle model, fetch initial state from the scenario
+		SE_GetObjectState(0, &ego_state);
+
+		while (SE_GetSimulationTime() < duration && SE_GetQuitFlag() != 1)
+		{
+			// Copy position and heading from ghost at next timestamp
+			SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime() + dt, &road_info, &ghost_speed);
+			ego_state.x = road_info.global_pos_x + 100;
+			ego_state.y = road_info.global_pos_y;
+			ego_state.h = road_info.trail_heading;
+
+			SE_ReportObjectPosXYH(0, 0, ego_state.x, ego_state.y, ego_state.h);
+			SE_ReportObjectSpeed(0, ghost_speed);
+
+			// Finally, update scenario using same time step as for vehicle model
+			SE_StepDT(dt);
+		}
+
+		SE_Close();
+
+		// Check .dat file
+		std::vector<scenarioengine::ReplayEntry> entries;
+		ReadDat("sim.dat", entries);
+
+		// Check first timestep (-3.0)
+		int i = 0;
+		EXPECT_NEAR(entries[i].state.info.timeStamp, -3.0, 1E-3);
+		EXPECT_STREQ(entries[i].state.info.name, "Ego");
+		EXPECT_NEAR(entries[i].state.pos.x, 10.0, 1E-3);
+		EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+		i++;
+		EXPECT_NEAR(entries[i].state.info.timeStamp, -3.0, 1E-3);
+		EXPECT_STREQ(entries[i].state.info.name, "Target");
+		EXPECT_NEAR(entries[i].state.pos.x, 10.0, 1E-3);
+		EXPECT_NEAR(entries[i].state.pos.y, -4.5, 1E-3);
+		i++;
+		EXPECT_NEAR(entries[i].state.info.timeStamp, -3.0, 1E-3);
+		EXPECT_STREQ(entries[i].state.info.name, "Ego_ghost");
+		EXPECT_NEAR(entries[i].state.pos.x, 10.0, 1E-3);
+		EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+
+		// Check timestep before 0.0
+		while (i < entries.size() - 1 && entries[i].state.info.timeStamp < -SMALL_NUMBER) i++;
+		i -= 3;
+		EXPECT_NEAR(entries[i].state.info.timeStamp, -0.05, 1E-3);
+		EXPECT_STREQ(entries[i].state.info.name, "Ego");
+		EXPECT_NEAR(entries[i].state.pos.x, 10.0, 1E-3);
+		EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+		i++;
+		EXPECT_NEAR(entries[i].state.info.timeStamp, -0.05, 1E-3);
+		EXPECT_STREQ(entries[i].state.info.name, "Target");
+		EXPECT_NEAR(entries[i].state.pos.x, 10.0, 1E-3);
+		EXPECT_NEAR(entries[i].state.pos.y, -4.5, 1E-3);
+		i++;
+		EXPECT_NEAR(entries[i].state.info.timeStamp, -0.05, 1E-3);
+		EXPECT_STREQ(entries[i].state.info.name, "Ego_ghost");
+		EXPECT_NEAR(entries[i].state.pos.x, 39.5, 1E-3);
+		EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+
+		// Check timestep 0.0
+		i++;
+		EXPECT_NEAR(entries[i].state.info.timeStamp, 0.0, 1E-3);
+		EXPECT_STREQ(entries[i].state.info.name, "Ego");
+		EXPECT_NEAR(entries[i].state.pos.x, 10.0, 1E-3);
+		EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+		i++;
+		EXPECT_NEAR(entries[i].state.info.timeStamp, 0.0, 1E-3);
+		EXPECT_STREQ(entries[i].state.info.name, "Target");
+		EXPECT_NEAR(entries[i].state.pos.x, 10.0, 1E-3);
+		EXPECT_NEAR(entries[i].state.pos.y, -4.5, 1E-3);
+		i++;
+		EXPECT_NEAR(entries[i].state.info.timeStamp, 0.0, 1E-3);
+		EXPECT_STREQ(entries[i].state.info.name, "Ego_ghost");
+		EXPECT_NEAR(entries[i].state.pos.x, 40.0, 1E-3);
+		EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+
+		// Check timestep after 0.0
+		i++;
+		EXPECT_NEAR(entries[i].state.info.timeStamp, dt, 1E-3);
+		EXPECT_STREQ(entries[i].state.info.name, "Ego");
+		EXPECT_NEAR(entries[i].state.pos.x, 111.0, 1E-3);
+		EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+		i++;
+		EXPECT_NEAR(entries[i].state.info.timeStamp, dt, 1E-3);
+		EXPECT_STREQ(entries[i].state.info.name, "Target");
+		EXPECT_NEAR(entries[i].state.pos.x, 12.0, 1E-3);
+		EXPECT_NEAR(entries[i].state.pos.y, -4.5, 1E-3);
+		i++;
+		EXPECT_NEAR(entries[i].state.info.timeStamp, dt, 1E-3);
+		EXPECT_STREQ(entries[i].state.info.name, "Ego_ghost");
+		EXPECT_NEAR(entries[i].state.pos.x, 41.0, 1E-3);
+		EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+
+		if (j == 1)  // additional restart tests
+		{
+			// Check first restart
+			i = 243;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 2.1, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego");
+			EXPECT_NEAR(entries[i].state.pos.x, 131.0, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 2.1, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Target");
+			EXPECT_NEAR(entries[i].state.pos.x, 52.0, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -4.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 2.1, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego_ghost");
+			EXPECT_NEAR(entries[i].state.pos.x, 61.0, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, -0.75, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego");
+			EXPECT_NEAR(entries[i].state.pos.x, 132.0, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, -0.75, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Target");
+			EXPECT_NEAR(entries[i].state.pos.x, 54.0, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -4.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, -0.75, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego_ghost");
+			EXPECT_NEAR(entries[i].state.pos.x, 131.502, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, -0.70, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego");
+			EXPECT_NEAR(entries[i].state.pos.x, 132.0, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, -0.70, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Target");
+			EXPECT_NEAR(entries[i].state.pos.x, 54.0, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -4.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, -0.70, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego_ghost");
+			EXPECT_NEAR(entries[i].state.pos.x, 132.005, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+
+			i = 423;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 2.2, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego");
+			EXPECT_NEAR(entries[i].state.pos.x, 132.0, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 2.2, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Target");
+			EXPECT_NEAR(entries[i].state.pos.x, 54.0, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -4.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 2.2, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego_ghost");
+			EXPECT_NEAR(entries[i].state.pos.x, 169.124, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 2.3, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego");
+			EXPECT_NEAR(entries[i].state.pos.x, 232.008, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 2.3, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Target");
+			EXPECT_NEAR(entries[i].state.pos.x, 56.0, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -4.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 2.3, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego_ghost");
+			EXPECT_NEAR(entries[i].state.pos.x, 170.624, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+
+			i = 600;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 8.1, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego");
+			EXPECT_NEAR(entries[i].state.pos.x, 312.624, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 8.1, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Target");
+			EXPECT_NEAR(entries[i].state.pos.x, 172.000, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -4.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 8.1, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego_ghost");
+			EXPECT_NEAR(entries[i].state.pos.x, 257.624, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 5.25, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego");
+			EXPECT_NEAR(entries[i].state.pos.x, 314.124, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 5.25, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Target");
+			EXPECT_NEAR(entries[i].state.pos.x, 174.000, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -4.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 5.25, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego_ghost");
+			EXPECT_NEAR(entries[i].state.pos.x, 313.376, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+
+			i = 774;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 8.1, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego");
+			EXPECT_NEAR(entries[i].state.pos.x, 314.124, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 8.1, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Target");
+			EXPECT_NEAR(entries[i].state.pos.x, 174.000, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -4.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 8.1, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego_ghost");
+			EXPECT_NEAR(entries[i].state.pos.x, 363.748, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+
+			i = 780;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 8.2, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego");
+			EXPECT_NEAR(entries[i].state.pos.x, 314.124, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 8.2, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Target");
+			EXPECT_NEAR(entries[i].state.pos.x, 174.000, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -4.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 8.2, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego_ghost");
+			EXPECT_NEAR(entries[i].state.pos.x, 365.748, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 8.3, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego");
+			EXPECT_NEAR(entries[i].state.pos.x, 414.133, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 8.3, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Target");
+			EXPECT_NEAR(entries[i].state.pos.x, 176.000, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -4.5, 1E-3);
+			i++;
+			EXPECT_NEAR(entries[i].state.info.timeStamp, 8.3, 1E-3);
+			EXPECT_STREQ(entries[i].state.info.name, "Ego_ghost");
+			EXPECT_NEAR(entries[i].state.pos.x, 367.748, 1E-3);
+			EXPECT_NEAR(entries[i].state.pos.y, -1.5, 1E-3);
+
+			// Also check a few entries in the csv log file, focus on scenario controlled entity "Target"
+			std::vector<std::vector<std::string>> csv;
+			ASSERT_EQ(SE_ReadCSVFile("csv_log.csv", csv, 6), 0);
+			EXPECT_NEAR(std::stod(csv[1][1]), -3.0, 1E-3);
+			EXPECT_NEAR(std::stod(csv[61][30]), 10.0, 1E-3);
+			EXPECT_NEAR(std::stod(csv[61][33]), 20.0, 1E-3);
+			EXPECT_NEAR(std::stod(csv[61][36]), 0.0, 1E-3);
+			EXPECT_NEAR(std::stod(csv[82][1]), 2.1, 1E-3);
+			EXPECT_NEAR(std::stod(csv[82][30]), 52.0, 1E-3);
+			EXPECT_NEAR(std::stod(csv[82][33]), 20.0, 1E-3);
+			EXPECT_NEAR(std::stod(csv[82][36]), 0.0, 1E-3);
+			EXPECT_NEAR(std::stod(csv[83][1]), -0.75, 1E-3);
+			EXPECT_NEAR(std::stod(csv[83][30]), 54.0, 1E-3);
+			EXPECT_NEAR(std::stod(csv[83][33]), 20.0, 1E-3);
+			EXPECT_NEAR(std::stod(csv[83][36]), 0.0, 1E-3);
+			EXPECT_NEAR(std::stod(csv[142][1]), 2.2, 1E-3);
+			EXPECT_NEAR(std::stod(csv[142][30]), 54.0, 1E-3);
+			EXPECT_NEAR(std::stod(csv[142][33]), 20.0, 1E-3);
+			EXPECT_NEAR(std::stod(csv[142][36]), 0.0, 1E-3);
+
+			// Read OSI file
+			FILE* file = fopen("gt.osi", "rb");
+			ASSERT_NE(file, nullptr);
+
+			const int max_msg_size = 10000;
+			char msg_buf[max_msg_size];
+			int msg_size;
+			osi3::GroundTruth osi_gt;
+			double seconds = -1.0;
+
+			double time_stamps[] = { 0.0, 2.1, 2.2 };
+
+			// Focus on position and acceleration
+			double pos_x[3][3] = {   // for three timestamps and three entities
+				{ 11.4, 11.3, 41.4 },
+				{ 132.4, 53.3, 62.4 },
+				{ 133.4, 55.3, 170.524 }
+			};
+
+			double acc_x[3][3] = {   // for three timestamps and three entities
+				{ 0.0, 0.0, 0.0 },
+				{ 0.0, 0.0, 0.0 },
+				{ 0.0, 0.0, 0.0 }
+			};
+
+
+			// Read OSI message size
+			ASSERT_EQ(fread((char*)(&msg_size), 1, sizeof(msg_size), file), sizeof(msg_size));
+			ASSERT_LE(msg_size, max_msg_size);
+
+			// Read first OSI message
+			EXPECT_EQ(fread(msg_buf, 1, msg_size, file), msg_size);
+			osi_gt.ParseFromArray(msg_buf, msg_size);
+
+			seconds = osi_gt.mutable_timestamp()->seconds() + 1E-9 * osi_gt.mutable_timestamp()->nanos();
+
+			EXPECT_NEAR(seconds, time_stamps[0], 1E-3);
+
+			EXPECT_EQ(osi_gt.mutable_moving_object()->size(), 3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(0)->mutable_base()->mutable_position()->x(), pos_x[0][0], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(1)->mutable_base()->mutable_position()->x(), pos_x[0][1], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(2)->mutable_base()->mutable_position()->x(), pos_x[0][2], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(0)->mutable_base()->mutable_acceleration()->x(), acc_x[0][0], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(1)->mutable_base()->mutable_acceleration()->x(), acc_x[0][1], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(2)->mutable_base()->mutable_acceleration()->x(), acc_x[0][2], 1E-3);
+
+			// fast forward until 2.0 seconds
+			while (seconds < 2.0 - SMALL_NUMBER)
+			{
+				// Read OSI message size
+				ASSERT_EQ(fread((char*)(&msg_size), 1, sizeof(msg_size), file), sizeof(msg_size));
+				ASSERT_LE(msg_size, max_msg_size);
+
+				// Read OSI message
+				EXPECT_EQ(fread(msg_buf, 1, msg_size, file), msg_size);
+				osi_gt.ParseFromArray(msg_buf, msg_size);
+
+				seconds = osi_gt.mutable_timestamp()->seconds() + 1E-9 * osi_gt.mutable_timestamp()->nanos();
+			}
+
+			// Read second OSI message (should be at 2.1s)
+			ASSERT_EQ(fread((char*)(&msg_size), 1, sizeof(msg_size), file), sizeof(msg_size));
+			ASSERT_LE(msg_size, max_msg_size);
+			EXPECT_EQ(fread(msg_buf, 1, msg_size, file), msg_size);
+			osi_gt.ParseFromArray(msg_buf, msg_size);
+
+			seconds = osi_gt.mutable_timestamp()->seconds() + 1E-9 * osi_gt.mutable_timestamp()->nanos();
+
+			EXPECT_NEAR(seconds, time_stamps[1], 1E-3);
+
+			EXPECT_EQ(osi_gt.mutable_moving_object()->size(), 3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(0)->mutable_base()->mutable_position()->x(), pos_x[1][0], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(1)->mutable_base()->mutable_position()->x(), pos_x[1][1], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(2)->mutable_base()->mutable_position()->x(), pos_x[1][2], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(0)->mutable_base()->mutable_acceleration()->x(), acc_x[1][0], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(1)->mutable_base()->mutable_acceleration()->x(), acc_x[1][1], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(2)->mutable_base()->mutable_acceleration()->x(), acc_x[1][2], 1E-3);
+
+			// Read third OSI message (should be at 2.2s)
+			ASSERT_EQ(fread((char*)(&msg_size), 1, sizeof(msg_size), file), sizeof(msg_size));
+			ASSERT_LE(msg_size, max_msg_size);
+			EXPECT_EQ(fread(msg_buf, 1, msg_size, file), msg_size);
+			osi_gt.ParseFromArray(msg_buf, msg_size);
+
+			seconds = osi_gt.mutable_timestamp()->seconds() + 1E-9 * osi_gt.mutable_timestamp()->nanos();
+
+			EXPECT_NEAR(seconds, time_stamps[2], 1E-3);
+
+			EXPECT_EQ(osi_gt.mutable_moving_object()->size(), 3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(0)->mutable_base()->mutable_position()->x(), pos_x[2][0], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(1)->mutable_base()->mutable_position()->x(), pos_x[2][1], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(2)->mutable_base()->mutable_position()->x(), pos_x[2][2], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(0)->mutable_base()->mutable_acceleration()->x(), acc_x[2][0], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(1)->mutable_base()->mutable_acceleration()->x(), acc_x[2][1], 1E-3);
+			EXPECT_NEAR(osi_gt.mutable_moving_object(2)->mutable_base()->mutable_acceleration()->x(), acc_x[2][2], 1E-3);
+
+			fclose(file);
+		}
+	}
+}
+
+TEST(ReplayTest, TestMultiReplayDifferentTimeSteps)
+{
+	const char* args[2][2][3] =
+	{
+		// First run with smaller timsteps in first scenario
+		{
+			{
+				"--osc ../../../resources/xosc/follow_ghost.xosc",
+				"--record multirep_test1.dat",
+				"--fixed_timestep 0.01"
+			},
+			{
+				"--osc ../../../resources/xosc/left-hand-traffic_using_road_rule.xosc",
+				"--record multirep_test2.dat",
+				"--fixed_timestep 0.1"
+			}
+		},
+		// Then run with smaller timsteps in second scenario
+		{
+			{
+				"--osc ../../../resources/xosc/follow_ghost.xosc",
+				"--record multirep_test1.dat",
+				"--fixed_timestep 0.1"
+			},
+			{
+				"--osc ../../../resources/xosc/left-hand-traffic_using_road_rule.xosc",
+				"--record multirep_test2.dat",
+				"--fixed_timestep 0.01"
+			}
+		}
+	};
+
+	SE_AddPath("../../../resources/models");
+
+	for (int k = 0; k < 2; k++)
+	{
+		// Run the two scenarios, create dat files
+		for (int i = 0; i < 2; i++)
+		{
+			ASSERT_EQ(SE_InitWithArgs(sizeof(args[k][i]) / sizeof(char*), args[k][i]), 0);
+
+			while (SE_GetQuitFlag() != 1)
+			{
+				if (k == 0 && i == 0) SE_StepDT(0.01f);
+				else if (k == 0 && i == 1) SE_StepDT(0.1f);
+				else if (k == 1 && i == 0) SE_StepDT(0.1f);
+				else if (k == 1 && i == 1) SE_StepDT(0.01f);
+			}
+
+			SE_Close();
+		}
+
+		// Check multi replay
+		scenarioengine::Replay* replay = new scenarioengine::Replay(".", "multirep_test", "");
+		EXPECT_EQ(replay->GetNumberOfScenarios(), 2);
+
+		EXPECT_NEAR(replay->data_[0].state.info.timeStamp, -2.5, 1E-3);
+		EXPECT_STREQ(replay->data_[0].state.info.name, "Ego");
+		EXPECT_STREQ(replay->data_[1].state.info.name, "Ego_ghost");
+		EXPECT_STREQ(replay->data_[2].state.info.name, "Ego");
+		EXPECT_NEAR(replay->data_[2].state.info.timeStamp, -2.45, 1E-3);
+		EXPECT_NEAR(replay->data_[4].state.info.timeStamp, -2.40, 1E-3);
+		EXPECT_NEAR(replay->data_[100].state.info.timeStamp, 0.0, 1E-3);
+		EXPECT_NEAR(replay->data_[100].state.info.id, 0, 1E-3);
+		EXPECT_NEAR(replay->data_[101].state.info.timeStamp, 0.0, 1E-3);
+		EXPECT_NEAR(replay->data_[101].state.info.id, 1, 1E-3);
+		EXPECT_NEAR(replay->data_[102].state.info.timeStamp, 0.0, 1E-3);
+		EXPECT_NEAR(replay->data_[102].state.info.id, 100, 1E-3);
+		EXPECT_NEAR(replay->data_[103].state.info.timeStamp, 0.0, 1E-3);
+		EXPECT_NEAR(replay->data_[103].state.info.id, 101, 1E-3);
+		EXPECT_NEAR(replay->data_[104].state.info.timeStamp, 0.01, 1E-3);
+		EXPECT_NEAR(replay->data_[104].state.info.id, 0, 1E-3);
+		EXPECT_NEAR(replay->data_[108].state.info.timeStamp, 0.02, 1E-3);
+		EXPECT_NEAR(replay->data_[108].state.info.id, 0, 1E-3);
+		EXPECT_NEAR(replay->data_[139].state.info.timeStamp, 0.09, 1E-3);
+		EXPECT_NEAR(replay->data_[139].state.info.id, 101, 1E-3);
+		EXPECT_NEAR(replay->data_[140].state.info.timeStamp, 0.1, 1E-3);
+		EXPECT_NEAR(replay->data_[140].state.info.id, 0, 1E-3);
+
+		EXPECT_NEAR(replay->data_[2012].state.info.timeStamp, 4.78, 1E-3);
+		EXPECT_NEAR(replay->data_[2012].state.info.id, 0, 1E-3);
+		EXPECT_NEAR(replay->data_[2015].state.info.timeStamp, 4.78, 1E-3);
+		EXPECT_NEAR(replay->data_[2015].state.info.id, 101, 1E-3);
+
+		if (k == 0)
+		{
+			EXPECT_NEAR(replay->data_[2012].state.pos.y, 130.995, 1E-3);
+			EXPECT_NEAR(replay->data_[2015].state.pos.y, 207.414, 1E-3);
+			EXPECT_NEAR(replay->data_[6009].state.info.timeStamp, 19.53, 1E-3);
+			EXPECT_NEAR(replay->data_[6009].state.info.id, 1, 1E-3);
+		}
+		else
+		{
+			EXPECT_NEAR(replay->data_[2012].state.pos.y, 130.924, 1E-3);
+			EXPECT_NEAR(replay->data_[2015].state.pos.y, 210.776, 1E-3);
+			EXPECT_NEAR(replay->data_[4213].state.info.timeStamp, 19.8, 1E-3);
+			EXPECT_NEAR(replay->data_[4213].state.info.id, 1, 1E-3);
+		}
+
+		delete replay;
+	}
+}
+
+void ConditionCallbackInstance1(const char* element_name, double timestamp)
+{
+	EXPECT_STREQ(element_name, "act_start");
+	EXPECT_NEAR(timestamp, 0.1, 1E-4);
+	EXPECT_NEAR((float)timestamp, SE_GetSimulationTime(), 1E-4);
+}
+
+TEST(EventCallbackTest, TestConditionCallback)
+{
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/highway_exit.xosc";
+
+	SE_Init(scenario_file.c_str(), 0, 0, 0, 0);
+
+	int n_Objects = SE_GetNumberOfObjects();
+	EXPECT_EQ(n_Objects, 2);
+
+	SE_RegisterConditionCallback(ConditionCallbackInstance1);
+
+	// Just run for two steps such that the act gets started
+	for (int i = 0; i < 2; i++)
+	{
+		SE_StepDT(0.1f);
+	}
+
+	SE_Close();
+}
+
+void StoryBoardElementStateCallbackInstance1(const char* element_name, int type, int state)
+{
+	static int counter = 0;
+	const int n_runs = 13;
+	struct
+	{
+		const char* name;
+		double time;
+		int type;
+		int state;
+	} state_target[n_runs] =
+	{
+		{ "maneuver", 0.1, 4, 2 },                     // Maneuver, Running
+		{ "maneuvuergroup_maneuver", 0.1, 3, 2 },      // ManeuverGroup, Running
+		{ "act_maneuvuergroup_maneuver", 0.1, 2, 2 },  // Act, Running
+		{ "slowdown", 3.5, 6, 2 },                     // Action, Running
+		{ "slowdown event", 3.5, 5, 2 },               // Event, Running
+		{ "slowdown", 4.5, 6, 3 },                     // Action, Complete
+		{ "slowdown event", 4.5, 5, 3 },               // Event, Complete
+		{ "lane change", 4.5, 6, 2 },                  // Action, Running
+		{ "lanechange event", 4.5, 5, 2 },             // Event, Running
+		{ "lane change", 8.5, 6, 3 },                  // Action, Complete
+		{ "lanechange event", 8.5, 5, 3 },             // Event, Complete
+		{ "maneuver", 8.6, 4, 3 },                     // Maneuver, Complete
+		{ "maneuvuergroup_maneuver", 8.6, 3, 3 },      // ManeuverGroup, Complete
+	};
+
+	if (counter < n_runs)
+	{
+		EXPECT_STREQ(element_name, state_target[counter].name);
+		EXPECT_NEAR(SE_GetSimulationTime(), state_target[counter].time, 1E-4);
+		EXPECT_EQ(type, state_target[counter].type);
+		EXPECT_EQ(state, state_target[counter].state);
+	}
+
+ 	counter++;
+}
+
+TEST(EventCallbackTest, TestStoryboardElementStateCallback)
+{
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/highway_exit.xosc";
+
+	SE_Init(scenario_file.c_str(), 0, 0, 0, 0);
+
+	int n_Objects = SE_GetNumberOfObjects();
+	EXPECT_EQ(n_Objects, 2);
+
+	SE_RegisterStoryBoardElementStateChangeCallback(StoryBoardElementStateCallbackInstance1);
+
+	// Just run until passed 12 seconds to cover the complete scenario
+	for (int i = 0; i < 125; i++)
+	{
+		SE_StepDT(0.1f);
+	}
+
+	SE_Close();
+}
+
+TEST(RoadmanagerTest, TestGetInfoAtDistance)
+{
+	std::string scenario_file = "../../../resources/xosc/slow-lead-vehicle.xosc";
+
+	SE_Init(scenario_file.c_str(), 0, 0, 0, 0);
+
+	int n_Objects = SE_GetNumberOfObjects();
+	EXPECT_EQ(n_Objects, 2);
+
+	SE_RoadInfo roadinfo;
+	ASSERT_EQ(SE_GetRoadInfoAtDistance(0, -49, &roadinfo, 0, true), 0);
+	EXPECT_NEAR(roadinfo.global_pos_x, 1.0, 1e-5);
+	EXPECT_NEAR(roadinfo.global_pos_y, -1.535, 1e-5);
+	EXPECT_NEAR(roadinfo.local_pos_x, -49.0, 1e-5);
+	EXPECT_NEAR(roadinfo.local_pos_y, 0.0, 1e-5);
+
+	ASSERT_EQ(SE_GetRoadInfoAtDistance(0, -51, &roadinfo, 0, true), -2);
+	EXPECT_NEAR(roadinfo.global_pos_x, 0.0, 1e-5);
+	EXPECT_NEAR(roadinfo.global_pos_y, -1.535, 1e-5);
+	EXPECT_NEAR(roadinfo.local_pos_x, -50.0, 1e-5);
+	EXPECT_NEAR(roadinfo.local_pos_y, 0.0, 1e-5);
+
+	ASSERT_EQ(SE_GetRoadInfoAtDistance(0, 449, &roadinfo, 0, true), 0);
+	EXPECT_NEAR(roadinfo.global_pos_x, 499.0, 1e-5);
+	EXPECT_NEAR(roadinfo.global_pos_y, -1.535, 1e-3);
+	EXPECT_NEAR(roadinfo.local_pos_x, 449.0, 1e-5);
+	EXPECT_NEAR(roadinfo.local_pos_y, 0.0, 1e-5);
+
+	ASSERT_EQ(SE_GetRoadInfoAtDistance(0, 451, &roadinfo, 0, true), -2);
+	EXPECT_NEAR(roadinfo.global_pos_x, 500.0, 1e-5);
+	EXPECT_NEAR(roadinfo.global_pos_y, -1.535, 1e-3);
+	EXPECT_NEAR(roadinfo.local_pos_x, 450.0, 1e-5);
+	EXPECT_NEAR(roadinfo.local_pos_y, 0.0, 1e-5);
+
+	SE_Close();
+}
+
 int main(int argc, char **argv)
 {
 	testing::InitGoogleTest(&argc, argv);
 
 #if 0  // set to 1 and modify filter to run one single test
-	testing::GTEST_FLAG(filter) = "*lane_no_obj*";
+	testing::GTEST_FLAG(filter) = "*TestFetchImage*";
+	// Or make use of launch argument, e.g. --gtest_filter=TestFetchImage*
 #else
 	SE_LogToConsole(false);
 #endif

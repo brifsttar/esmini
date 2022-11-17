@@ -12,6 +12,7 @@ IF NOT EXIST %target_dir%\resources\xosc\Catalogs\Pedestrians ( mkdir %target_di
 IF NOT EXIST %target_dir%\resources\xodr ( mkdir %target_dir%\resources\xodr )
 IF NOT EXIST %target_dir%\resources\models ( mkdir %target_dir%\resources\models )
 IF NOT EXIST %target_dir%\resources\sumo_inputs ( mkdir %target_dir%\resources\sumo_inputs )
+IF NOT EXIST %target_dir%\resources\traffic_signals ( mkdir %target_dir%\resources\traffic_signals )
 IF NOT EXIST %target_dir%\run ( mkdir %target_dir%\run )
 IF NOT EXIST %target_dir%\run\esmini ( mkdir %target_dir%\run\esmini )
 IF NOT EXIST %target_dir%\run\odrviewer ( mkdir %target_dir%\run\odrviewer )
@@ -24,6 +25,9 @@ IF NOT EXIST %target_dir%\scripts\udp_driver\osi3 ( mkdir %target_dir%\scripts\u
 IF NOT EXIST %target_dir%\include ( mkdir %target_dir%\include )
 IF NOT EXIST %target_dir%\3rd_party_terms_and_licenses ( mkdir %target_dir%\3rd_party_terms_and_licenses )
 IF NOT EXIST %target_dir%\Hello-World_coding-example ( mkdir %target_dir%\Hello-World_coding-example )
+IF NOT EXIST %target_dir%\EnvironmentSimulator ( mkdir %target_dir%\EnvironmentSimulator )
+IF NOT EXIST %target_dir%\EnvironmentSimulator\Applications ( mkdir %target_dir%\EnvironmentSimulator\Applications )
+IF NOT EXIST %target_dir%\EnvironmentSimulator\Applications\odrplot ( mkdir %target_dir%\EnvironmentSimulator\Applications\odrplot )
 
 copy resources\xosc\follow_ghost.xosc %target_dir%\resources\xosc /y
 copy resources\xosc\cut-in.xosc %target_dir%\resources\xosc /y
@@ -56,6 +60,8 @@ copy resources\xosc\alks-test.xosc %target_dir%\resources\xosc /y
 copy resources\xosc\swarm.xosc %target_dir%\resources\xosc /y
 copy resources\xosc\lane-change_clothoid_based_trajectory.xosc %target_dir%\resources\xosc /y
 copy resources\xosc\trailers.xosc %target_dir%\resources\xosc /y
+copy resources\xosc\speed-profile.xosc %target_dir%\resources\xosc /y
+copy resources\xosc\alks_r157_cut_in_quick_brake.xosc %target_dir%\resources\xosc /y
 
 copy resources\xosc\Catalogs\Maneuvers\*.* %target_dir%\resources\xosc\Catalogs\Maneuvers /y
 copy resources\xosc\Catalogs\Routes\*.* %target_dir%\resources\xosc\Catalogs\Routes /y
@@ -97,13 +103,19 @@ copy resources\models\moose_cc0.osgb %target_dir%\resources\models /y
 copy resources\models\multi_intersections.osgb %target_dir%\resources\models /y
 copy resources\models\curves_elevation.osgb %target_dir%\resources\models /y
 copy resources\models\pole.osgb %target_dir%\resources\models /y
-copy resources\models\Swe*.osgb %target_dir%\resources\models /y
+copy resources\models\de_274-30.osgb %target_dir%\resources\models /y
+copy resources\models\de_274-50.osgb %target_dir%\resources\models /y
+copy resources\models\se_c_31-3.osgb %target_dir%\resources\models /y
+copy resources\models\se_c_31-5.osgb %target_dir%\resources\models /y
+copy resources\models\de_123.osgb %target_dir%\resources\models /y
+copy resources\models\se_a_20-1.osgb %target_dir%\resources\models /y
 copy resources\models\asphalt.jpg %target_dir%\resources\models /y
 copy resources\models\grass.jpg %target_dir%\resources\models /y
 copy resources\models\railing.osgb %target_dir%\resources\models /y
 copy resources\models\railing-pole.osgb %target_dir%\resources\models /y
 copy resources\models\guide-post.osgb %target_dir%\resources\models /y
 copy resources\models\cone-100.osgb %target_dir%\resources\models /y
+copy resources\models\box_cc_by.osgb %target_dir%\resources\models /y
 copy resources\models\car_trailer.osgb %target_dir%\resources\models /y
 copy resources\models\semi_tractor.osgb %target_dir%\resources\models /y
 copy resources\models\semi_trailer.osgb %target_dir%\resources\models /y
@@ -114,6 +126,8 @@ copy resources\models\fence_pole.osgb %target_dir%\resources\models /y
 
 copy resources\sumo_inputs\e6mini* %target_dir%\resources\sumo_inputs /y
 copy resources\sumo_inputs\multi_intersections* %target_dir%\resources\sumo_inputs /y
+
+copy resources\traffic_signals\* %target_dir%\resources\traffic_signals /y
 
 copy run\esmini\run_follow_ghost.bat %target_dir%\run\esmini /y
 copy run\esmini\run_ltap-od_interactive.bat %target_dir%\run\esmini /y
@@ -168,10 +182,11 @@ copy version.txt %target_dir% /y
 copy bin\esmini.exe %target_dir%\bin /y
 copy bin\replayer.exe %target_dir%\bin /y
 copy bin\dat2csv.exe %target_dir%\bin /y
-copy bin\esmini.exe %target_dir%\bin\EgoSimulator.exe /y
 copy bin\odrviewer.exe %target_dir%\bin /y
+copy bin\odrplot.exe %target_dir%\bin /y
 copy bin\esminiLib.* %target_dir%\lib /y
 copy EnvironmentSimulator\Libraries\esminiLib\esminiLib.hpp %target_dir%\include /y
+copy EnvironmentSimulator\Applications\odrplot\xodr.py %target_dir%\EnvironmentSimulator\Applications\odrplot /y
 
 copy Hello-World_coding-example esmini-demo\Hello-World_coding-example
 copy bin\esminiLib.* esmini-demo\Hello-World_coding-example

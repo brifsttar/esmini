@@ -17,11 +17,11 @@
 
 
 #if USE_OSI
-	#include "osi_common.pb.h"
-	#include "osi_object.pb.h"
-	#include "osi_groundtruth.pb.h"
-	#include "osi_sensordata.pb.h"
-	#include "osi_version.pb.h"
+#include "osi_common.pb.h"
+#include "osi_object.pb.h"
+#include "osi_groundtruth.pb.h"
+#include "osi_sensordata.pb.h"
+#include "osi_version.pb.h"
 #endif
 
 #include "stdio.h"
@@ -63,7 +63,7 @@ typedef struct
 	SE_SimpleVehicleState state;
 } SimpleVehicle;
 
-void objectCallback(SE_ScenarioObjectState* state, void *my_data)
+void objectCallback(SE_ScenarioObjectState* state, void* my_data)
 {
 	const double startTrigTime = 7.0;
 	const double latDist = 3.5;
@@ -84,13 +84,13 @@ void objectCallback(SE_ScenarioObjectState* state, void *my_data)
 		}
 		else
 		{
-			float latOffset = (float)(latOffset0 + latDist * (SE_GetSimulationTime() - startTrigTime)/duration);
-			SE_ReportObjectRoadPos(state->id, state->timestamp, state->roadId, state->laneId, latOffset, state->s, state->speed);
+			float latOffset = (float)(latOffset0 + latDist * (SE_GetSimulationTime() - startTrigTime) / duration);
+			SE_ReportObjectRoadPos(state->id, state->timestamp, state->roadId, state->laneId, latOffset, state->s);
 		}
 	}
 }
 
-int main(int argc, const char *argv[])
+int main(int argc, const char* argv[])
 {
 	Stuff stuff;
 	SimpleVehicle vehicle = { 0, {0, 0, 0, 0, 0, 0} };
@@ -345,7 +345,7 @@ int main(int argc, const char *argv[])
 
 #if DEMONSTRATE_DRIVER_MODEL
 			SE_RoadInfo roadInfo;
-			SE_GetRoadInfoAtDistance(0, 5 + 0.5f*vehicle.state.speed, &roadInfo, 0);
+			SE_GetRoadInfoAtDistance(0, 5 + 0.5f * vehicle.state.speed, &roadInfo, 0);
 
 			double steering = 0;
 			if (fabs(roadInfo.angle) > 0.01)
@@ -354,7 +354,7 @@ int main(int argc, const char *argv[])
 				steering = roadInfo.angle;
 			}
 			double speedTarget = vehicle.state.speed < 25 ? 1.0 : 0.0;
-			speedTarget /= (1 + 20*fabs(steering));
+			speedTarget /= (1 + 20 * fabs(steering));
 			SE_SimpleVehicleControlAnalog(vehicle.handle, TIME_STEP, speedTarget, roadInfo.angle);
 			SE_SimpleVehicleGetState(vehicle.handle, &vehicle.state);
 

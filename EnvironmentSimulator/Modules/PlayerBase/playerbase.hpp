@@ -78,7 +78,7 @@ public:
 	} ObjCallback;
 
 
-	ScenarioPlayer(int& argc, char* argv[]);
+	ScenarioPlayer(int argc, char* argv[]);
 	~ScenarioPlayer();
 	void PrintUsage();
 	bool IsQuitRequested() { return quit_request; }
@@ -91,6 +91,9 @@ public:
 	void ShowObjectSensors(bool mode);
 	void AddObjectSensor(int object_index, double pos_x, double pos_y, double pos_z, double heading,
 						 double near, double far, double fovH, int maxObj);
+#ifdef _USE_OSG
+	void InitVehicleModel(Object* obj, viewer::CarModel* model);
+#endif
 	void AddOSIDetection(int object_index);
 	void SetFixedTimestep(double timestep) { fixed_timestep_ = timestep; }
 	double GetFixedTimestep() { return fixed_timestep_; }
@@ -113,6 +116,7 @@ public:
 	void SetState(PlayerState state) { state_ = state; }
 	PlayerState GetState() { return state_; }
 	bool IsPaused() { return GetState() == PlayerState::PLAYER_STATE_PAUSE; }
+	int GetCounter() { return frame_counter_; }
 
 	//TODO
 	//int GetNumberOfVehicleProperties(){return 4;};
@@ -137,13 +141,17 @@ public:
 	ViewerState viewerState_;
 	int InitViewer();
 	void CloseViewer();
-	void ViewerFrame();
+	void ViewerFrame(bool init = false);
 
 	int SaveImagesToRAM(bool state);
 	int SaveImagesToFile(int nrOfFrames);
 
 	OffScreenImage *FetchCapturedImagePtr();
 	void AddCustomCamera(double x, double y, double z, double h, double p);
+	void AddCustomFixedCamera(double x, double y, double z, double h, double p);
+	int AddCustomLightSource(double x, double y, double z, double intensity);
+	void AddCustomSemiFixedCamera(double x, double y, double z);
+	void AddCustomFixedTopCamera(double x, double y, double z, double rot);
 #else
 	void* viewer_;
 #endif
@@ -154,6 +162,8 @@ public:
 	SE_Options opt;
 	std::vector<ObjCallback> objCallback;
 	std::string exe_path_;
+	SE_Semaphore player_init_semaphore;
+	SE_Semaphore viewer_init_semaphore;
 
 private:
 	int Init();
@@ -169,7 +179,7 @@ private:
 	int osi_freq_;
 	int frame_counter_;
 	std::string osi_receiver_addr;
-	int &argc_;
+	int argc_;
 	char **argv_;
 	std::string titleString;
 	PlayerState state_;

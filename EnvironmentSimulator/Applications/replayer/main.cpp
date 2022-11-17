@@ -323,7 +323,7 @@ int main(int argc, char** argv)
 {
 	roadmanager::OpenDrive *odrManager;
 	viewer::Viewer* viewer;
-	Replay* player;
+	std::unique_ptr<Replay> player;
 	double simTime = 0;
 	double view_mode = viewer::NodeMask::NODE_MASK_ENTITY_MODEL;
 	bool overlap = false;
@@ -334,15 +334,21 @@ int main(int argc, char** argv)
 	Logger::Inst().SetCallback(log_callback);
 	Logger::Inst().LogVersion();
 
+	SE_Env::Inst().AddPath(DirNameOf(argv[0]));  // Add location of exe file to search paths
+
 	// use common options parser to manage the program arguments
 	SE_Options opt;
-	opt.AddOption("file", "Simulation recording data file", "filename");
+	opt.AddOption("file", "Simulation recording data file (.dat)", "filename");
 	opt.AddOption("camera_mode", "Initial camera mode (\"orbit\" (default), \"fixed\", \"flex\", \"flex-orbit\", \"top\", \"driver\") (toggle during simulation by press 'k') ", "mode");
 	opt.AddOption("capture_screen", "Continuous screen capture. Warning: Many jpeg files will be created");
 	opt.AddOption("collision", "Pauses the replay if the ego collides with another entity");
+	opt.AddOption("custom_camera", "Additional custom fixed camera position <x,y,z,h,p> (multiple occurrences supported)", "position");
+	opt.AddOption("custom_fixed_camera", "Additional custom camera position <x,y,z>[,h,p] (multiple occurrences supported)", "position and optional orientation");
+	opt.AddOption("custom_fixed_top_camera", "Additional custom top camera <x,y,z,rot> (multiple occurrences supported)", "position and rotation");
 	opt.AddOption("dir", "Directory containing replays to overlay, pair with \"file\" argument, where \"file\" is .dat filename match substring","path");
-	opt.AddOption("disable_off_screen", "Disable off-screen rendering, potentially gaining performance");
+	opt.AddOption("disable_off_screen", "Disable esmini off-screen rendering, revert to OSG viewer default handling");
 	opt.AddOption("hide_trajectories", "Hide trajectories from start (toggle with key 'n')");
+	opt.AddOption("info_text", "Show on-screen info text (toggle key 'i') mode 0=None 1=current (default) 2=per_object 3=both", "mode");
 	opt.AddOption("no_ghost", "Remove ghost entities");
 	opt.AddOption("no_ghost_model", "Remove only ghost model, show trajectory (toggle with key 'g')");
 	opt.AddOption("path", "Search path prefix for assets, e.g. model_ids.txt file (multiple occurrences supported)", "path");
@@ -351,6 +357,7 @@ int main(int argc, char** argv)
 	opt.AddOption("repeat", "loop scenario");
 	opt.AddOption("res_path", "Path to resources root folder - relative or absolut", "path");
 	opt.AddOption("road_features", "Show OpenDRIVE road features");
+	opt.AddOption("save_merged", "Save merged data into one dat file, instead of viewing", "filename");
 	opt.AddOption("start_time", "Start playing at timestamp", "ms");
 	opt.AddOption("stop_time", "Stop playing at timestamp (set equal to time_start for single frame)", "ms");
 	opt.AddOption("time_scale", "Playback speed scale factor (1.0 == normal)", "factor");
@@ -365,7 +372,10 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
-	opt.ParseArgs(&argc, argv);
+	if (opt.ParseArgs(argc, argv) != 0)
+	{
+		return -1;
+	}
 
 	if (opt.GetOptionArg("file").empty())
 	{
@@ -396,20 +406,33 @@ int main(int argc, char** argv)
 
 	if (opt.GetOptionSet("disable_off_screen"))
 	{
-		SE_Env::Inst().SetDisableOffScreen(true);
+		SE_Env::Inst().SetOffScreenRendering(false);
 	}
 
 	// Create player
 	arg_str = opt.GetOptionArg("dir");
+
+	std::string save_merged = opt.GetOptionArg("save_merged"); // name of new dat file
 	try
 	{
 		if (!arg_str.empty())
 		{
-			player = new Replay(arg_str, opt.GetOptionArg("file"));
+			player = std::make_unique<Replay>(arg_str, opt.GetOptionArg("file"), save_merged);
+
+			if (!save_merged.empty())
+			{
+				LOG("Merged data saved in %s", save_merged.c_str());
+				return 0;
+			}
 		}
 		else
 		{
-			player = new Replay(opt.GetOptionArg("file"));
+			if (!save_merged.empty())
+			{
+				LOG("\"--saved_merged\" works only in combination with \"--dir\" argument, combining multiple dat files");
+				return -1;
+			}
+			player = std::make_unique<Replay>(opt.GetOptionArg("file"), true);
 		}
 	}
 	catch (const std::exception& e)
@@ -417,6 +440,7 @@ int main(int argc, char** argv)
 		LOG(std::string("Exception: ").append(e.what()).c_str());
 		return -1;
 	}
+
 	try
 	{
 		if (strcmp(player->header_.odr_filename, ""))
@@ -515,11 +539,132 @@ int main(int argc, char** argv)
 			}
 		}
 
-		viewer->RegisterKeyEventCallback(ReportKeyEvent, player);
-
-		if (argc > 1)
+		if (opt.GetOptionSet("custom_camera") == true)
 		{
-			opt.PrintArgs(argc, argv, "Unrecognized arguments:");
+			int counter = 0;
+
+			while ((arg_str = opt.GetOptionArg("custom_camera", counter)) != "")
+			{
+				size_t pos = 0;
+				double v[5] = { 0.0, 0.0, 0.0, 0.0, 0.0 };
+				for (int i = 0; i < 5; i++)
+				{
+					pos = arg_str.find(",");
+					if (i < 4 && pos == std::string::npos)
+					{
+						LOG_AND_QUIT("Expected custom_camera <x,y,z,h,p>, got only %d values", i + 1);
+					}
+					v[i] = strtod(arg_str.substr(0, pos));
+					arg_str.erase(0, pos == std::string::npos ? pos : pos + 1);
+				}
+				if (!arg_str.empty())
+				{
+					LOG_AND_QUIT("Expected custom_camera <x,y,z,h,p>, got too many values. Make sure only 5 values is specified");
+				}
+				viewer->AddCustomCamera(v[0], v[1], v[2], v[3], v[4]);
+				viewer->SetCameraMode(-1);  // activate last camera which is the one just added
+				LOG("Created custom camera %d (%.2f, %.2f, %.2f, %.2f, %.2f)", counter, v[0], v[1], v[2], v[3], v[4]);
+				counter++;
+			}
+		}
+
+		if (opt.GetOptionSet("custom_fixed_camera") == true)
+		{
+			int counter = 0;
+
+			while ((arg_str = opt.GetOptionArg("custom_fixed_camera", counter)) != "")
+			{
+				size_t pos = 0;
+				double v[5] = { 0.0, 0.0, 0.0, 0.0, 0.0 };
+				int i = 0;
+				for (i = 0; i < 5; i++)
+				{
+					pos = arg_str.find(",");
+
+					if (i < 2 && pos == std::string::npos)
+					{
+						LOG_AND_QUIT("Expected custom_fixed_camera <x,y,z>[,h,p], got only %d values", i + 1);
+					}
+					else if (i == 3 && pos == std::string::npos)
+					{
+						LOG_AND_QUIT("Expected custom_fixed_camera <x,y,z>[,h,p], got %d values", i + 1);
+					}
+					v[i] = strtod(arg_str.substr(0, pos));
+					arg_str.erase(0, pos == std::string::npos ? pos : pos + 1);
+
+					if (i == 2 && pos == std::string::npos)
+					{
+						// Only position specified, stop now
+
+						break;
+					}
+				}
+				if (!arg_str.empty())
+				{
+					LOG_AND_QUIT("Expected custom_fixed_camera <x,y,z>[,h,p], got too many values. Make sure only 3 or 5 values is specified");
+				}
+
+				if (i == 2)
+				{
+					viewer->AddCustomCamera(v[0], v[1], v[2], true);
+					LOG("Created custom fixed camera %d (%.2f, %.2f, %.2f)", counter, v[0], v[1], v[2]);
+				}
+				else
+				{
+					viewer->AddCustomCamera(v[0], v[1], v[2], v[3], v[4], true);
+					LOG("Created custom fixed camera %d (%.2f, %.2f, %.2f, %.2f, %.2f)", counter, v[0], v[1], v[2], v[3], v[4]);
+				}
+				viewer->SetCameraMode(-1);  // activate last camera which is the one just added
+				counter++;
+			}
+		}
+
+		if (opt.GetOptionSet("custom_fixed_top_camera") == true)
+		{
+			int counter = 0;
+
+			while ((arg_str = opt.GetOptionArg("custom_fixed_top_camera", counter)) != "")
+			{
+				size_t pos = 0;
+				double v[4] = { 0.0, 0.0, 0.0, 0.0 };
+				for (int i = 0; i < 4; i++)
+				{
+					pos = arg_str.find(",");
+					if (i < 3 && pos == std::string::npos)
+					{
+						LOG_AND_QUIT("Expected custom_fixed_top_camera <x,y,z,rot>, got only %d values", i + 1);
+					}
+					v[i] = strtod(arg_str.substr(0, pos));
+					arg_str.erase(0, pos == std::string::npos ? pos : pos + 1);
+				}
+				if (!arg_str.empty())
+				{
+					LOG_AND_QUIT("Expected custom_fixed_top_camera <x,y,z,rot>, got too many values. Make sure only 4 values is specified");
+				}
+
+				viewer->AddCustomFixedTopCamera(v[0], v[1], v[2], v[3]);
+				viewer->SetCameraMode(-1);  // activate last camera which is the one just added
+				LOG("Created custom fixed top camera %d (%.2f, %.2f, %.2f, %.2f)", counter, v[0], v[1], v[2], v[3]);
+				counter++;
+			}
+		}
+
+		if ((arg_str = opt.GetOptionArg("info_text")) != "")
+		{
+			int mask = strtoi(arg_str);
+			if (mask < 0 || mask > 3)
+			{
+				LOG_AND_QUIT("Invalid on-screen info mode %d. Valid range is 0-3", mask);
+			}
+			viewer->SetNodeMaskBits(viewer::NodeMask::NODE_MASK_INFO |
+				viewer::NodeMask::NODE_MASK_INFO_PER_OBJ, mask * viewer::NodeMask::NODE_MASK_INFO);
+		}
+
+		viewer->RegisterKeyEventCallback(ReportKeyEvent, player.get());
+
+		if (opt.HasUnknownArgs())
+		{
+			opt.PrintUnknownArgs("Unrecognized arguments:");
 			opt.PrintUsage();
 #ifdef _USE_OSG
 			viewer::Viewer::PrintUsage();
@@ -611,7 +756,7 @@ int main(int argc, char** argv)
 			} while (pos != std::string::npos);
 		}
 
-		if (ParseEntities(viewer, player) != 0)
+		if (ParseEntities(viewer, player.get()) != 0)
 		{
 			delete viewer;
 			return -1;
@@ -645,10 +790,11 @@ int main(int argc, char** argv)
 			}
 			else if (startTime > player->data_.back().state.info.timeStamp)
 			{
-				printf("Specified start time (%.2f) > first timestamp (%.2f), adapting.\n", startTime, player->data_[0].state.info.timeStamp);
+				printf("Specified start time (%.2f) > last timestamp (%.2f), adapting.\n", startTime, player->data_.back().state.info.timeStamp);
 				startTime = player->data_.back().state.info.timeStamp;
 			}
 			player->SetStartTime(startTime);
+			player->GoToTime(startTime);
 		}
 
 		std::string stop_time_str = opt.GetOptionArg("stop_time");
@@ -657,7 +803,7 @@ int main(int argc, char** argv)
 			double stopTime = 1E-3 * strtod(stop_time_str);
 			if (stopTime > player->data_.back().state.info.timeStamp)
 			{
-				printf("Specified stop time (%.2f) > last timestamp (%.2f), adapting.\n", stopTime, player->data_[0].state.info.timeStamp);
+				printf("Specified stop time (%.2f) > last timestamp (%.2f), adapting.\n", stopTime, player->data_.back().state.info.timeStamp);
 				stopTime = player->data_.back().state.info.timeStamp;
 			}
 			else if (stopTime < player->data_[0].state.info.timeStamp)
@@ -756,6 +902,17 @@ int main(int argc, char** argv)
 					sc->wheel_angle = state->info.wheel_angle;
 					sc->wheel_rotation = state->info.wheel_rot;
 
+					// on screen text following each entity
+					snprintf(sc->entityModel->on_screen_info_.string_, sizeof(sc->entityModel->on_screen_info_.string_),
+						" %s (%d) %.2fm\n %.2fkm/h road %d lane %d/%.2f s %.2f\n x %.2f y %.2f hdg %.2f\n osi x %.2f y %.2f \n|",
+						state->info.name, state->info.id, entry->odometer,
+						3.6 * state->info.speed, sc->pos.roadId,
+						sc->pos.laneId, fabs(sc->pos.offset) < SMALL_NUMBER ? 0 : sc->pos.offset, sc->pos.s,
+						sc->pos.x, sc->pos.y, sc->pos.h,
+						sc->pos.x + sc->bounding_box.center_.x_ * cos(sc->pos.h),
+						sc->pos.y + sc->bounding_box.center_.x_ * sin(sc->pos.h));
+					sc->entityModel->on_screen_info_.osg_text_->setText(sc->entityModel->on_screen_info_.string_);
+
 					if (index == viewer->currentCarInFocus_)
 					{
 						// Update overlay info text
@@ -847,7 +1004,6 @@ int main(int argc, char** argv)
 		return 3;
 	}
 
-	delete player;
 
 	return 0;
 }

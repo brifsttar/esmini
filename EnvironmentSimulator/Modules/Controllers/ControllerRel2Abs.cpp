@@ -112,7 +112,7 @@ void ControllerRel2Abs::Step(double timeStep)
 	if (!switchNow) {
 		double currentSpeed_ = object_->GetSpeed();
 
-		double currentTime = scenarioEngine_->getSimulationTime();
+		double currentTime = scenario_engine_->getSimulationTime();
 
 		if (currentTime - timestamp > pred_horizon)
 		{
@@ -267,7 +267,7 @@ void ControllerRel2Abs::Step(double timeStep)
 			}
 		}
 
-		currentTime = scenarioEngine_->getSimulationTime();
+		currentTime = scenario_engine_->getSimulationTime();
 		actualData.time.push_back(currentTime);
 		actualData.posX.push_back(object_->pos_.GetX());
 		actualData.posY.push_back(object_->pos_.GetY());
@@ -363,12 +363,11 @@ void ControllerRel2Abs::Step(double timeStep)
 				LongSpeedAction* lsa = (LongSpeedAction*)activeActions[i];
 				if (lsa->target_->type_ == LongSpeedAction::Target::TargetType::RELATIVE_SPEED)
 				{
-					LongSpeedAction::TargetRelative* target = (LongSpeedAction::TargetRelative*)lsa->target_;
+					LongSpeedAction::TargetRelative* target = (LongSpeedAction::TargetRelative*)lsa->target_.get();
 					if (target->object_ == ego)
 					{
 						double trgSpeed = lsa->target_->GetValue();
-						delete(lsa->target_);
-						lsa->target_ = new LongSpeedAction::TargetAbsolute;
+						lsa->target_.reset(new LongSpeedAction::TargetAbsolute);
 						lsa->target_->value_ = trgSpeed;
 						LOG("LongSpeedAction Target has switched to absolute from relative with the value: %lf", trgSpeed);
 					}
@@ -393,7 +392,7 @@ void ControllerRel2Abs::Step(double timeStep)
 						lsa->transition_.SetParamTargetVal(10.0);
 					LongSpeedAction::TargetAbsolute* target_abs = new LongSpeedAction::TargetAbsolute;
 					target_abs->value_ = currentSpeed;
-					lsa->target_ = target_abs;
+					lsa->target_.reset(target_abs);
 					//get lda's event and add lsa action to it
 					std::vector<Event*> events = lda->object_->getEvents();
 					for (size_t j = 0; j < events.size(); j++)
@@ -409,8 +408,8 @@ void ControllerRel2Abs::Step(double timeStep)
 							}
 						}
 					}
-					lda->End(scenarioEngine_->getSimulationTime());
-					lsa->Start(scenarioEngine_->getSimulationTime(),timeStep);
+					lda->End(scenario_engine_->getSimulationTime());
+					lsa->Start(scenario_engine_->getSimulationTime(),timeStep);
 					LOG("Replacing the relative target LongDistanceAction with an absolute target LongSpeedAction and target value: %lf", currentSpeed);
 				}
 			}
@@ -501,7 +500,7 @@ void ControllerRel2Abs::Step(double timeStep)
 
 							LongSpeedAction::TargetAbsolute* target_abs = new LongSpeedAction::TargetAbsolute;
 							target_abs->value_ = trgSpeed;
-							lsa->target_ = target_abs;
+							lsa->target_.reset(target_abs);
 
 							//get sa's event and add lsa action to it
 							std::vector<Event*> events = sa->object_->getEvents();
@@ -518,8 +517,8 @@ void ControllerRel2Abs::Step(double timeStep)
 									}
 								}
 							}
-							sa->End(scenarioEngine_->getSimulationTime());
-							lsa->Start(scenarioEngine_->getSimulationTime(), timeStep);
+							sa->End(scenario_engine_->getSimulationTime());
+							lsa->Start(scenario_engine_->getSimulationTime(), timeStep);
 							LOG("Replacing the SynchronizeAction (with final speed) with an absolute target LongSpeedAction and target value: %lf", trgSpeed);
 						}
 						else if (sa->mode_ == SynchronizeAction::SynchMode::MODE_NON_LINEAR)
@@ -546,7 +545,7 @@ void ControllerRel2Abs::Step(double timeStep)
 						lsa->transition_.SetParamTargetVal(3);
 						LongSpeedAction::TargetAbsolute* target_abs = new LongSpeedAction::TargetAbsolute;
 						target_abs->value_ = currentSpeed;
-						lsa->target_ = target_abs;
+						lsa->target_.reset(target_abs);
 
 						//get sa's event and add lsa action to it
 						std::vector<Event*> events = sa->object_->getEvents();
@@ -563,8 +562,8 @@ void ControllerRel2Abs::Step(double timeStep)
 								}
 							}
 						}
-						sa->End(scenarioEngine_->getSimulationTime());
-						lsa->Start(scenarioEngine_->getSimulationTime(), timeStep);
+						sa->End(scenario_engine_->getSimulationTime());
+						lsa->Start(scenario_engine_->getSimulationTime(), timeStep);
 						LOG("Replacing the SynchronizeAction (no final speed) with an absolute target LongSpeedAction and target value: %lf", currentSpeed);
 					}
 				}

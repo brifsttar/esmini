@@ -16,7 +16,7 @@ using namespace scenarioengine;
 
 OSCPositionWorld::OSCPositionWorld(double x, double y, double z, double h, double p, double r, OSCPosition* base_on_pos) : OSCPosition(PositionType::WORLD)
 {
-	if (base_on_pos != nullptr)
+	if (base_on_pos != nullptr && base_on_pos->type_ == PositionType::WORLD)
 	{
 		this->position_ = *base_on_pos->GetRMPos();
 	}
@@ -28,10 +28,31 @@ OSCPositionWorld::OSCPositionWorld(double x, double y, double z, double h, doubl
 			LOG("At least one of z, pitch (p) and roll (r) is set. Remaining will be set to zero.");
 		}
 
-		if (std::isnan(z)) z = 0.0;
-		if (std::isnan(p)) p = 0.0;
-		if (std::isnan(r)) r = 0.0;
-		if (std::isnan(h)) h = 0.0;
+		if (std::isnan(z))
+		{
+			z = 0.0;
+		}
+
+		if (std::isnan(p))
+		{
+			// Indicate that this attribute has not been set explicitly in the scenario
+			position_.SetOrientationTypeSetBit(roadmanager::Position::OrientationSetMask::P, 0);
+			p = 0.0;  // set default value
+		}
+
+		if (std::isnan(r))
+		{
+			// Indicate that this attribute has not been set explicitly in the scenario
+			position_.SetOrientationTypeSetBit(roadmanager::Position::OrientationSetMask::R, 0);
+			r = 0.0;  // set default value
+		}
+
+		if (std::isnan(h))
+		{
+			// Indicate that this attribute has not been set explicitly in the scenario
+			position_.SetOrientationTypeSetBit(roadmanager::Position::OrientationSetMask::H, 0);
+			h = 0.0;  // set default value
+		}
 
 		position_.SetInertiaPos(x, y, z, h, p, r);
 	}
@@ -39,7 +60,9 @@ OSCPositionWorld::OSCPositionWorld(double x, double y, double z, double h, doubl
 	{
 		if (std::isnan(h))
 		{
-			h = 0.0;
+			// Indicate that this attribute has not been set explicitly in the scenario
+			position_.SetOrientationTypeSetBit(roadmanager::Position::OrientationSetMask::H, 0);
+			h = 0.0;  // set default value
 		}
 
 		position_.SetInertiaPos(x, y, h);
@@ -93,30 +116,21 @@ OSCPositionRoad::OSCPositionRoad(int roadId, double s, double t, OSCOrientation 
 
 	if (orientation.type_ == roadmanager::Position::OrientationType::ORIENTATION_RELATIVE)
 	{
-		// Adjust heading to road direction also considering traffic rule (left/right hand traffic)
-		if (position_.GetDrivingDirectionRelativeRoad() < 0)
-		{
-			position_.SetHeadingRelative(GetAngleSum(M_PI, orientation.h_));
-			position_.SetPitchRelative(-orientation.p_);
-			position_.SetRollRelative(-orientation.r_);
-		}
-		else
-		{
-			position_.SetHeadingRelative(orientation.h_);
-			position_.SetPitchRelative(orientation.p_);
-			position_.SetRollRelative(orientation.r_);
-		}
+		position_.SetHeadingRelative(orientation.h_);
+		position_.SetPitchRelative(orientation.p_);
+		position_.SetRollRelative(orientation.r_);
+		position_.EvaluateOrientation();
 	}
 	else if (orientation.type_ == roadmanager::Position::OrientationType::ORIENTATION_ABSOLUTE)
 	{
 		position_.SetHeading(orientation.h_);
+		position_.SetPitch(orientation.p_);
+		position_.SetRoll(orientation.r_);
 	}
 	else
 	{
 		LOG("Unexpected orientation type: %d", orientation.type_);
 	}
-	position_.SetP(orientation.p_);
-	position_.SetR(orientation.r_);
 }
 
 OSCPositionRelativeObject::OSCPositionRelativeObject(Object *object, double dx, double dy, double dz, OSCOrientation orientation) :
@@ -169,13 +183,16 @@ OSCPositionRelativeLane::OSCPositionRelativeLane(Object *object, int dLane, doub
 	if (orientation.type_ == roadmanager::Position::OrientationType::ORIENTATION_RELATIVE)
 	{
 		position_.SetHeadingRelative(orientation.h_);
+		position_.SetPitchRelative(orientation.p_);
+		position_.SetRollRelative(orientation.r_);
+		position_.EvaluateOrientation();
 	}
 	else
 	{
-		position_.SetH(orientation.h_);
+		position_.SetHeading(orientation.h_);
+		position_.SetPitch(orientation.p_);
+		position_.SetRoll(orientation.r_);
 	}
-	position_.SetP(orientation.p_);
-	position_.SetR(orientation.r_);
 
 	position_.SetRelativePosition(&object->pos_, roadmanager::Position::PositionType::RELATIVE_LANE);
 }
@@ -195,13 +212,20 @@ OSCPositionRelativeRoad::OSCPositionRelativeRoad(Object* object, double ds, doub
 	if (orientation.type_ == roadmanager::Position::OrientationType::ORIENTATION_RELATIVE)
 	{
 		position_.SetHeadingRelative(orientation.h_);
+		position_.SetPitchRelative(orientation.p_);
+		position_.SetRollRelative(orientation.r_);
+		position_.EvaluateOrientation();
+	}
+	else if (orientation.type_ == roadmanager::Position::OrientationType::ORIENTATION_ABSOLUTE)
+	{
+		position_.SetHeading(orientation.h_);
+		position_.SetPitch(orientation.p_);
+		position_.SetRoll(orientation.r_);
 	}
 	else
 	{
-		position_.SetH(orientation.h_);
+		LOG("Unexpected orientation type: %d", orientation.type_);
 	}
-	position_.SetP(orientation.p_);
-	position_.SetR(orientation.r_);
 
 	position_.SetRelativePosition(&object->pos_, roadmanager::Position::PositionType::RELATIVE_ROAD);
 }

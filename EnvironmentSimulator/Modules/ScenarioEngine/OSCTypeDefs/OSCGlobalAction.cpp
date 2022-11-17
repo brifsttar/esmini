@@ -173,13 +173,29 @@ SwarmTrafficAction::SwarmTrafficAction() : OSCGlobalAction(OSCGlobalAction::Type
     counter_ = 0;
 };
 
-SwarmTrafficAction::~SwarmTrafficAction()
+
+SwarmTrafficAction::~SwarmTrafficAction() 
 {
-    for (size_t i = 0; i < vehicle_pool_.size(); i++)
-    {
-        delete vehicle_pool_[i];
+    auto RecursiveDeleteTrailers = [](Vehicle* vehicle, auto& recurseLambda) -> void {
+        if (vehicle->trailer_hitch_ && vehicle->trailer_hitch_->trailer_vehicle_)
+        {
+            recurseLambda(static_cast<Vehicle*>(vehicle->trailer_hitch_->trailer_vehicle_), recurseLambda);
+        }
+
+        delete vehicle;
+    };
+
+    for (auto* entry : vehicle_pool_) {
+        if (entry != centralObject_)
+        {
+            if (entry->trailer_hitch_ && entry->trailer_hitch_->trailer_vehicle_)
+            {
+                RecursiveDeleteTrailers(static_cast<Vehicle*>(entry->trailer_hitch_->trailer_vehicle_), RecursiveDeleteTrailers);
+            }
+
+            delete entry;
+        }
     }
-    vehicle_pool_.clear();
 }
 
 void SwarmTrafficAction::Start(double simTime, double dt)
@@ -237,7 +253,7 @@ void SwarmTrafficAction::Start(double simTime, double dt)
     {
         if (centralObject_->type_ == Object::Type::VEHICLE)
         {
-            vehicle_pool_.push_back((Vehicle*)centralObject_);
+            vehicle_pool_.push_back(static_cast<Vehicle*>(centralObject_));
         }
         else
         {
@@ -586,7 +602,7 @@ int SwarmTrafficAction::despawn(double simTime)
 
     roadmanager::Position cPos = centralObject_->pos_;
 
-    while (infoPtr < spawnedV.end())
+    while (infoPtr != spawnedV.end())
     {
         Object *vehicle = entities_->GetObjectById(infoPtr->vehicleID);
 
@@ -631,7 +647,15 @@ int SwarmTrafficAction::despawn(double simTime)
                     trailer = (Vehicle*)v->TrailerVehicle();
 
                     gateway_->removeObject(v->name_);
-                    entities_->removeObject(v, false);
+
+                    if (v->objectEvents_.size() > 0 || v->initActions_.size() > 0)
+                    {
+                        entities_->deactivateObject(v);
+                    }
+                    else
+                    {
+                        entities_->removeObject(v, false);
+                    }
                     v = trailer;
 
                     vehicle = nullptr;  // indicate vehicle removed
@@ -641,7 +665,14 @@ int SwarmTrafficAction::despawn(double simTime)
             if (vehicle)
             {
                 gateway_->removeObject(vehicle->name_);
-                entities_->removeObject(vehicle, false);
+                if (vehicle->objectEvents_.size() > 0 || vehicle->initActions_.size() > 0)
+                {
+                    entities_->deactivateObject(vehicle);
+                }
+                else
+                {
+                    entities_->removeObject(vehicle, false);
+                }
             }
 
             infoPtr = spawnedV.erase(infoPtr);

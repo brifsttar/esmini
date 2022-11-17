@@ -1,26 +1,32 @@
+ESMINI_PATH = '../'
+
 import os
 import subprocess
 import time
 import re
 import sys
+sys.path.insert(0, ESMINI_PATH + 'scripts')
+from dat import *
 
 LOG_FILENAME = 'log.txt'
 DAT_FILENAME = 'sim.dat'
 CSV_FILENAME = 'sim.csv'
 STDOUT_FILENAME = 'stdout.txt'
 TIMEOUT = 40
-ESMINI_PATH = '../'
 
 
-def run_scenario(osc_filename, esmini_arguments):
+def run_scenario(osc_filename, esmini_arguments, xosc_str = None):
     
     if os.path.exists(LOG_FILENAME):
         os.remove(LOG_FILENAME)
     if os.path.exists(STDOUT_FILENAME):
         os.remove(STDOUT_FILENAME)
 
-    args = [os.path.join(ESMINI_PATH,'bin','esmini'), '--osc', osc_filename] + esmini_arguments.split()
-    #print('running: {}'.format(' '.join(args)))
+    if osc_filename is not None:
+        args = [os.path.join(ESMINI_PATH,'bin','esmini'), '--osc', osc_filename] + esmini_arguments.split()
+        #print('running: {}'.format(' '.join(args)))
+    elif xosc_str is not None:
+        args = [os.path.join(ESMINI_PATH,'bin','esmini')] + esmini_arguments.split() + ['--osc_str', xosc_str]
     
     return_code = None    
     with open(STDOUT_FILENAME, "w") as f:
@@ -52,11 +58,17 @@ def run_scenario(osc_filename, esmini_arguments):
 
 
 def generate_csv():
-    args = [os.path.join(ESMINI_PATH,'bin','dat2csv'), DAT_FILENAME]
-    process = subprocess.run(args, cwd=os.path.dirname(os.path.realpath(__file__)))
+
+    # Below is one/the old way of converting dat to csv. Keeping the lines for reference.
+    # args = [os.path.join(ESMINI_PATH,'bin','dat2csv'), DAT_FILENAME]
+    # process = subprocess.run(args, cwd=os.path.dirname(os.path.realpath(__file__)))
+
+    # Below is the Python way of converting dat to csv
+    dat = DATFile(DAT_FILENAME)
+    dat.save_csv()
+    dat.close()
+
     with open(CSV_FILENAME, "r") as f:
         return f.read()
 
     assert False, 'No csv file'
-
-

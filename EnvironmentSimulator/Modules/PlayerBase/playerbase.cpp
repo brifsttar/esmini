@@ -42,8 +42,8 @@ static void log_callback(const char *str)
 	printf("%s\n", str);
 }
 
-ScenarioPlayer::ScenarioPlayer(int &argc, char *argv[]) :
-	maxStepSize(0.1), minStepSize(0.01), argc_(argc), argv_(argv), state_(PlayerState::PLAYER_STATE_PLAYING)
+ScenarioPlayer::ScenarioPlayer(int argc, char *argv[]) :
+	maxStepSize(0.1), minStepSize(0.001), argc_(argc), argv_(argv), state_(PlayerState::PLAYER_STATE_PLAYING)
 {
 	quit_request = false;
 	threads = false;
@@ -121,6 +121,7 @@ void ScenarioPlayer::SetOSIFileStatus(bool is_on, const char* filename)
 	}
 #endif // USE_OSI
 }
+
 void ScenarioPlayer::Draw()
 {
 	if (viewer_)
@@ -145,37 +146,26 @@ void ScenarioPlayer::Draw()
 void ScenarioPlayer::Frame(double timestep_s)
 {
 	static bool messageShown = false;
-	double dt = timestep_s;
-	__int64 time_stamp = 0;
 	int retval = 0;
+	double ghost_solo_dt = 0.05;
 
 	if (!IsPaused())
 	{
-		if (ScenarioFrame(timestep_s, true) == 0)
+		retval = ScenarioFrame(timestep_s, true);
+
+		if (scenarioEngine->GetGhostMode() != GhostMode::NORMAL)
 		{
 			while (retval == 0 && scenarioEngine->GetGhostMode() != GhostMode::NORMAL)
 			{
-				// Main simulation is paused during ghost headstart or restart
-
 				Draw();
-				retval = ScenarioFrame(dt, false);
-
-				if (GetFixedTimestep() > SMALL_NUMBER)
-				{
-					dt = MAX(GetFixedTimestep(), minStepSize);
-				}
-				else
-				{
-					dt = SE_getSimTimeStep(time_stamp, minStepSize, maxStepSize);
-				}
-			}
-
-			if (retval == 0)
-			{
-				ScenarioPostFrame();
+				retval = ScenarioFrame(ghost_solo_dt, false);
 			}
 		}
 
+		if (retval == 0)
+		{
+			ScenarioPostFrame();
+		}
 
 		if (GetState() == PlayerState::PLAYER_STATE_STEP)
 		{
@@ -232,15 +222,21 @@ int ScenarioPlayer::ScenarioFrame(double timestep_s, bool keyframe)
 
 		scenarioEngine->prepareGroundTruth(timestep_s);
 
-		scenarioGateway->WriteStatesToFile();
-
-		if (CSV_Log)
+		if (scenarioEngine->GetGhostMode() != GhostMode::RESTART)
 		{
-			UpdateCSV_Log();
+
+			scenarioGateway->WriteStatesToFile();
+
+			if (CSV_Log)
+			{
+				UpdateCSV_Log();
+			}
 		}
 
 		if (keyframe) frame_counter_++;
 	}
+
+	scenarioEngine->UpdateGhostMode();
 
 	mutex.Unlock();
 
@@ -269,7 +265,7 @@ void ScenarioPlayer::ScenarioPostFrame()
 		// Update OSI info
 		if (osiReporter->IsFileOpen() || osiReporter->GetSocket())
 		{
-			if (osiReporter->GetCounter() % osi_freq_ == 0)
+			if ((GetCounter()-1) % osi_freq_ == 0)
 			{
 				osiReporter->UpdateOSIGroundTruth(scenarioGateway->objectState_);
 				if (osiReporter->GetCounter() == 1)
@@ -295,8 +291,13 @@ void ScenarioPlayer::ScenarioPostFrame()
 }
 
 #ifdef _USE_OSG
-void ScenarioPlayer::ViewerFrame()
+void ScenarioPlayer::ViewerFrame(bool init)
 {
+	if (viewer_ == nullptr)
+	{
+		return;
+	}
+
 	static double last_dot_time = scenarioEngine->getSimulationTime();
 
 	mutex.Lock();
@@ -322,7 +323,7 @@ void ScenarioPlayer::ViewerFrame()
 		viewer_->AddEntityModel(viewer_->CreateEntityModel(obj->model3d_, trail_color,
 			viewer::EntityModel::EntityType::VEHICLE, false,
 			obj->name_, &obj->boundingbox_, obj->scaleMode_));
-		viewer_->entities_.back()->routewaypoints_->SetWayPoints(obj->pos_.GetRoute());
+		InitVehicleModel(obj, (viewer::CarModel*)viewer_->entities_.back());
 	}
 
 	// remove obsolete cars
@@ -335,104 +336,125 @@ void ScenarioPlayer::ViewerFrame()
 		viewer_->RemoveCar(viewer_->entities_.size() - 1);
 	}
 
-	// Visualize entities
-	for (size_t i = 0; i < scenarioEngine->entities_.object_.size(); i++)
+	if (!init)
 	{
-		viewer::EntityModel *entity = viewer_->entities_[i];
-		Object* obj = scenarioEngine->entities_.object_[i];
-
-		entity->SetPosition(obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetZ());
-		entity->SetRotation(obj->pos_.GetH(), obj->pos_.GetP(), obj->pos_.GetR());
-
-		if (obj->pos_.GetTrajectory() && obj->pos_.GetTrajectory() != entity->trajectory_->activeRMTrajectory_)
+		// Visualize entities
+		for (size_t i = 0; i < scenarioEngine->entities_.object_.size(); i++)
 		{
-			entity->trajectory_->SetActiveRMTrajectory(obj->pos_.GetTrajectory());
-		}
-		else if (entity->trajectory_->activeRMTrajectory_ && !obj->pos_.GetTrajectory())
-		{
-			// Trajectory has been deactivated on the entity, disable visualization
-			entity->trajectory_->Disable();
-		}
+			viewer::EntityModel* entity = viewer_->entities_[i];
+			Object* obj = scenarioEngine->entities_.object_[i];
 
-		if (obj->CheckDirtyBits(Object::DirtyBit::ROUTE))
-		{
-			entity->routewaypoints_->SetWayPoints(obj->pos_.GetRoute());
-			obj->ClearDirtyBits(Object::DirtyBit::ROUTE);
-		}
-		else if (entity->routewaypoints_->group_->getNumChildren() && obj->pos_.GetRoute() == nullptr)
-		{
-			entity->routewaypoints_->SetWayPoints(nullptr);
-		}
+			entity->SetPosition(obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetZ());
+			entity->SetRotation(obj->pos_.GetH(), obj->pos_.GetP(), obj->pos_.GetR());
 
-
-		if (entity->GetType() == viewer::EntityModel::EntityType::VEHICLE)
-		{
-			viewer::CarModel* car = (viewer::CarModel*)entity;
-			car->UpdateWheels(obj->wheel_angle_, obj->wheel_rot_);
-
-			if (obj->GetGhost())
+			if (obj->pos_.GetTrajectory() && obj->pos_.GetTrajectory() != entity->trajectory_->activeRMTrajectory_)
 			{
-				if (car->steering_sensor_)
+				entity->trajectory_->SetActiveRMTrajectory(obj->pos_.GetTrajectory());
+			}
+			else if (entity->trajectory_->activeRMTrajectory_ && !obj->pos_.GetTrajectory())
+			{
+				// Trajectory has been deactivated on the entity, disable visualization
+				entity->trajectory_->Disable();
+			}
+
+			if (obj->CheckDirtyBits(Object::DirtyBit::ROUTE))
+			{
+				entity->routewaypoints_->SetWayPoints(obj->pos_.GetRoute());
+				obj->ClearDirtyBits(Object::DirtyBit::ROUTE);
+			}
+			else if (entity->routewaypoints_->group_->getNumChildren() && obj->pos_.GetRoute() == nullptr)
+			{
+				entity->routewaypoints_->SetWayPoints(nullptr);
+			}
+
+			if (entity->IsMoving())
+			{
+				if (entity->IsVehicle())
 				{
-					viewer_->SensorSetPivotPos(car->steering_sensor_, obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetZ());
-					viewer_->SensorSetTargetPos(car->steering_sensor_, obj->sensor_pos_[0], obj->sensor_pos_[1], obj->sensor_pos_[2]);
-					viewer_->UpdateSensor(car->steering_sensor_);
+					viewer::CarModel* car = (viewer::CarModel*)entity;
+					car->UpdateWheels(obj->wheel_angle_, obj->wheel_rot_);
 				}
-				if (car->trail_sensor_)
+
+				viewer::MovingModel* mov = (viewer::MovingModel*)entity;
+				if (obj->GetGhost())
 				{
-					viewer_->SensorSetPivotPos(car->trail_sensor_, obj->trail_closest_pos_.x, obj->trail_closest_pos_.y, obj->trail_closest_pos_.z);
-					viewer_->SensorSetTargetPos(car->trail_sensor_, obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetZ());
-					viewer_->UpdateSensor(car->trail_sensor_);
+					if (mov->steering_sensor_)
+					{
+						viewer_->SensorSetPivotPos(mov->steering_sensor_, obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetZ());
+						viewer_->SensorSetTargetPos(mov->steering_sensor_, obj->sensor_pos_[0], obj->sensor_pos_[1], obj->sensor_pos_[2]);
+						viewer_->UpdateSensor(mov->steering_sensor_);
+					}
+					if (mov->trail_sensor_)
+					{
+						viewer_->SensorSetPivotPos(mov->trail_sensor_, obj->trail_closest_pos_.x, obj->trail_closest_pos_.y, obj->trail_closest_pos_.z);
+						viewer_->SensorSetTargetPos(mov->trail_sensor_, obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetZ());
+						viewer_->UpdateSensor(mov->trail_sensor_);
+					}
+				}
+
+				if (odr_manager->GetNumOfRoads() > 0 && mov->road_sensor_)
+				{
+					mov->ShowRouteSensor(obj->pos_.GetRoute() ? true : false);
+					viewer_->UpdateRoadSensors(mov->road_sensor_, mov->route_sensor_, mov->lane_sensor_, &obj->pos_);
 				}
 			}
 
-			if (odr_manager->GetNumOfRoads() > 0 && car->road_sensor_)
+			if (entity->trail_->pline_vertex_data_->size() > obj->trail_.GetNumberOfVertices())
 			{
-				car->ShowRouteSensor(obj->pos_.GetRoute() ? true : false);
-				viewer_->UpdateRoadSensors(car->road_sensor_, car->route_sensor_, car->lane_sensor_, &obj->pos_);
+				// Reset the trail, probably there has been a ghost restart
+				entity->trail_->Reset();
+				for (size_t j = 0; j < obj->trail_.GetNumberOfVertices(); j++)
+				{
+					entity->trail_->AddPoint(osg::Vec3(obj->trail_.vertex_[j].x, obj->trail_.vertex_[j].y, obj->trail_.vertex_[j].z + (obj->GetId() + 1) * TRAIL_Z_OFFSET));
+				}
 			}
-		}
 
-		if (entity->trail_->pline_vertex_data_->size() > obj->trail_.GetNumberOfVertices())
-		{
-			// Reset the trail, probably there has been a ghost restart
-			entity->trail_->Reset();
-			for (size_t j = 0; j < obj->trail_.GetNumberOfVertices(); j++)
+			if (obj->trail_.GetNumberOfVertices() > entity->trail_->pline_vertex_data_->size())
 			{
-				entity->trail_->AddPoint(osg::Vec3(obj->trail_.vertex_[j].x, obj->trail_.vertex_[j].y, obj->trail_.vertex_[j].z + (obj->GetId() + 1) * TRAIL_Z_OFFSET));
+				entity->trail_->AddPoint(osg::Vec3(obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetZ() + (obj->GetId() + 1) * TRAIL_Z_OFFSET));
 			}
+
+			// on screen text following each entity
+			snprintf(entity->on_screen_info_.string_, sizeof(entity->on_screen_info_.string_),
+				" %s (%d) %.2fm\n %.2fkm/h road %d lane %d/%.2f s %.2f\n x %.2f y %.2f hdg %.2f\n osi x %.2f y %.2f \n|",
+				obj->name_.c_str(), obj->GetId(), obj->odometer_,
+				3.6 * obj->speed_, obj->pos_.GetTrackId(), obj->pos_.GetLaneId(), fabs(obj->pos_.GetOffset()) < SMALL_NUMBER ? 0 : obj->pos_.GetOffset(),
+				obj->pos_.GetS(),
+				obj->pos_.GetX(),
+				obj->pos_.GetY(),
+				obj->pos_.GetH(),
+				obj->pos_.GetX() + obj->boundingbox_.center_.x_ * cos(obj->pos_.GetH()),
+				obj->pos_.GetY() + obj->boundingbox_.center_.x_ * sin(obj->pos_.GetH()));
+			entity->on_screen_info_.osg_text_->setText(entity->on_screen_info_.string_);
 		}
 
-		if (obj->trail_.GetNumberOfVertices() > entity->trail_->pline_vertex_data_->size())
+		for (size_t i = 0; i < sensorFrustum.size(); i++)
 		{
-			entity->trail_->AddPoint(osg::Vec3(obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetZ() + (obj->GetId() + 1) * TRAIL_Z_OFFSET));
+			sensorFrustum[i]->Update();
 		}
-	}
 
-	for (size_t i = 0; i < sensorFrustum.size(); i++)
-	{
-		sensorFrustum[i]->Update();
+		// Update info text
+		static char str_buf[128];
+		if (viewer_->currentCarInFocus_ >= 0 && viewer_->currentCarInFocus_ < viewer_->entities_.size())
+		{
+			Object* obj = scenarioEngine->entities_.object_[viewer_->currentCarInFocus_];
+			snprintf(str_buf, sizeof(str_buf), "%.2fs entity[%d]: %s (%d) %.2fkm/h %.2fm (%d, %d, %.2f, %.2f) / (%.2f, %.2f %.2f)", scenarioEngine->getSimulationTime(),
+				viewer_->currentCarInFocus_, obj->name_.c_str(), obj->GetId(), 3.6 * obj->speed_, obj->odometer_,
+				obj->pos_.GetTrackId(), obj->pos_.GetLaneId(), fabs(obj->pos_.GetOffset()) < SMALL_NUMBER ? 0 : obj->pos_.GetOffset(),
+				obj->pos_.GetS(), obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetH());
+		}
+		else
+		{
+			snprintf(str_buf, sizeof(str_buf), "%.2fs No entity in focus...", scenarioEngine->getSimulationTime());
+		}
+		viewer_->SetInfoText(str_buf);
 	}
-
-	// Update info text
-	static char str_buf[128];
-	if (viewer_->currentCarInFocus_ >= 0 && viewer_->currentCarInFocus_ < viewer_->entities_.size())
-	{
-		Object* obj = scenarioEngine->entities_.object_[viewer_->currentCarInFocus_];
-		snprintf(str_buf, sizeof(str_buf), "%.2fs entity[%d]: %s (%d) %.2fkm/h %.2fm (%d, %d, %.2f, %.2f) / (%.2f, %.2f %.2f)", scenarioEngine->getSimulationTime(),
-			viewer_->currentCarInFocus_, obj->name_.c_str(), obj->GetId(), 3.6 * obj->speed_, obj->odometer_,
-			obj->pos_.GetTrackId(), obj->pos_.GetLaneId(), fabs(obj->pos_.GetOffset()) < SMALL_NUMBER ? 0 : obj->pos_.GetOffset(),
-			obj->pos_.GetS(), obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetH());
-	}
-	else
-	{
-		snprintf(str_buf, sizeof(str_buf), "%.2fs No entity in focus...", scenarioEngine->getSimulationTime());
-	}
-	viewer_->SetInfoText(str_buf);
-
 	mutex.Unlock();
 
-	viewer_->Frame();
+	if (!init)
+	{
+		viewer_->Frame();
+	}
 }
 
 int ScenarioPlayer::SaveImagesToRAM(bool state)
@@ -465,15 +487,15 @@ OffScreenImage* ScenarioPlayer::FetchCapturedImagePtr()
 {
 	static OffScreenImage img;
 
-	if (viewer_ && !viewer_->GetDisableOffScreen())
+	if (viewer_ && SE_Env::Inst().GetOffScreenRendering())
 	{
-		if (viewer_->GetSaveImagesToRAM() == false)
+		viewer_->renderSemaphore.Wait();  // Wait until rendering is done
+
+		if (viewer_->capturedImage_.data == nullptr)
 		{
-			LOG("FetchCapturedImagePtr Error: Activate save images to RAM (SaveImagesToRAM(true)) in order to fetch images\n");
+			LOG("FetchCapturedImagePtr Error: No image data");
 			return nullptr;
 		}
-
-		viewer_->renderSemaphore.Wait();  // Wait until rendering is done
 
 		viewer_->imageMutex.Lock();
 
@@ -520,6 +542,43 @@ void ScenarioPlayer::AddCustomCamera(double x, double y, double z, double h, dou
 	}
 }
 
+void ScenarioPlayer::AddCustomFixedCamera(double x, double y, double z, double h, double p)
+{
+	if (viewer_)
+	{
+		viewer_->AddCustomCamera(x, y, z, h, p, true);
+		viewer_->SetCameraMode(-1);  // activate last camera which is the one just added
+	}
+}
+
+void ScenarioPlayer::AddCustomSemiFixedCamera(double x, double y, double z)
+{
+	if (viewer_)
+	{
+		viewer_->AddCustomCamera(x, y, z, true);
+		viewer_->SetCameraMode(-1);  // activate last camera which is the one just added
+	}
+}
+
+void ScenarioPlayer::AddCustomFixedTopCamera(double x, double y, double z, double rot)
+{
+	if (viewer_)
+	{
+		viewer_->AddCustomFixedTopCamera(x, y, z, rot);
+		viewer_->SetCameraMode(-1);  // activate last camera which is the one just added
+	}
+}
+
+int ScenarioPlayer::AddCustomLightSource(double x, double y, double z, double intensity)
+{
+	if (viewer_)
+	{
+		return viewer_->AddCustomLightSource(x, y, z, intensity);
+	}
+
+	return -1;
+}
+
 void ScenarioPlayer::CloseViewer()
 {
 	if (viewer_ != nullptr)
@@ -534,8 +593,12 @@ int ScenarioPlayer::InitViewer()
 {
 	std::string arg_str;
 
+	// osg::ArgumentParser modifies given args array so we copy it for safe modification
+	std::vector<char*> args = {argv_, std::next(argv_, argc_)};
+	int arg_count = args.size();
+
 	// Create viewer
-	osg::ArgumentParser arguments(&argc_, argv_);
+	osg::ArgumentParser arguments(&arg_count, args.data());
 	viewer_ = new viewer::Viewer(
 		roadmanager::Position::GetOpenDrive(),
 		scenarioEngine->getSceneGraphFilename().c_str(),
@@ -551,9 +614,15 @@ int ScenarioPlayer::InitViewer()
 
 	viewer_->osgViewer_->setKeyEventSetsDone(0);  // Disable default Escape key event handler, take over control
 
-	if (opt.GetOptionArg("info_text") == "off")
+	if ((arg_str = opt.GetOptionArg("info_text")) != "")
 	{
-		viewer_->ClearNodeMaskBits(viewer::NodeMask::NODE_MASK_INFO);
+		int mask = strtoi(arg_str);
+		if (mask < 0 || mask > 3)
+		{
+			LOG_AND_QUIT("Invalid on-screen info mode %d. Valid range is 0-3", mask);
+		}
+		viewer_->SetNodeMaskBits(viewer::NodeMask::NODE_MASK_INFO |
+			viewer::NodeMask::NODE_MASK_INFO_PER_OBJ, mask * viewer::NodeMask::NODE_MASK_INFO);
 	}
 
 	viewer_->RegisterImageCallback(imageCallback.func, imageCallback.data);
@@ -618,7 +687,7 @@ int ScenarioPlayer::InitViewer()
 		while ((arg_str = opt.GetOptionArg("custom_camera", counter)) != "")
 		{
 			size_t pos = 0;
-			double v[5];
+			double v[5] = { 0.0, 0.0, 0.0, 0.0, 0.0 };
 			for (int i = 0; i < 5; i++)
 			{
 				pos = arg_str.find(",");
@@ -631,11 +700,126 @@ int ScenarioPlayer::InitViewer()
 			}
 			if (!arg_str.empty())
 			{
-				LOG_AND_QUIT("Expected custom_camera <x,y,z,h,p>, got too many values. Make sure only five values is specified");
+				LOG_AND_QUIT("Expected custom_camera <x,y,z,h,p>, got too many values. Make sure only 5 values is specified");
+			}
+			AddCustomCamera(v[0], v[1], v[2], v[3], v[4]);
+			LOG("Created custom camera %d (%.2f, %.2f, %.2f, %.2f, %.2f)", counter, v[0], v[1], v[2], v[3], v[4]);
+			counter++;
+		}
+	}
+
+	if (opt.GetOptionSet("custom_fixed_camera") == true)
+	{
+		int counter = 0;
+
+		while ((arg_str = opt.GetOptionArg("custom_fixed_camera", counter)) != "")
+		{
+			size_t pos = 0;
+			double v[5] = { 0.0, 0.0, 0.0, 0.0, 0.0 };
+			int i = 0;
+			for (i = 0; i < 5; i++)
+			{
+				pos = arg_str.find(",");
+
+				if (i < 2 && pos == std::string::npos)
+				{
+					LOG_AND_QUIT("Expected custom_fixed_camera <x,y,z>[,h,p], got only %d values", i + 1);
+				}
+				else if (i == 3 && pos == std::string::npos)
+				{
+					LOG_AND_QUIT("Expected custom_fixed_camera <x,y,z>[,h,p], got %d values", i + 1);
+				}
+				v[i] = strtod(arg_str.substr(0, pos));
+				arg_str.erase(0, pos == std::string::npos ? pos : pos + 1);
+
+				if (i == 2 && pos == std::string::npos)
+				{
+					// Only position specified, stop now
+
+					break;
+				}
+			}
+			if (!arg_str.empty())
+			{
+				LOG_AND_QUIT("Expected custom_fixed_camera <x,y,z>[,h,p], got too many values. Make sure only 3 or 5 values is specified");
 			}
 
-			viewer_->AddCustomCamera(v[0], v[1], v[2], v[3], v[4]);
-			LOG("Created custom camera %d (%.2f, %.2f, %.2f, %.2f, %.2f)", counter, v[0], v[1], v[2], v[3], v[4]);
+			if (i == 2)
+			{
+				AddCustomSemiFixedCamera(v[0], v[1], v[2]);
+				LOG("Created custom fixed camera %d (%.2f, %.2f, %.2f)", counter, v[0], v[1], v[2]);
+			}
+			else
+			{
+				AddCustomFixedCamera(v[0], v[1], v[2], v[3], v[4]);
+				LOG("Created custom fixed camera %d (%.2f, %.2f, %.2f, %.2f, %.2f)", counter, v[0], v[1], v[2], v[3], v[4]);
+			}
+			counter++;
+		}
+	}
+
+	if (opt.GetOptionSet("custom_fixed_top_camera") == true)
+	{
+		int counter = 0;
+
+		while ((arg_str = opt.GetOptionArg("custom_fixed_top_camera", counter)) != "")
+		{
+			size_t pos = 0;
+			double v[4] = { 0.0, 0.0, 0.0, 0.0 };
+			for (int i = 0; i < 4; i++)
+			{
+				pos = arg_str.find(",");
+				if (i < 3 && pos == std::string::npos)
+				{
+					LOG_AND_QUIT("Expected custom_fixed_top_camera <x,y,z,rot>, got only %d values", i + 1);
+				}
+				v[i] = strtod(arg_str.substr(0, pos));
+				arg_str.erase(0, pos == std::string::npos ? pos : pos + 1);
+			}
+			if (!arg_str.empty())
+			{
+				LOG_AND_QUIT("Expected custom_fixed_top_camera <x,y,z,rot>, got too many values. Make sure only 4 values is specified");
+			}
+
+			AddCustomFixedTopCamera(v[0], v[1], v[2], v[3]);
+			LOG("Created custom fixed top camera %d (%.2f, %.2f, %.2f, %.2f)", counter, v[0], v[1], v[2], v[3]);
+			counter++;
+		}
+	}
+
+	if (opt.GetOptionSet("custom_light") == true)
+	{
+		int counter = 0;
+		int lightCounter = 0;
+
+		while ((arg_str = opt.GetOptionArg("custom_light", counter)) != "")
+		{
+			size_t pos = 0;
+			double v[4] = { 0.0, 0.0, 0.0, 0.0 };
+			for (int i = 0; i < 4; i++)
+			{
+				pos = arg_str.find(",");
+				if (i < 3 && pos == std::string::npos)
+				{
+					LOG_AND_QUIT("Expected custom_light <x,y,z,intensity>, got only %d values", i + 1);
+				}
+				v[i] = strtod(arg_str.substr(0, pos));
+				arg_str.erase(0, pos == std::string::npos ? pos : pos + 1);
+			}
+			if (!arg_str.empty())
+			{
+				LOG_AND_QUIT("Expected custom_light <x,y,z,intensity>, got too many values. Make sure only 4 values is specified");
+			}
+
+			if (AddCustomLightSource(v[0], v[1], v[2], v[3]) == 0)
+			{
+				LOG("Created custom light source %d (%.2f, %.2f, %.2f, %.2f)", lightCounter, v[0], v[1], v[2], v[3]);
+				lightCounter++;
+			}
+			else
+			{
+				LOG("Max nr custom lights (%d) reached. Ignoring (%.2f, %.2f, %.2f, %.2f)", lightCounter, v[0], v[1], v[2], v[3]);
+			}
 			counter++;
 		}
 	}
@@ -716,51 +900,21 @@ int ScenarioPlayer::InitViewer()
 		}
 
 		if (viewer_->AddEntityModel(viewer_->CreateEntityModel(obj->model3d_, trail_color,
-			obj->type_ == Object::Type::VEHICLE ? viewer::EntityModel::EntityType::VEHICLE : viewer::EntityModel::EntityType::OTHER,
+			obj->type_ == Object::Type::VEHICLE ? viewer::EntityModel::EntityType::VEHICLE :
+			Object::Type::PEDESTRIAN ? viewer::EntityModel::EntityType::MOVING : viewer::EntityModel::EntityType::ENTITY,
 			road_sensor, obj->name_, &obj->boundingbox_, obj->scaleMode_)) != 0)
 		{
 			CloseViewer();
 			return -1;
 		}
 
-		viewer_->entities_.back()->routewaypoints_->SetWayPoints(obj->pos_.GetRoute());
-
 		// Connect callback for setting transparency
-		viewer::VisibilityCallback* cb = new viewer::VisibilityCallback(viewer_->entities_.back()->txNode_, obj, viewer_->entities_.back());
+		viewer::VisibilityCallback* cb = new viewer::VisibilityCallback(obj, viewer_->entities_.back());
 		viewer_->entities_.back()->txNode_->setUpdateCallback(cb);
 
-		if (viewer_->entities_.back()->GetType() == viewer::EntityModel::EntityType::VEHICLE)
+		if (viewer_->entities_.back()->IsVehicle())
 		{
-			viewer::CarModel* model = (viewer::CarModel*)viewer_->entities_.back();
-
-			// Add a sensor to show when query road info ahead
-			model->steering_sensor_ = viewer_->CreateSensor(color_green, true, true, 0.4, 3);
-			viewer_->SensorSetPivotPos(model->steering_sensor_, obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetZ());
-			viewer_->SensorSetTargetPos(model->steering_sensor_, obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetZ());
-			if (obj->ghost_)
-			{
-				// Show steering sensor when following a ghost
-				model->steering_sensor_->Show();
-			}
-			else
-			{
-				// Otherwise hide it (as default)
-				model->steering_sensor_->Hide();
-			}
-
-			// If following a ghost vehicle, add visual representation of speed and steering sensors
-			if (scenarioEngine->entities_.object_[i]->GetGhost())
-			{
-				if (odr_manager->GetNumOfRoads() > 0)
-				{
-					model->trail_sensor_ = viewer_->CreateSensor(color_red, true, false, 0.4, 3);
-				}
-
-			}
-			else if (scenarioEngine->entities_.object_[i]->IsGhost())
-			{
-				scenarioEngine->entities_.object_[i]->SetVisibilityMask(scenarioEngine->entities_.object_[i]->visibilityMask_ &= ~(Object::Visibility::SENSORS));
-			}
+			InitVehicleModel(obj, (viewer::CarModel*)viewer_->entities_.back());
 		}
 	}
 
@@ -782,8 +936,9 @@ int ScenarioPlayer::InitViewer()
 		}
 	}
 
-	// Trig first viewer frame, it typically takes extra long due to initial loading of gfx content
-	ViewerFrame();
+	// Decorate window border with application name and arguments
+	viewer_->SetWindowTitleFromArgs(opt.GetOriginalArgs());
+	viewer_->RegisterKeyEventCallback(ReportKeyEvent, this);
 
 	viewerState_ = ViewerState::VIEWER_STATE_STARTED;
 
@@ -799,11 +954,15 @@ void viewer_thread(void *args)
 		return;
 	}
 
+	player->viewer_init_semaphore.Release();
+	player->player_init_semaphore.Wait();
+
 	while (!player->viewer_->GetQuitRequest())
 	{
 		player->ViewerFrame();
 	}
 
+	player->viewer_->renderSemaphore.Wait();
 	player->SetQuitRequest(true);
 	player->CloseViewer();
 }
@@ -823,6 +982,42 @@ void ScenarioPlayer::AddObjectSensor(int object_index, double x, double y, doubl
 	}
 #endif
 }
+
+#ifdef _USE_OSG
+void ScenarioPlayer::InitVehicleModel(Object* obj, viewer::CarModel* model)
+{
+	// Add a sensor to show when query road info ahead
+	model->steering_sensor_ = viewer_->CreateSensor(color_green, true, true, 0.4, 3);
+	viewer_->SensorSetPivotPos(model->steering_sensor_, obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetZ());
+	viewer_->SensorSetTargetPos(model->steering_sensor_, obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetZ());
+	if (obj->ghost_)
+	{
+		// Show steering sensor when following a ghost
+		model->steering_sensor_->Show();
+	}
+	else
+	{
+		// Otherwise hide it (as default)
+		model->steering_sensor_->Hide();
+	}
+
+	// If following a ghost vehicle, add visual representation of speed and steering sensors
+	if (obj->GetGhost())
+	{
+		if (odr_manager->GetNumOfRoads() > 0)
+		{
+			model->trail_sensor_ = viewer_->CreateSensor(color_red, true, false, 0.4, 3);
+		}
+
+	}
+	else if (obj->IsGhost())
+	{
+		obj->SetVisibilityMask(obj->visibilityMask_ &= ~(Object::Visibility::SENSORS));
+	}
+
+	viewer_->entities_.back()->routewaypoints_->SetWayPoints(obj->pos_.GetRoute());
+}
+#endif
 
 void ScenarioPlayer::AddOSIDetection(int object_index)
 {
@@ -883,12 +1078,15 @@ int ScenarioPlayer::Init()
 	opt.AddOption("bounding_boxes", "Show entities as bounding boxes (toggle modes on key ',') ");
 	opt.AddOption("capture_screen", "Continuous screen capture. Warning: Many jpeg files will be created");
 	opt.AddOption("camera_mode", "Initial camera mode (\"orbit\" (default), \"fixed\", \"flex\", \"flex-orbit\", \"top\", \"driver\", \"custom\") (swith with key 'k') ", "mode");
-	opt.AddOption("custom_camera", "Additional custom camera position <x,y,z,h,p,r> (multiple occurrences supported)", "position");
 	opt.AddOption("csv_logger", "Log data for each vehicle in ASCII csv format", "csv_filename");
 	opt.AddOption("collision", "Enable global collision detection, potentially reducing performance");
+	opt.AddOption("custom_camera", "Additional custom fixed camera position <x,y,z,h,p> (multiple occurrences supported)", "position");
+	opt.AddOption("custom_fixed_camera", "Additional custom camera position <x,y,z>[,h,p] (multiple occurrences supported)", "position and optional orientation");
+	opt.AddOption("custom_fixed_top_camera", "Additional custom top camera <x,y,z,rot> (multiple occurrences supported)", "position and rotation");
+	opt.AddOption("custom_light", "Additional custom light source <x,y,z,intensity> intensity range 0..1 (multiple occurrences supported)", "position and intensity");
 	opt.AddOption("disable_controllers", "Disable controllers");
 	opt.AddOption("disable_log", "Prevent logfile from being created");
-	opt.AddOption("disable_off_screen", "Disable off-screen rendering, potentially gaining performance");
+	opt.AddOption("disable_off_screen", "Disable esmini off-screen rendering, revert to OSG viewer default handling");
 	opt.AddOption("disable_stdout", "Prevent messages to stdout");
 	opt.AddOption("enforce_generate_model", "Generate road 3D model even if SceneGraphFile is specified");
 	opt.AddOption("fixed_timestep", "Run simulation decoupled from realtime, with specified timesteps", "timestep");
@@ -898,7 +1096,7 @@ int ScenarioPlayer::Init()
 	opt.AddOption("help", "Show this help message");
 	opt.AddOption("hide_route_waypoints", "Disable route waypoint visualization (toggle with key 'R')");
 	opt.AddOption("hide_trajectories", "Hide trajectories from start (toggle with key 'n')");
-	opt.AddOption("info_text", "Show info text HUD (\"on\" (default), \"off\")", "mode");
+	opt.AddOption("info_text", "Show on-screen info text (toggle key 'i') mode 0=None 1=current (default) 2=per_object 3=both", "mode");
 	opt.AddOption("logfile_path", "logfile path/filename, e.g. \"../esmini.log\" (default: log.txt)", "path");
 	opt.AddOption("osc_str", "OpenSCENARIO XML string", "string");
 #ifdef _USE_OSI
@@ -920,7 +1118,9 @@ int ScenarioPlayer::Init()
 	opt.AddOption("version", "Show version and quit");
 
 	exe_path_ = argv_[0];
-	if (opt.ParseArgs(&argc_, argv_) != 0)
+	SE_Env::Inst().AddPath(DirNameOf(exe_path_));  // Add location of exe file to search paths
+
+	if (opt.ParseArgs(argc_, argv_) != 0)
 	{
 		PrintUsage();
 		return -2;
@@ -951,15 +1151,31 @@ int ScenarioPlayer::Init()
 	else if (opt.IsOptionArgumentSet("logfile_path"))
 	{
 		arg_str = opt.GetOptionArg("logfile_path");
-		SE_Env::Inst().SetLogFilePath(arg_str);
+
+		std::string filename;
+
+		if (!arg_str.empty())
+		{
+			if (IsDirectoryName(arg_str))
+			{
+				filename = arg_str + LOG_FILENAME;
+			}
+			else
+			{
+				filename = arg_str;
+			}
+		}
+
 		if (arg_str.empty())
 		{
 			printf("Custom logfile path empty, disable logfile\n");
 		}
 		else
 		{
-			printf("Custom logfile path: %s\n", arg_str.c_str());
+			printf("Custom logfile path: %s\n", filename.c_str());
 		}
+
+		SE_Env::Inst().SetLogFilePath(filename);
 	}
 	Logger::Inst().OpenLogfile();
 	Logger::Inst().LogVersion();
@@ -984,7 +1200,7 @@ int ScenarioPlayer::Init()
 
 	for (int index = 0; (arg_str = opt.GetOptionArg("fixed_timestep", index)) != ""; index++)
 	{
-		SetFixedTimestep(atof(arg_str.c_str()));
+		SetFixedTimestep(std::stod(arg_str));
 		LOG("Run simulation decoupled from realtime, with fixed timestep: %.2f", GetFixedTimestep());
 	}
 
@@ -1017,14 +1233,14 @@ int ScenarioPlayer::Init()
 		LOG("Generated seed %u", SE_Env::Inst().GetSeed());
 	}
 
-	if (opt.GetOptionSet("disable_off_screen"))
-	{
-		SE_Env::Inst().SetDisableOffScreen(true);
-	}
-
 	if (opt.GetOptionSet("collision"))
 	{
 		SE_Env::Inst().SetCollisionDetection(true);
+	}
+
+	if (opt.GetOptionSet("disable_off_screen"))
+	{
+		SE_Env::Inst().SetOffScreenRendering(false);
 	}
 
 	// Create scenario engine
@@ -1095,20 +1311,51 @@ int ScenarioPlayer::Init()
 	// Initialize CSV logger for recording vehicle data
 	if (opt.GetOptionSet("csv_logger"))
 	{
-		CSV_Log = &CSV_Logger::InstVehicleLog(scenarioEngine->getScenarioFilename(),
-			(int)scenarioEngine->entities_.object_.size(), opt.GetOptionArg("csv_logger"));
-		LOG("Log all vehicle data in csv file");
+		CSV_Log = &CSV_Logger::Inst();
+		if (CSV_Log)
+		{
+			CSV_Log->Open(scenarioEngine->getScenarioFilename(),
+				(int)scenarioEngine->entities_.object_.size(), opt.GetOptionArg("csv_logger"));
+			LOG("Log all vehicle data in csv file");
+		}
+		else
+		{
+			LOG("Failed to open CSV log %s");
+		}
 	}
 
 	// Create a data file for later replay?
 	if ((arg_str = opt.GetOptionArg("record")) != "")
 	{
-		LOG("Recording data to file %s", arg_str.c_str());
-		scenarioGateway->RecordToFile(arg_str, scenarioEngine->getOdrFilename(), scenarioEngine->getSceneGraphFilename());
+		std::string filename;
+
+		if (!arg_str.empty())
+		{
+			if (IsDirectoryName(arg_str))
+			{
+				filename = arg_str + FileNameWithoutExtOf(scenarioEngine->getScenarioFilename()) + ".dat";
+			}
+			else
+			{
+				filename = arg_str;
+			}
+		}
+		else
+		{
+			filename = SE_Env::Inst().GetDatFilePath();
+		}
+
+		LOG("Recording data to file %s", filename.c_str());
+		scenarioGateway->RecordToFile(filename, scenarioEngine->getOdrFilename(), scenarioEngine->getSceneGraphFilename());
 	}
 
-	// Step scenario engine - zero time - just to reach and report init state of all vehicles
-	ScenarioFrame(0.0, true);
+	if (launch_server)
+	{
+		// Launch UDP server to receive external Ego state
+		StartServer(scenarioEngine);
+	}
+
+	player_init_semaphore.Set();
 
 	if (opt.IsInOriginalArgs("--window") || opt.IsInOriginalArgs("--borderless-window"))
 	{
@@ -1116,14 +1363,12 @@ int ScenarioPlayer::Init()
 
 		if (threads)
 		{
+			viewer_init_semaphore.Set();
+
 			// Launch Viewer in a separate thread
 			thread.Start(viewer_thread, (void*)this);
 
-			// Wait for viewer to initialize
-			for (int i = 0; i < 60 && viewerState_ == VIEWER_STATE_NOT_STARTED; i++)
-			{
-				SE_sleep(100);
-			}
+			viewer_init_semaphore.Wait();
 
 			if (viewerState_ == ViewerState::VIEWER_STATE_NOT_STARTED)
 			{
@@ -1149,10 +1394,6 @@ int ScenarioPlayer::Init()
 			}
 		}
 
-		// Decorate window border with application name and arguments
-		viewer_->SetWindowTitleFromArgs(opt.GetOriginalArgs());
-
-		viewer_->RegisterKeyEventCallback(ReportKeyEvent, this);
 #else
 		LOG("window requested, but esmini compiled without OSG capabilities");
 #endif
@@ -1163,17 +1404,15 @@ int ScenarioPlayer::Init()
 		LOG_AND_QUIT("Capture screen requires a window to be specified!");
 	}
 
-	if (argc_ > 1)
+	if (opt.HasUnknownArgs())
 	{
-		opt.PrintArgs(argc_, argv_, "Unrecognized arguments:");
+		opt.PrintUnknownArgs("Unrecognized arguments:");
 		PrintUsage();
 	}
 
-	if (launch_server)
-	{
-		// Launch UDP server to receive external Ego state
-		StartServer(scenarioEngine);
-	}
+	Frame(0.0);
+
+	player_init_semaphore.Release();
 
 	return 0;
 }

@@ -76,8 +76,6 @@ class DATFile():
                 filename, self.version, VERSION)
             )
             exit(-1)
-        else:
-            print(self.get_header_line())
 
         # Read and print all rows of data
         while (True):
@@ -112,7 +110,31 @@ class DATFile():
                 data.wheel_rot
             )
 
-    def print(self):
+    def get_labels_line_extended(self):
+        return 'time, id, name, x, y, z, h, p, r, roadId, laneId, offset, t, s, speed, wheel_angle, wheel_rot'
+
+    def get_data_line_extended(self, data):
+        return '{:.3f}, {}, {}, {:.3f}, {:.3f}, {:.3f}, {:.3f}, {:.3f}, {:.3f}, {}, {}, {:.3f}, {:.3f}, {:.3f}, {:.3f}, {:.3f}, {:.3f}'.format(
+                data.time,
+                data.id,
+                data.name.decode('utf-8'),
+                data.x,
+                data.y,
+                data.z,
+                data.h,
+                data.p,
+                data.r,
+                data.roadId,
+                data.laneId,
+                data.offset,
+                data.t,
+                data.s,
+                data.speed,
+                data.wheel_angle,
+                data.wheel_rot
+            )
+
+    def print_csv(self):
 
         # Print header
         print(self.get_header_line())
@@ -124,7 +146,7 @@ class DATFile():
         for data in self.data:
             print(self.get_data_line(data))
 
-    def save_csv(self):
+    def save_csv(self, extended = False):
         csvfile = os.path.splitext(self.filename)[0] + '.csv'
         try:
             fcsv = open(csvfile, 'w')
@@ -136,14 +158,22 @@ class DATFile():
         fcsv.write(self.get_header_line() + '\n')
         
         # Save column headings / value types
-        fcsv.write(self.get_labels_line() + '\n')
+        if extended:
+            fcsv.write(self.get_labels_line_extended() + '\n')
+        else:
+            fcsv.write(self.get_labels_line() + '\n')
 
         # Read and save all rows of data
         for data in self.data:
-            fcsv.write(self.get_data_line(data) + '\n')
+            if extended:
+                fcsv.write(self.get_data_line_extended(data) + '\n')
+            else:
+                fcsv.write(self.get_data_line(data) + '\n')
 
         fcsv.close()
-        print('Created ' + csvfile)
+
+    def close(self):
+        self.file.close()
 
 if __name__ == "__main__":
     # Create the parser
@@ -156,4 +186,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     dat = DATFile(args.filename)
-    dat.print()
+    dat.print_csv()
+    dat.close()

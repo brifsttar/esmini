@@ -3,10 +3,12 @@
 #include <gmock/gmock.h>
 #include <vector>
 #include <stdexcept>
+#include <array>
 
 #include "ScenarioEngine.hpp"
 #include "ScenarioReader.hpp"
 #include "ControllerUDPDriver.hpp"
+#include "ControllerALKS_R157SM.hpp"
 #include "pugixml.hpp"
 #include "simple_expr.h"
 
@@ -187,8 +189,8 @@ TEST(DistanceTest, CalcDistancePointAcrossIntersection)
     double longDist = 0.0;
 
     ASSERT_EQ(obj0.FreeSpaceDistancePointRoadLane(pos1.GetX(), pos1.GetY(), &latDist, &longDist, CoordinateSystem::CS_ROAD), 0);
-    EXPECT_NEAR(longDist, -38.587016, 1e-5);
-    EXPECT_NEAR(latDist, 0.221272, 1e-5);
+    EXPECT_NEAR(longDist, -38.58642, 1e-5);
+    EXPECT_NEAR(latDist, 0.22127, 1e-5);
 
 }
 
@@ -304,6 +306,8 @@ TEST(TrajectoryTest, EnsureContinuation)
     ASSERT_NEAR(se->entities_.object_[0]->pos_.GetX(), 26.13539, 1e-5);
     ASSERT_NEAR(se->entities_.object_[0]->pos_.GetY(), 2.917931, 1e-5);
     ASSERT_NEAR(se->entities_.object_[0]->pos_.GetH(), 0.0, 1e-5);
+
+    delete se;
 }
 
 TEST(ExpressionTest, EnsureResult)
@@ -314,6 +318,12 @@ TEST(ExpressionTest, EnsureResult)
     ASSERT_DOUBLE_EQ(eval_expr("15/3.5"), 15.0f / 3.5);
     ASSERT_DOUBLE_EQ(eval_expr("15 % 6"), 3.0);
     ASSERT_DOUBLE_EQ(eval_expr("-15 % 6"), -3.0);
+    ASSERT_DOUBLE_EQ(eval_expr("180 % 360"), 180.0);
+    ASSERT_DOUBLE_EQ(eval_expr("-15 % 360"), -15.0);
+    ASSERT_DOUBLE_EQ(eval_expr("345 % 360"), -15.0);
+    ASSERT_DOUBLE_EQ(eval_expr("-345 % 360"), 15.0);
+    ASSERT_DOUBLE_EQ(eval_expr("705 % 360"), -15.0);
+    ASSERT_DOUBLE_EQ(eval_expr("-705 % 360"), 15.0);
     ASSERT_DOUBLE_EQ(eval_expr("1 == 1"), 1.0);
     ASSERT_DOUBLE_EQ(eval_expr("1 == 2"), 0.0);
     ASSERT_DOUBLE_EQ(eval_expr("(4 == 4) && (10 == 10)"), 1.0);
@@ -331,6 +341,32 @@ TEST(ExpressionTest, EnsureResult)
     ASSERT_DOUBLE_EQ(eval_expr("2**3"), 8.0);
     ASSERT_DOUBLE_EQ(eval_expr("13.88888888888889 - 1.0"), 12.88888888888889);
     ASSERT_DOUBLE_EQ(eval_expr("13.88888888888889 - 0.0"), 13.88888888888889);
+
+    // round returns the integral value that is nearest to x, with halfway cases rounded away from zero.
+    ASSERT_DOUBLE_EQ(eval_expr("round(-2.5)"), -2.0);
+    ASSERT_DOUBLE_EQ(eval_expr("round(-3.5)"), -4.0);
+    ASSERT_DOUBLE_EQ(eval_expr("round(2.5)"), 2.0);
+    ASSERT_DOUBLE_EQ(eval_expr("round(3.5)"), 4.0);
+
+    // additional expressions not specified in OSC <=1.2
+    // may not work in other OpenSCENARIO compliant tools
+    EXPECT_DOUBLE_EQ(eval_expr("min(7,7.1)"), 7.0);
+    EXPECT_DOUBLE_EQ(eval_expr("max(7,7.1)"), 7.1);
+    EXPECT_DOUBLE_EQ(eval_expr("min(-7,-7.1)"), -7.1);
+    EXPECT_DOUBLE_EQ(eval_expr("max(-7,-7.1)"), -7.0);
+    EXPECT_DOUBLE_EQ(eval_expr("sign(7)"), 1);
+    EXPECT_DOUBLE_EQ(eval_expr("sign(-7)"), -1);
+    EXPECT_NEAR(eval_expr("sin(1.1)"), 0.89120, 1e-5);
+    EXPECT_NEAR(eval_expr("sin(7.0)"), 0.65698, 1e-5);
+    EXPECT_NEAR(eval_expr("cos(-2.0)"), -0.41614, 1e-5);
+    EXPECT_NEAR(eval_expr("atan(20.0)"), 1.52083, 1e-5);
+    EXPECT_NEAR(eval_expr("atan(-20.0)"), -1.52083, 1e-5);
+    EXPECT_NEAR(eval_expr("asin(0.5)"), 0.523598, 1e-5);
+    EXPECT_NEAR(eval_expr("acos(-0.5)"), 2.09440, 1e-5);
+    EXPECT_NEAR(eval_expr("abs(-0.5)"), 0.5, 1e-5);
+    EXPECT_NEAR(eval_expr("abs(0.5)"), 0.5, 1e-5);
+    EXPECT_NEAR(eval_expr("abs(2.9)"), 2.9, 1e-5);
+    EXPECT_NEAR(eval_expr("abs(-2.9)"), 2.9, 1e-5);
 }
 
 TEST(OptionsTest, TestOptionHandling)
@@ -348,7 +384,7 @@ TEST(OptionsTest, TestOptionHandling)
     // opt.PrintUsage();
 
     // set arguments
-    const char* args[] = {
+    std::array<const char*, 12> args = {
         "my_app",
         "--osc_file",
         "my_scenario.xosc",
@@ -362,17 +398,9 @@ TEST(OptionsTest, TestOptionHandling)
         "--option3",
         "--option4"
     };
-    int argc = sizeof(args) / sizeof(char*);
-    char** argv;
-    argv = (char**)malloc(argc * sizeof(char*));
-    for (int i = 0; i < argc; i++)
-    {
-        size_t len = strlen(args[i]);
-        argv[i] = (char*)malloc((len + 1) * sizeof(char*));
-        strncpy(argv[i], args[i], len + 1);
-    }
+    int argc = (int)args.size();
 
-    ASSERT_EQ(opt.ParseArgs(&argc, argv), -1);
+    ASSERT_EQ(opt.ParseArgs(argc, args.data()), -1);
 
     ASSERT_EQ(opt.GetOptionSet("no_arg"), false);
     ASSERT_EQ(opt.GetOptionSet("osc_file"), true);
@@ -389,15 +417,8 @@ TEST(OptionsTest, TestOptionHandling)
     ASSERT_EQ(opt.GetOptionArg("option3"), "55");
 
     // test without last argument, should return OK
-    argc = sizeof(args-1) / sizeof(char*);
-    ASSERT_EQ(opt.ParseArgs(&argc, argv), 0);
-
-    // Clean up
-    for (int i = 0; i < argc; i++)
-    {
-        delete argv[i];
-    }
-    delete argv;
+    int argc_minus_one = (int)(args.size() - 1);
+    ASSERT_EQ(opt.ParseArgs(argc_minus_one, args.data()), 0);
 }
 
 TEST(ParameterTest, ResolveParameterTest)
@@ -500,7 +521,7 @@ TEST(JunctionTest, JunctionSelectorTest)
 TEST(ConditionTest, CollisionTest)
 {
     double dt = 0.01;
-    double timestamps[] = { 5.25, 5.26, 6.26, 6.27, 7.10, 8.79 };
+    double timestamps[] = { 5.24, 5.25, 6.25, 6.26, 7.10, 8.78 };
 
     ASSERT_EQ(SE_Env::Inst().GetCollisionDetection(), false);  // Should be disabled by default
 
@@ -518,68 +539,68 @@ TEST(ConditionTest, CollisionTest)
         se->step(dt);
         se->prepareGroundTruth(dt);
     }
-    ASSERT_EQ(se->entities_.object_[0]->collisions_.size(), 0);
-    ASSERT_EQ(se->entities_.object_[1]->collisions_.size(), 0);
-    ASSERT_EQ(se->entities_.object_[2]->collisions_.size(), 0);
+    EXPECT_EQ(se->entities_.object_[0]->collisions_.size(), 0);
+    EXPECT_EQ(se->entities_.object_[1]->collisions_.size(), 0);
+    EXPECT_EQ(se->entities_.object_[2]->collisions_.size(), 0);
 
     while (se->getSimulationTime() < timestamps[1] - SMALL_NUMBER && se->GetQuitFlag() != true)
     {
         se->step(dt);
         se->prepareGroundTruth(dt);
     }
-    ASSERT_EQ(se->entities_.object_[0]->collisions_.size(), 1);
-    ASSERT_EQ(se->entities_.object_[0]->collisions_[0], se->entities_.object_[2]);
-    ASSERT_EQ(se->entities_.object_[1]->collisions_.size(), 0);
-    ASSERT_EQ(se->entities_.object_[2]->collisions_.size(), 1);
-    ASSERT_EQ(se->entities_.object_[2]->collisions_[0], se->entities_.object_[0]);
+    EXPECT_EQ(se->entities_.object_[0]->collisions_.size(), 1);
+    EXPECT_EQ(se->entities_.object_[0]->collisions_[0], se->entities_.object_[2]);
+    EXPECT_EQ(se->entities_.object_[1]->collisions_.size(), 0);
+    EXPECT_EQ(se->entities_.object_[2]->collisions_.size(), 1);
+    EXPECT_EQ(se->entities_.object_[2]->collisions_[0], se->entities_.object_[0]);
 
     while (se->getSimulationTime() < timestamps[2] - SMALL_NUMBER && se->GetQuitFlag() != true)
     {
         se->step(dt);
         se->prepareGroundTruth(dt);
     }
-    ASSERT_EQ(se->entities_.object_[0]->collisions_.size(), 1);
-    ASSERT_EQ(se->entities_.object_[0]->collisions_[0], se->entities_.object_[2]);
-    ASSERT_EQ(se->entities_.object_[1]->collisions_.size(), 0);
-    ASSERT_EQ(se->entities_.object_[2]->collisions_.size(), 1);
-    ASSERT_EQ(se->entities_.object_[2]->collisions_[0], se->entities_.object_[0]);
+    EXPECT_EQ(se->entities_.object_[0]->collisions_.size(), 1);
+    EXPECT_EQ(se->entities_.object_[0]->collisions_[0], se->entities_.object_[2]);
+    EXPECT_EQ(se->entities_.object_[1]->collisions_.size(), 0);
+    EXPECT_EQ(se->entities_.object_[2]->collisions_.size(), 1);
+    EXPECT_EQ(se->entities_.object_[2]->collisions_[0], se->entities_.object_[0]);
 
     while (se->getSimulationTime() < timestamps[3] - SMALL_NUMBER && se->GetQuitFlag() != true)
     {
         se->step(dt);
         se->prepareGroundTruth(dt);
     }
-    ASSERT_EQ(se->entities_.object_[0]->collisions_.size(), 2);
-    ASSERT_EQ(se->entities_.object_[0]->collisions_[0], se->entities_.object_[2]);
-    ASSERT_EQ(se->entities_.object_[0]->collisions_[1], se->entities_.object_[1]);
-    ASSERT_EQ(se->entities_.object_[1]->collisions_.size(), 1);
-    ASSERT_EQ(se->entities_.object_[1]->collisions_[0], se->entities_.object_[0]);
-    ASSERT_EQ(se->entities_.object_[2]->collisions_.size(), 1);
-    ASSERT_EQ(se->entities_.object_[2]->collisions_[0], se->entities_.object_[0]);
+    EXPECT_EQ(se->entities_.object_[0]->collisions_.size(), 2);
+    EXPECT_EQ(se->entities_.object_[0]->collisions_[0], se->entities_.object_[2]);
+    EXPECT_EQ(se->entities_.object_[0]->collisions_[1], se->entities_.object_[1]);
+    EXPECT_EQ(se->entities_.object_[1]->collisions_.size(), 1);
+    EXPECT_EQ(se->entities_.object_[1]->collisions_[0], se->entities_.object_[0]);
+    EXPECT_EQ(se->entities_.object_[2]->collisions_.size(), 1);
+    EXPECT_EQ(se->entities_.object_[2]->collisions_[0], se->entities_.object_[0]);
 
     while (se->getSimulationTime() < timestamps[4] - SMALL_NUMBER && se->GetQuitFlag() != true)
     {
         se->step(dt);
         se->prepareGroundTruth(dt);
     }
-    ASSERT_EQ(se->entities_.object_[0]->Collision(se->entities_.object_[1]), true);
-    ASSERT_EQ(se->entities_.object_[0]->Collision(se->entities_.object_[2]), false);
-    ASSERT_EQ(se->entities_.object_[0]->collisions_.size(), 1);
-    ASSERT_EQ(se->entities_.object_[0]->collisions_[0], se->entities_.object_[1]);
-    ASSERT_EQ(se->entities_.object_[1]->collisions_.size(), 1);
-    ASSERT_EQ(se->entities_.object_[1]->collisions_[0], se->entities_.object_[0]);
-    ASSERT_EQ(se->entities_.object_[2]->collisions_.size(), 0);
+    EXPECT_EQ(se->entities_.object_[0]->Collision(se->entities_.object_[1]), true);
+    EXPECT_EQ(se->entities_.object_[0]->Collision(se->entities_.object_[2]), false);
+    EXPECT_EQ(se->entities_.object_[0]->collisions_.size(), 1);
+    EXPECT_EQ(se->entities_.object_[0]->collisions_[0], se->entities_.object_[1]);
+    EXPECT_EQ(se->entities_.object_[1]->collisions_.size(), 1);
+    EXPECT_EQ(se->entities_.object_[1]->collisions_[0], se->entities_.object_[0]);
+    EXPECT_EQ(se->entities_.object_[2]->collisions_.size(), 0);
 
     while (se->getSimulationTime() < timestamps[5] - SMALL_NUMBER && se->GetQuitFlag() != true)
     {
         se->step(dt);
         se->prepareGroundTruth(dt);
     }
-    ASSERT_EQ(se->entities_.object_[0]->Collision(se->entities_.object_[1]), false);
-    ASSERT_EQ(se->entities_.object_[0]->Collision(se->entities_.object_[2]), false);
-    ASSERT_EQ(se->entities_.object_[0]->collisions_.size(), 0);
-    ASSERT_EQ(se->entities_.object_[1]->collisions_.size(), 0);
-    ASSERT_EQ(se->entities_.object_[2]->collisions_.size(), 0);
+    EXPECT_EQ(se->entities_.object_[0]->Collision(se->entities_.object_[1]), false);
+    EXPECT_EQ(se->entities_.object_[0]->Collision(se->entities_.object_[2]), false);
+    EXPECT_EQ(se->entities_.object_[0]->collisions_.size(), 0);
+    EXPECT_EQ(se->entities_.object_[1]->collisions_.size(), 0);
+    EXPECT_EQ(se->entities_.object_[2]->collisions_.size(), 0);
 
     delete se;
 }
@@ -609,7 +630,7 @@ TEST(ControllerTest, UDPDriverModelTestAsynchronous)
         property.value_ = std::to_string(61900);
         args.properties->property_.push_back(property);
         property.name_ = "inputMode";
-        property.value_ = "vehicleStateXYZHPR";
+        property.value_ = "vehicleStateXYH";
         args.properties->property_.push_back(property);
         ControllerUDPDriver* controller = (ControllerUDPDriver*)InstantiateControllerUDPDriver(&args);
 
@@ -634,9 +655,12 @@ TEST(ControllerTest, UDPDriverModelTestAsynchronous)
     msg.header.objectId = 0;
     msg.header.inputMode = static_cast<int>(ControllerUDPDriver::InputMode::VEHICLE_STATE_XYH);
 
-    msg.message.stateXYZHPR.h = 0.3;
-    msg.message.stateXYZHPR.x = 20.0;
-    msg.message.stateXYZHPR.y = 30.0;
+    msg.message.stateXYH.x = 20.0;
+    msg.message.stateXYH.y = 30.0;
+    msg.message.stateXYH.h = 0.3;
+    msg.message.stateXYH.speed = 30.0;
+    msg.message.stateXYH.wheelAngle = 0.1;
+    msg.message.stateXYH.deadReckon = 0;
 
     udpClient->Send((char*)&msg, sizeof(msg));
 
@@ -650,6 +674,22 @@ TEST(ControllerTest, UDPDriverModelTestAsynchronous)
     se->step(dt);
 
     EXPECT_DOUBLE_EQ(se->entities_.object_[0]->pos_.GetY(), 40.0);
+
+    // another step, make sure no dead-reckoning happen
+    se->step(dt);
+    EXPECT_DOUBLE_EQ(se->entities_.object_[0]->pos_.GetX(), 20.0);
+    EXPECT_DOUBLE_EQ(se->entities_.object_[0]->pos_.GetY(), 40.0);
+
+    // now, do not update position but enable dead reckoning
+    msg.message.stateXYH.deadReckon = 1;
+    udpClient->Send((char*)&msg, sizeof(msg));
+    se->step(dt);
+    se->step(dt);
+    EXPECT_DOUBLE_EQ(se->entities_.object_[0]->pos_.GetX(), 20.0);
+    se->step(dt);
+    // Now, the dead reckoning should have kicked in
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 20.287, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), 40.089, 1E-3);
 
     delete se;
     delete udpClient;
@@ -714,6 +754,7 @@ TEST(ControllerTest, UDPDriverModelTestSynchronous)
     msg.message.stateXYZHPR.h = 0.3;
     msg.message.stateXYZHPR.x = 20.0;
     msg.message.stateXYZHPR.y = 30.0;
+    msg.message.stateXYZHPR.deadReckon = 0;
 
     udpClient->Send((char*)&msg, sizeof(msg));
 
@@ -752,6 +793,7 @@ TEST(ControllerTest, UDPDriverModelTestSynchronous)
     msg.message.stateXYZHPR.h = 0.3;
     msg.message.stateXYZHPR.x = 90.0;
     msg.message.stateXYZHPR.y = -10.0;
+    msg.message.stateXYZHPR.deadReckon = 0;
 
     udpClient2->Send((char*)&msg, sizeof(msg));
 
@@ -768,6 +810,7 @@ TEST(ControllerTest, UDPDriverModelTestSynchronous)
 
     delete se;
     delete udpClient;
+    delete udpClient2;
 }
 
 TEST(RoadOrientationTest, TestElevationPitchRoll)
@@ -804,6 +847,8 @@ TEST(RoadOrientationTest, TestElevationPitchRoll)
     EXPECT_NEAR(se->entities_.object_[2]->pos_.GetZ(), 13.24676, 1e-5);
     EXPECT_NEAR(se->entities_.object_[2]->pos_.GetP(), 0.27808, 1e-5);
     EXPECT_NEAR(se->entities_.object_[2]->pos_.GetR(), 0, 1e-5);
+
+    delete se;
 }
 
 TEST(ActionDynamicsTest, TestDynamicsTimeDimension)
@@ -1091,8 +1136,433 @@ TEST(OrientationTest, TestRelativeRoadHeading)
     ASSERT_NEAR(se->entities_.object_[3]->pos_.GetX(), 1.539, 1e-3);
     ASSERT_NEAR(se->entities_.object_[3]->pos_.GetY(), -54.999, 1e-3);
     ASSERT_NEAR(se->entities_.object_[3]->pos_.GetH(), 4.713, 1e-3);
+
+    delete se;
 }
 
+TEST(SpeedProfileTest, TestSpeedProfileFirstEntryOffset)
+{
+    LongSpeedProfileAction sp_action;
+    DynamicConstraints dynamics; // initalized with default values
+    LongSpeedProfileAction::Entry entry;
+
+    Object obj(Object::Type::VEHICLE);
+    obj.SetSpeed(10.0);
+    double sim_time = 0.0, dt = 0.0;
+
+    sp_action.following_mode_ = FollowingMode::POSITION;
+    sp_action.dynamics_ = dynamics;
+    sp_action.object_ = &obj;
+
+    ASSERT_EQ(sp_action.entity_ref_, nullptr);
+    ASSERT_EQ(sp_action.segment_.size(), 0);
+
+    // Add entries
+    entry.speed_ = 4.0;
+    entry.time_ = 2.0;
+    sp_action.AddEntry(entry);
+
+    sp_action.Start(0.0, 0.1);
+
+    // Evaluate at a time before first entry time, speed should interpolate towards first entry
+    sp_action.Step(1.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 7.30, 1E-5);
+    sim_time += dt;
+}
+
+TEST(SpeedProfileTest, TestSpeedProfileLinear)
+{
+    LongSpeedProfileAction sp_action;
+    DynamicConstraints dynamics; // initalized with default values
+    LongSpeedProfileAction::Entry entry;
+
+    Object obj(Object::Type::VEHICLE);
+    obj.SetSpeed(10.0);
+    double sim_time = 5.0;
+
+    sp_action.following_mode_ = FollowingMode::POSITION;
+    sp_action.dynamics_ = dynamics;
+    sp_action.object_ = &obj;
+
+    ASSERT_EQ(sp_action.entity_ref_, nullptr);
+    ASSERT_EQ(sp_action.entry_.size(), 0);
+
+    // One entry at time = 10
+    sp_action.AddEntry(LongSpeedProfileAction::Entry(10, 0.0));
+    sp_action.Start(sim_time);
+    EXPECT_NEAR(sp_action.GetSpeed(), 10.0, 1E-5);
+    sp_action.Step(sim_time);
+    EXPECT_NEAR(sp_action.GetSpeed(), 10.0, 1E-5);
+    sp_action.Step(8.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 7.0, 1E-5);
+    sp_action.Step(14.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 1.0, 1E-5);
+    sp_action.Step(17.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 0.0, 1E-5);
+
+    // Add another entry
+    sp_action.AddEntry(LongSpeedProfileAction::Entry(5, 30.0));
+    sp_action.Start(5.0);
+    sp_action.Step(17.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 12.0, 1E-5);
+    sp_action.Step(20.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 30.0, 1E-5);
+    sp_action.Step(25.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 30.0, 1E-5);
+
+    // Duplicate entry time
+    sp_action.object_->SetSpeed(10);
+    sp_action.AddEntry(LongSpeedProfileAction::Entry(0, 40.0));  // 15, 40
+    sp_action.Start(0.0);
+    sp_action.Step(14.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 24.0, 1E-5);
+    sp_action.Step(15.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 40.0, 1E-5);
+    sp_action.Step(16.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 40.0, 1E-5);
+}
+
+TEST(SpeedProfileTest, TestSpeedProfileConstraints)
+{
+    LongSpeedProfileAction sp_action;
+    LongSpeedProfileAction::Entry entry;
+    DynamicConstraints dynamics;
+
+    dynamics.max_acceleration_ = 4.0;
+    dynamics.max_acceleration_rate_ = 1.0;
+    dynamics.max_deceleration_ =5.0;
+    dynamics.max_deceleration_rate_ = 2.0;
+    dynamics.max_speed_ = 30.0;
+
+    Object obj(Object::Type::VEHICLE);
+    obj.SetSpeed(10.0);
+
+    sp_action.following_mode_ = FollowingMode::POSITION;
+    sp_action.dynamics_ = dynamics;
+    sp_action.object_ = &obj;
+
+    ASSERT_EQ(sp_action.entity_ref_, nullptr);
+    ASSERT_EQ(sp_action.entry_.size(), 0);
+
+    // Add some entries
+    sp_action.AddEntry(LongSpeedProfileAction::Entry(0.0, 0.0));
+    sp_action.AddEntry(LongSpeedProfileAction::Entry(10.0, 10.0));
+    sp_action.AddEntry(LongSpeedProfileAction::Entry(10.0, 5.0));
+    sp_action.Start(0.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 10.0, 1E-5);
+    sp_action.Step(0.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 0.0, 1E-5);
+    sp_action.Step(1.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 1.0, 1E-5);
+    sp_action.Step(11.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 9.5, 1E-5);
+
+    obj.SetSpeed(10.0);
+    sp_action.following_mode_ = FollowingMode::FOLLOW;
+    sp_action.Start(0.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 10.0, 1E-5);
+    sp_action.Step(0.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 10.0, 1E-5);
+    sp_action.Step(9.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 10.0, 1E-5);
+    sp_action.Step(11.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 9.5, 1E-5);
+}
+
+TEST(SpeedProfileTest, TestSpeedProfileSingleEntry)
+{
+    LongSpeedProfileAction sp_action;
+    LongSpeedProfileAction::Entry entry;
+
+    sp_action.dynamics_.max_acceleration_ = 4.0;
+    sp_action.dynamics_.max_acceleration_rate_ = 1.0;
+    sp_action.dynamics_.max_deceleration_ = 5.0;
+    sp_action.dynamics_.max_deceleration_rate_ = 2.0;
+    sp_action.dynamics_.max_speed_ = 30.0;
+
+    Object obj(Object::Type::VEHICLE);
+    obj.SetSpeed(1.0);
+
+    sp_action.following_mode_ = FollowingMode::FOLLOW;
+    sp_action.object_ = &obj;
+
+    ASSERT_EQ(sp_action.entity_ref_, nullptr);
+    ASSERT_EQ(sp_action.entry_.size(), 0);
+
+    // Add some entries
+    sp_action.AddEntry(LongSpeedProfileAction::Entry(10.0, 20.0));
+    sp_action.Start(0.0);
+    sp_action.Step(0.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 1.0, 1E-5);
+    sp_action.Step(9.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 19.0, 1E-5);
+    sp_action.Step(12.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 20.0, 1E-5);
+
+    sp_action.dynamics_.max_acceleration_ = 1.0;
+    obj.SetSpeed(1.0);
+    sp_action.Start(0.0);
+    sp_action.Step(0.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 1.0, 1E-5);
+    sp_action.Step(9.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 9.5, 1E-5);
+    sp_action.Step(17.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 17.5, 1E-5);
+    sp_action.Step(20.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 20.0, 1E-5);
+
+    sp_action.entry_[0].speed_ = 0.0;
+
+    obj.SetSpeed(19.0);
+    sp_action.Start(0.0);
+    sp_action.Step(0.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 19.0, 1E-5);
+    sp_action.Step(4.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 11.13664, 1E-5);
+    sp_action.Step(8.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 2.0, 1E-5);
+    sp_action.Step(10.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 0.0, 1E-5);
+}
+
+TEST(SpeedProfileTest, TestSpeedProfileNoTime)
+{
+    LongSpeedProfileAction sp_action;
+    LongSpeedProfileAction::Entry entry;
+
+    Object obj(Object::Type::VEHICLE);
+
+    sp_action.object_ = &obj;
+    ASSERT_EQ(sp_action.entity_ref_, nullptr);
+    ASSERT_EQ(sp_action.entry_.size(), 0);
+    sp_action.dynamics_.max_acceleration_ = 5.0;
+    sp_action.dynamics_.max_deceleration_ = 10.0;
+    sp_action.dynamics_.max_acceleration_rate_ = 5.0;
+    sp_action.dynamics_.max_deceleration_rate_ = 5.0;
+    sp_action.dynamics_.max_speed_ = 30.0;
+
+    // Add only one entry
+    sp_action.AddEntry(LongSpeedProfileAction::Entry(-1.0, 10.0));
+
+    sp_action.following_mode_ = FollowingMode::POSITION;
+    obj.SetSpeed(0.0);
+    sp_action.Start(0.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 0.0, 1E-5);
+    sp_action.Step(2.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 10.0, 1E-5);
+
+    sp_action.following_mode_ = FollowingMode::FOLLOW;
+    obj.SetSpeed(0.0);
+    sp_action.Start(0.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 0.0, 1E-5);
+    sp_action.Step(2.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 7.5, 1E-5);
+
+    // Two entries
+    sp_action.entry_.clear();
+    sp_action.AddEntry(LongSpeedProfileAction::Entry(0.0, 0.0));
+    sp_action.AddEntry(LongSpeedProfileAction::Entry(-1.0, 10.0));
+
+    obj.SetSpeed(0.0);
+    sp_action.following_mode_ = FollowingMode::FOLLOW;
+    sp_action.Start(0.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 0.0, 1E-5);
+    sp_action.Step(2.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 7.5, 1E-5);
+    sp_action.Step(4.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 10.0, 1E-5);
+}
+
+TEST(SpeedProfileTest, TestSpeedProfileFromNonZeroTime)
+{
+    LongSpeedProfileAction sp_action;
+    LongSpeedProfileAction::Entry entry;
+
+    Object obj(Object::Type::VEHICLE);
+
+    sp_action.object_ = &obj;
+    ASSERT_EQ(sp_action.entity_ref_, nullptr);
+    ASSERT_EQ(sp_action.entry_.size(), 0);
+    sp_action.dynamics_.max_acceleration_ = 4.0;
+    sp_action.dynamics_.max_deceleration_ = 10.0;
+    sp_action.dynamics_.max_acceleration_rate_ = 5.0;
+    sp_action.dynamics_.max_deceleration_rate_ = 4.0;
+    sp_action.dynamics_.max_speed_ = 30.0;
+
+    // Add some entries
+    sp_action.AddEntry(LongSpeedProfileAction::Entry(0.0, 0.0));
+    sp_action.AddEntry(LongSpeedProfileAction::Entry(4.0, 6.0));
+
+    for (int i = 0; i < 2; i++)
+    {
+        if (i == 0)
+        {
+            sp_action.following_mode_ = FollowingMode::POSITION;
+        }
+        else
+        {
+            sp_action.following_mode_ = FollowingMode::FOLLOW;
+        }
+
+        obj.SetSpeed(0.0);
+
+        sp_action.Start(3.0);
+        EXPECT_NEAR(sp_action.GetSpeed(), 0.0, 1E-5);
+        sp_action.Step(3.2);
+        EXPECT_NEAR(sp_action.GetSpeed(), i == 0 ? 0.3 : 0.1, 1E-5);
+        sp_action.Step(4.0);
+        EXPECT_NEAR(sp_action.GetSpeed(), i == 0 ? 1.5 : 1.38033, 1E-5);
+        sp_action.Step(5.0);
+        EXPECT_NEAR(sp_action.GetSpeed(), i == 0 ? 3.0 : 3.03419, 1E-5);
+        sp_action.Step(6.0);
+        EXPECT_NEAR(sp_action.GetSpeed(), i == 0 ? 4.5 : 4.68805, 1E-5);
+        sp_action.Step(8.0);
+        EXPECT_NEAR(sp_action.GetSpeed(), 6.0, 1E-5);
+    }
+}
+
+TEST(SpeedProfileTest, TestSpeedProfileNonZeroInitalAcc)
+{
+    LongSpeedProfileAction sp_action;
+    DynamicConstraints dynamics; // initalized with default values
+    LongSpeedProfileAction::Entry entry;
+
+    Object obj(Object::Type::VEHICLE);
+    obj.SetSpeed(10.0);
+    obj.SetAcc(1.0, 0.0, 0.0);
+
+    sp_action.following_mode_ = FollowingMode::FOLLOW;
+    sp_action.dynamics_ = dynamics;
+    sp_action.object_ = &obj;
+
+    sp_action.dynamics_.max_acceleration_ = 4.0;
+    sp_action.dynamics_.max_deceleration_ = 10.0;
+    sp_action.dynamics_.max_acceleration_rate_ = 5.0;
+    sp_action.dynamics_.max_deceleration_rate_ = 4.0;
+    sp_action.dynamics_.max_speed_ = 30.0;
+
+
+    ASSERT_EQ(sp_action.entity_ref_, nullptr);
+    ASSERT_EQ(sp_action.segment_.size(), 0);
+
+    // Add entries
+    entry.speed_ = 4.0;
+    entry.time_ = 5.0;
+    sp_action.AddEntry(entry);
+
+    sp_action.Start(0.0, 0.1);
+
+    // Evaluate small time step ahead. Although the speed profile entry slope is negative,
+    // the speed is still increasing due to inital positive acceleration.
+    sp_action.Step(0.4);
+    EXPECT_NEAR(sp_action.GetSpeed(), 10.12, 1E-5);
+
+    // Evaluate at end of the speed profile. Acceleration should approach target value.
+    sp_action.Step(5.0);
+    EXPECT_NEAR(sp_action.GetSpeed(), 4.025, 1E-3);
+
+    // Evaluate slightly past end of the speed profile. Acceleration should have reached the target value.
+    sp_action.Step(5.2);
+    EXPECT_NEAR(sp_action.GetSpeed(), 4.0, 1E-3);
+}
+
+TEST(ControllerTest, ALKS_R157_TestR157RegulationMinDist)
+{
+    double dt = 0.01;
+
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/alks_r157_test.xosc");
+    ASSERT_NE(se, nullptr);
+    ASSERT_EQ(se->entities_.object_.size(), 2);
+
+    // Set controller
+    scenarioengine::Controller::InitArgs args;
+    args.name = "ALKS_R157SM_Controller";
+    args.type = ControllerALKS_R157SM::GetTypeNameStatic();
+    args.parameters = 0;
+    args.gateway = se->getScenarioGateway();
+    args.properties = new OSCProperties();
+    OSCProperties::Property property;
+    property.name_ = "model";
+    property.value_ = "Regulation";
+    args.properties->property_.push_back(property);
+    ControllerALKS_R157SM* controller = (ControllerALKS_R157SM*)InstantiateControllerALKS_R157SM(&args);
+    controller->SetScenarioEngine(se);
+
+    Object* obj = se->entities_.object_[0];
+    delete obj->controller_;
+    delete args.properties;
+
+    controller->Assign(obj);
+    se->scenarioReader->controller_[0] = controller;
+    obj->controller_ = controller;
+
+    // assign controllers
+    se->step(dt);
+
+    obj->SetSpeed(0);
+    EXPECT_EQ(controller->model_->MinDist(), 2.0);
+
+    obj->SetSpeed(1.9);
+    EXPECT_EQ(controller->model_->MinDist(), 2.0);
+
+    obj->SetSpeed(2.0);
+    EXPECT_EQ(controller->model_->MinDist(), 2.0);
+
+    obj->SetSpeed(2.5);
+    EXPECT_NEAR(controller->model_->MinDist(), 2.660, 1E-3);
+
+    obj->SetSpeed(10.0 / 3.6);  // break point
+    EXPECT_NEAR(controller->model_->MinDist(), 3.056, 1E-3);
+
+    obj->SetSpeed(13.0 / 3.6);
+    EXPECT_NEAR(controller->model_->MinDist(), 4.081, 1E-3);
+
+    obj->SetSpeed(20.0 / 3.6);
+    EXPECT_NEAR(controller->model_->MinDist(), 6.667, 1E-3);
+
+    obj->SetSpeed(40.0 / 3.6);
+    EXPECT_NEAR(controller->model_->MinDist(), 15.556, 1E-3);
+
+    obj->SetSpeed(58.0 / 3.6);
+    EXPECT_NEAR(controller->model_->MinDist(), 25.456, 1E-3);
+
+    obj->SetSpeed(60.0 / 3.6);
+    EXPECT_NEAR(controller->model_->MinDist(), 26.667, 1E-3);
+
+    obj->SetSpeed(90.0 / 3.6);  // Outside range, but supported anyway
+    EXPECT_NEAR(controller->model_->MinDist(), 47.500, 1E-3);
+
+    delete se;
+}
+
+class StraightRoadTest : public testing::Test
+{
+protected:
+
+    static void SetUpTestSuite()
+    {
+        ASSERT_EQ(roadmanager::Position::LoadOpenDrive("../../../resources/xodr/straight_500m.xodr"), true);
+        static OpenDrive* odr = Position::GetOpenDrive();
+        ASSERT_NE(odr, nullptr);
+        EXPECT_EQ(odr->GetNumOfRoads(), 1);
+    }
+
+    static void TearDownTestSuite()
+    {
+
+    }
+};
+
+TEST_F(StraightRoadTest, TestRoadPosition)
+{
+    OSCOrientation o(Position::OrientationType::ORIENTATION_RELATIVE, 0.1, 0.0, 0.0);
+
+    OSCPositionRoad road_pos1(1, 50, 1.5, o);
+    EXPECT_NEAR(((OSCPosition&)road_pos1).GetRMPos()->GetH(), 0.1, 1e-3);
+
+    OSCPositionRoad road_pos2(1, 50, -1.5, o);
+    EXPECT_NEAR(((OSCPosition&)road_pos2).GetRMPos()->GetH(), 0.1, 1e-3);
+}
 
 // Uncomment to print log output to console
 //#define LOG_TO_CONSOLE
@@ -1113,7 +1583,10 @@ int main(int argc, char** argv)
     }
 #endif
 
-    //testing::GTEST_FLAG(filter) = "*TestRelativeRoadHeading*";
+#if 0 // set to 1 and modify filter to run one single test
+    testing::GTEST_FLAG(filter) = "*ALKS_R157_TestR157RegulationMinDist*";
+    // Or make use of launch argument, e.g. --gtest_filter=*ALKS_R157_TestR157RegulationMinDist*
+#endif
 
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

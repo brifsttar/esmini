@@ -45,6 +45,7 @@ int main(int argc, char* argv[])
 		// Initialize the vehicle model, fetch initial state from the scenario
 		SE_GetObjectState(0, &objectState);
 		vehicleHandle = SE_SimpleVehicleCreate(objectState.x, objectState.y, objectState.h, 4.0, 0.0);
+		SE_SimpleVehicleSteeringRate(vehicleHandle, 6.0f);
 
 		// show some road features, including road sensor
 		SE_ViewerShowFeature(4 + 8, true);  // NODE_MASK_TRAIL_DOTS (1 << 2) & NODE_MASK_ODR_FEATURES (1 << 3),
@@ -60,14 +61,17 @@ int main(int argc, char* argv[])
 			if (ghostMode[i] == true)
 			{
 				// ghost version
-				float ghost_speed;
-				if (i < 2)
+				float ghost_speed = 0.0f;
+
+				if (i % 2 == 0)  // alternate between time based and position based look ahead modes
 				{
-					SE_GetRoadInfoAlongGhostTrail(0, 5 + 0.75f * vehicleState.speed, &roadInfo, &ghost_speed);
+					// Time based look ahead
+					SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime() + 0.25f, &roadInfo, &ghost_speed);
 				}
 				else
 				{
-					SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime() + 0.25f, &roadInfo, &ghost_speed);
+					// Position based Time based look ahead
+					SE_GetRoadInfoAlongGhostTrail(0, 5 + 0.75f * vehicleState.speed, &roadInfo, &ghost_speed);
 				}
 				targetSpeed = ghost_speed;
 			}
@@ -96,7 +100,17 @@ int main(int argc, char* argv[])
 			SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
 
 			// Report updated vehicle position and heading. z, pitch and roll will be aligned to the road
-			SE_ReportObjectPosXYH(0, 0, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+			SE_ReportObjectPosXYH(0, 0, vehicleState.x, vehicleState.y, vehicleState.h);
+
+			// The following values are not necessary to report.
+			// If not reported, esmini will calculate based on motion over time
+			// but for accuracy it's recommendeded to report if available.
+
+			// wheel status (revolution and steering angles)
+			SE_ReportObjectWheelStatus(0, vehicleState.wheel_rotation, vehicleState.wheel_angle);
+
+			// speed (along vehicle longitudinal (x) axis)
+			SE_ReportObjectSpeed(0, vehicleState.speed);
 
 			// Finally, update scenario using same time step as for vehicle model
 			SE_StepDT(dt);

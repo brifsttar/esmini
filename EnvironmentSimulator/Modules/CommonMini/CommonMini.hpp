@@ -41,7 +41,7 @@
    #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #endif
 
-#define SMALL_NUMBER (1E-10)
+#define SMALL_NUMBER (1E-6)
 #define LARGE_NUMBER (1E+10)
 #define SIGN(X) ((X<0)?-1:1)
 #define MAX(x, y) ((y) > (x) ? (y) : (x))
@@ -52,9 +52,11 @@
 #define AVOID_ZERO(x) (SIGN(x)*MAX(SMALL_NUMBER, fabs(x)))
 #define NEAR_ZERO(x) (abs(x) < SMALL_NUMBER)
 #define NEAR_NUMBERS(x, y) (abs(x - y) < SMALL_NUMBER)
+#define IS_IN_SPAN(x, y, z) ((x) >= (y) && (x) <= (z))
 #define OSI_MAX_LONGITUDINAL_DISTANCE 50
 #define OSI_MAX_LATERAL_DEVIATION 0.05
 #define LOG_FILENAME "log.txt"
+#define DAT_FILENAME "sim.dat"
 #define GHOST_TRAIL_SAMPLE_TIME 0.2
 
 
@@ -126,6 +128,12 @@ enum class EntityScaleMode
 	NONE,
 	BB_TO_MODEL,  // Scale bounding box to 3D model
 	MODEL_TO_BB,  // Scale 3D model to specified or generated bounding box
+};
+
+enum class FollowingMode
+{
+	FOLLOW,
+	POSITION
 };
 
 std::string ControlDomain2Str(ControlDomains domains);
@@ -370,7 +378,8 @@ bool PointInBetweenVectorEndpoints(double x3, double y3, double x1, double y1, d
 double DistanceFromPointToEdge2D(double x3, double y3, double x1, double y1, double x2, double y2, double* x, double* y);
 
 /**
-	Measure distance from point to line. Strategy: Find and measure distance to closest/perpendicular point on line
+	Measure distance from point to line given by two points.
+	Strategy: Find and measure distance to closest/perpendicular point on line
 	@param x3 X-coordinate of the point to check
 	@param y3 Y-coordinate of the point to check
 	@param x1 X-coordinate of the first point on line
@@ -384,6 +393,18 @@ double DistanceFromPointToEdge2D(double x3, double y3, double x1, double y1, dou
 double DistanceFromPointToLine2D(double x3, double y3, double x1, double y1, double x2, double y2, double* x, double* y);
 
 /**
+	Measure distance from point to line given by point and angle.
+	Strategy: Find and measure distance to closest/perpendicular point on line
+	@param x3 X-coordinate of the point to check
+	@param y3 Y-coordinate of the point to check
+	@param x1 X-coordinate of a point on the line
+	@param y1 Y-coordinate of a point on the line
+	@param angle angle of the line
+	@return the distance
+*/
+double DistanceFromPointToLine2DWithAngle(double x3, double y3, double x1, double y1, double angle);
+
+/**
 	Find out whether the point is left or right to a vector
 */
 int PointSideOfVec(double px, double py, double vx1, double vy1, double vx2, double vy2);
@@ -392,6 +413,11 @@ int PointSideOfVec(double px, double py, double vx1, double vy1, double vx2, dou
 	Retrieve the length of a 2D line segment
 */
 double GetLengthOfLine2D(double x1, double y1, double x2, double y2);
+
+/**
+	Retrieve the length of a 2D vector
+*/
+double GetLengthOfVector2D(double x, double y);
 
 /**
 	Retrieve the length of a 3D vector
@@ -545,8 +571,11 @@ private:
 std::vector<std::string> SplitString(const std::string& s, char separator);
 std::string DirNameOf(const std::string& fname);
 std::string FileNameOf(const std::string& fname);
+bool IsDirectoryName(const std::string& string);
 std::string FileNameExtOf(const std::string& fname);
 std::string FileNameWithoutExtOf(const std::string& fname);
+std::string ToLower(const std::string in_str);
+std::string ToLower(const char* in_str);
 
 int strtoi(std::string s);
 double strtod(std::string s);
@@ -583,8 +612,7 @@ public:
 	typedef void(*FuncPtr)(const char*);
 
 	//Instantiator
-	static CSV_Logger& InstVehicleLog(std::string scenario_filename,
-		int numvehicles, std::string csv_filename);
+	static CSV_Logger& Inst();
 
 	//Logging function called by VehicleLogger object using pass by value
 	void LogVehicleData(bool isendline, double timestamp, char const* name, int id, double speed,
@@ -594,10 +622,11 @@ public:
 		char const* collisions, ...);
 
 	void SetCallback(FuncPtr callback);
+	void Open(std::string scenario_filename, int numvehicles, std::string csv_filename);
 
 private:
 	//Constructor to be called by instantiator
-	CSV_Logger(std::string scenario_filename, int numvehicles, std::string csv_filename);
+	CSV_Logger();
 
 	//Destructor
 	~CSV_Logger();
@@ -643,18 +672,20 @@ public:
 	void AddOption(std::string opt_str, std::string opt_desc, std::string opt_arg, std::string opt_arg_default_value);
 
 	void PrintUsage();
-	void PrintArgs(int argc, char* argv[], std::string message = "Unrecognized arguments:");
+	void PrintUnknownArgs(std::string message = "Unrecognized arguments:");
 	bool GetOptionSet(std::string opt);
 	bool IsOptionArgumentSet(std::string opt);
 	std::string GetOptionArg(std::string opt, int index = 0);
-	int ParseArgs(int* argc, char* argv[]);
+	int ParseArgs(int argc, const char* const  argv[]);
 	std::vector<std::string>& GetOriginalArgs() { return originalArgs_; }
 	bool IsInOriginalArgs(std::string opt);
+	bool HasUnknownArgs();
 
 private:
 	std::vector<SE_Option> option_;
 	std::string app_name_;
 	std::vector<std::string> originalArgs_;
+	std::vector<std::string> unknown_args_;
 
 	SE_Option* GetOption(std::string opt);
 };
@@ -738,7 +769,7 @@ public:
 
 	bool Started() { return duration_ > SMALL_NUMBER; }
 	double Elapsed(double timestamp_s) { return timestamp_s - start_time_; }
-	double Expired(double timestamp_s) { return timestamp_s - start_time_ > duration_ - SMALL_NUMBER; }
+	bool Expired(double timestamp_s) { return timestamp_s - start_time_ > duration_ - SMALL_NUMBER; }
 	double GetDuration() { return duration_; }
 };
 
@@ -813,8 +844,8 @@ public:
 	void SetOSIMaxLateralDeviation(double maxLateralDeviation) { osiMaxLateralDeviation_ = maxLateralDeviation; }
 	double GetOSIMaxLongitudinalDistance() { return osiMaxLongitudinalDistance_; }
 	double GetOSIMaxLateralDeviation() { return osiMaxLateralDeviation_; }
-	void SetDisableOffScreen(bool disable) { disableOffScreen_ = disable; }
-	bool GetDisableOffScreen() { return disableOffScreen_; }
+	void SetOffScreenRendering(bool enable) { offScreenRendering_ = enable; }
+	bool GetOffScreenRendering() { return offScreenRendering_; }
 	void SetCollisionDetection(bool enable) { collisionDetection_ = enable; }
 	bool GetCollisionDetection() { return collisionDetection_; }
 	std::vector<std::string>& GetPaths() { return paths_; }
@@ -830,13 +861,41 @@ public:
 	std::mt19937& GetGenerator() { return gen_; }
 
 	/**
-		Specify logfile name, optionally including directory path
-		examples: "../logfile.txt" "c:/tmp/esmini.log" "my.log"
+		Specify scenario logfile (.txt) file path,
+		optionally including directory path and/or filename
+		Specify only directory (end with "/" or "\") to let esmini set default filename
+		Specify only filename (no leading "/" or "\") to let esmini set default directory
 		Set "" to disable logfile
+		examples:
+		  "../logfile.txt" (relative current directory)
+		  "c:/tmp/esmini.log" (absolute path)
+		  "my.log" (put it in current directory)
+		  "c:/tmp/" (use default filename)
+		  "" (prevent creation of logfile)
+		Note: Needs to be called prior to calling SE_Init()
 		@param path Logfile path
 	*/
 	void SetLogFilePath(std::string logFilePath);
 	std::string GetLogFilePath() { return logFilePath_; }
+
+	/**
+		Specify scenario recording (.dat) file path,
+		optionally including directory path and/or filename
+		Specify only directory (end with "/" or "\") to let esmini set default filename
+		Specify only filename (no leading "/" or "\") to let esmini set default directory
+		Set "" to disable logfile
+		examples:
+		  "../logfile.txt" (relative current directory)
+		  "c:/tmp/esmini.log" (absolute path)
+		  "my.log" (put it in current directory)
+		  "c:/tmp/" (use default filename)
+		  "" (prevent creation of logfile)
+		Note: Needs to be called prior to calling SE_Init()
+		@param path Logfile path
+	*/
+	void SetDatFilePath(std::string datFilePath);
+	std::string GetDatFilePath() { return datFilePath_; }
+
 	std::string GetModelFilenameById(int model_id);
 	void ClearModelFilenames() { entity_model_map.clear(); }
 
@@ -845,10 +904,11 @@ private:
 	double osiMaxLongitudinalDistance_;
 	double osiMaxLateralDeviation_;
 	std::string logFilePath_;
+	std::string datFilePath_;
 	SE_SystemTime systemTime_;
 	unsigned int seed_;
 	std::mt19937 gen_;
-	bool disableOffScreen_;
+	bool offScreenRendering_;
 	bool collisionDetection_;
 	std::map<int, std::string> entity_model_map;
 };
@@ -882,3 +942,11 @@ int SE_WritePPM(const char* filename, int width, int height, const unsigned char
 */
 int SE_WriteTGA(const char* filename, int width, int height, const unsigned char* data, int pixelSize, int pixelFormat, bool upsidedown);
 
+/**
+	Read a CSV file (comma separated values)
+	@param filename File name including extension
+	@param content Reference to variable where to put the entries (vector of vector of entries - per line)
+	@param skip_lines Number of initial lines to skip (e.g. header). Optional (default = 0)
+	@return 0 if OK, -1 if failed to open file
+*/
+int SE_ReadCSVFile(const char* filename, std::vector<std::vector<std::string>>& content, int skip_lines = 0);

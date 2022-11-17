@@ -21,6 +21,7 @@
 #include "CommonMini.hpp"
 #include "Entities.hpp"
 #include "ScenarioGateway.hpp"
+#include "ScenarioEngine.hpp"
 
 using namespace scenarioengine;
 
@@ -34,7 +35,7 @@ Controller* scenarioengine::InstantiateControllerFollowGhost(void* args)
 }
 
 ControllerFollowGhost::ControllerFollowGhost(InitArgs* args) :
-	elapsed_time_(0.0), follow_mode_(FollowMode::FOLLOW_MODE_TIME), Controller(args)
+	follow_mode_(FollowMode::FOLLOW_MODE_TIME), Controller(args)
 {
 	if (args->properties->ValueExists("headstartTime"))
 	{
@@ -59,16 +60,17 @@ ControllerFollowGhost::ControllerFollowGhost(InitArgs* args) :
 		}
 	}
 
+}
+
+void ControllerFollowGhost::Init()
+{
 	// FollowGhost controller forced into override mode - will not perform any scenario actions
 	if (mode_ != Mode::MODE_OVERRIDE)
 	{
 		LOG("FollowGhost controller mode \"%s\" not applicable. Using override mode instead.", Mode2Str(mode_).c_str());
 		mode_ = Controller::Mode::MODE_OVERRIDE;
 	}
-}
 
-void ControllerFollowGhost::Init()
-{
 	object_->SetHeadstartTime(headstart_time_);
 
 	Controller::Init();
@@ -81,6 +83,8 @@ void ControllerFollowGhost::Step(double timeStep)
 		// No ghost associated
 		return;
 	}
+
+	double currentTime = scenarioEngine_->getSimulationTime();
 
 	if (follow_mode_ == FollowMode::FOLLOW_MODE_POSITION)
 	{
@@ -114,7 +118,7 @@ void ControllerFollowGhost::Step(double timeStep)
 	}
 	else
 	{
-		ret_val = object_->GetGhost()->trail_.FindPointAtTime(elapsed_time_ - headstart_time_ + 1.7,  // look ahead 1.7 seconds
+		ret_val = object_->GetGhost()->trail_.FindPointAtTime(currentTime - headstart_time_ + 1.7,  // look ahead 1.7 seconds
 			point, index_out, object_->trail_follow_index_);
 	}
 
@@ -179,8 +183,6 @@ void ControllerFollowGhost::Step(double timeStep)
 		gateway_->updateObjectWheelAngle(object_->id_, 0.0, vehicle_.wheelAngle_);
 	}
 
-	elapsed_time_ += timeStep;
-
 	Controller::Step(timeStep);
 }
 
@@ -202,8 +204,6 @@ void ControllerFollowGhost::Activate(ControlDomains domainMask)
 		object_->pos_.SetAlignModeZ(roadmanager::Position::ALIGN_MODE::ALIGN_HARD);
 		object_->pos_.SetAlignModeP(roadmanager::Position::ALIGN_MODE::ALIGN_HARD);
 	}
-
-	elapsed_time_ = 0.0;
 
 	Controller::Activate(domainMask);
 }

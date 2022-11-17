@@ -339,6 +339,8 @@ int main(int argc, char** argv)
 	// Use logger callback
 	Logger::Inst().SetCallback(log_callback);
 
+	SE_Env::Inst().AddPath(DirNameOf(argv[0]));  // Add location of exe file to search paths
+
 	std::vector<std::string> args;
 	for (int i = 0; i < argc; i++) args.push_back(argv[i]);
 
@@ -349,7 +351,7 @@ int main(int argc, char** argv)
 	opt.AddOption("density", "density (cars / 100 m)", "density", std::to_string(density));
 	opt.AddOption("enforce_generate_model", "Generate road 3D model even if --model is specified");
 	opt.AddOption("disable_log", "Prevent logfile from being created");
-	opt.AddOption("disable_off_screen", "Disable off-screen rendering, potentially gaining performance");
+	opt.AddOption("disable_off_screen", "Disable esmini off-screen rendering, revert to OSG viewer default handling");
 	opt.AddOption("disable_stdout", "Prevent messages to stdout");
 	opt.AddOption("fixed_timestep", "Run simulation decoupled from realtime, with specified timesteps", "timestep");
 	opt.AddOption("generate_no_road_objects", "Do not generate any OpenDRIVE road objects (e.g. when part of referred 3D model)");
@@ -366,7 +368,7 @@ int main(int argc, char** argv)
 	opt.AddOption("traffic_rule", "Enforce left or right hand traffic, regardless OpenDRIVE rule attribute (default: right)", "rule (right/left)");
 	opt.AddOption("version", "Show version and quit");
 
-	if (opt.ParseArgs(&argc, argv) != 0)
+	if (opt.ParseArgs(argc, argv) != 0)
 	{
 		opt.PrintUsage();
 		return -1;
@@ -476,7 +478,7 @@ int main(int argc, char** argv)
 
 	if (opt.GetOptionSet("disable_off_screen"))
 	{
-		SE_Env::Inst().SetDisableOffScreen(true);
+		SE_Env::Inst().SetOffScreenRendering(false);
 	}
 
 	roadmanager::Position *lane_pos = new roadmanager::Position();
@@ -528,9 +530,9 @@ int main(int argc, char** argv)
 			viewer->SetNodeMaskBits(viewer::NodeMask::NODE_MASK_OSI_POINTS);
 		}
 
-		if (argc > 1)
+		if (opt.HasUnknownArgs())
 		{
-			opt.PrintArgs(argc, argv, "Unrecognized arguments:");
+			opt.PrintUnknownArgs("Unrecognized arguments:");
 			opt.PrintUsage();
 		}
 

@@ -245,6 +245,23 @@ void ControllerUDPDriver::Step(double timeStep)
 			// Fetch Pitch from OpenDRIVE position
 			vehicle_.SetPitch(pos->GetP());
 		}
+		else if (msg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_H))
+		{
+			roadmanager::Position* pos = &gateway_->getObjectStatePtrById(msg.header.objectId)->state_.pos;
+			pos->SetAlignModeZ(roadmanager::Position::ALIGN_MODE::ALIGN_HARD);
+			pos->SetAlignModeP(roadmanager::Position::ALIGN_MODE::ALIGN_HARD);
+
+			// Update object state via gateway
+			gateway_->updateObjectWorldPosXYH(object_->id_, 0.0, pos->GetX(), pos->GetY(), msg.message.stateH.h);
+			gateway_->updateObjectSpeed(object_->id_, 0.0, msg.message.stateH.speed);
+			gateway_->updateObjectWheelAngle(object_->id_, 0.0, msg.message.stateH.wheelAngle);
+
+			// Also update the internal vehicle model, in case next message is driver input
+			vehicle_.SetPos(pos->GetX(), pos->GetY(), pos->GetZ(), msg.message.stateH.h);
+
+			// Fetch Pitch from OpenDRIVE position
+			vehicle_.SetPitch(pos->GetP());
+		}
 		else if (msg.header.inputMode == static_cast<int>(InputMode::DRIVER_INPUT))
 		{
 			roadmanager::Position* pos = &gateway_->getObjectStatePtrById(msg.header.objectId)->state_.pos;
@@ -255,6 +272,43 @@ void ControllerUDPDriver::Step(double timeStep)
 		{
 			LOG("ControllerExternalDriverModel received %d bytes and unexpected input mode %d", retval, msg.header.inputMode);
 		}
+	}
+	else if (timeStep > SMALL_NUMBER &&
+		(lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_H) &&
+			lastMsg.message.stateH.deadReckon == 1 ||
+			lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_XYH) &&
+			lastMsg.message.stateXYH.deadReckon == 1 ||
+			lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_XYZHPR) &&
+			lastMsg.message.stateXYZHPR.deadReckon == 1))
+	{
+		double speed = 0.0;
+		double h = 0.0;
+
+		if (lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_H))
+		{
+			speed = lastMsg.message.stateH.speed;
+			h = lastMsg.message.stateH.h;
+		}
+		else if (lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_XYH))
+		{
+			speed = lastMsg.message.stateXYH.speed;
+			h = lastMsg.message.stateXYH.h;
+		}
+		else if (lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_XYZHPR))
+		{
+			speed = lastMsg.message.stateXYZHPR.speed;
+			h = lastMsg.message.stateXYZHPR.h;
+		}
+		else
+		{
+			LOG_AND_QUIT("Unexpected msg type %d", lastMsg.header.inputMode);
+		}
+
+		double ds = speed * timeStep;
+		double dx = ds * cos(h);
+		double dy = ds * sin(h);
+
+		gateway_->updateObjectWorldPosXYH(object_->id_, 0.0, object_->pos_.GetX() + dx, object_->pos_.GetY() + dy, vehicle_.heading_);
 	}
 
 	if (lastMsg.header.inputMode == static_cast<int>(InputMode::DRIVER_INPUT))

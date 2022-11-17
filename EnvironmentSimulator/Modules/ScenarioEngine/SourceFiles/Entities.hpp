@@ -93,6 +93,15 @@ namespace scenarioengine
 			double maxSpeed;
 		} Performance;
 
+		typedef struct
+		{
+			double maxSteering;
+			double positionX;
+			double positionZ;
+			double trackWidth;
+			double wheelDiameter;
+		} Axle;
+
 		// Allocate vector for all possible override status
 		OverrideActionStatus overrideActionList[OVERRIDE_NR_TYPES];
 
@@ -129,6 +138,8 @@ namespace scenarioengine
 		roadmanager::Junction::JunctionStrategyType junctionSelectorStrategy_;
 		double nextJunctionSelectorAngle_;  // number between 0:2pi (circle). E.g. if 1.57 choose the leftmost road
 		Performance performance_;
+		Axle front_axle_;
+		Axle rear_axle_;
 		Controller* controller_; // reference to any assigned controller object
 		bool reset_;			 // indicate discreet movement, teleporting, no odometer update
 		bool isGhost_;
@@ -153,7 +164,7 @@ namespace scenarioengine
 		{
 			*this = o;
 		}
-		~Object() {}
+		virtual ~Object() {}
 		void SetEndOfRoad(bool state, double time = 0.0);
 		bool IsEndOfRoad() { return end_of_road_timestamp_ > SMALL_NUMBER; }
 		double GetEndOfRoadTimestamp() { return end_of_road_timestamp_; }
@@ -439,8 +450,8 @@ namespace scenarioengine
 		int ConnectTrailer(Vehicle* trailer);
 		void AlignTrailers();
 
-		TrailerCoupler* trailer_coupler_;  // mounting point to any tow vehicle
-		TrailerHitch* trailer_hitch_;   // mounting point to any tow vehicle
+		std::shared_ptr<TrailerCoupler> trailer_coupler_;  // mounting point to any tow vehicle
+		std::shared_ptr<TrailerHitch> trailer_hitch_;   // mounting point to any tow vehicle
 	};
 
 	class Pedestrian : public Object
@@ -461,6 +472,9 @@ namespace scenarioengine
 			performance_.maxAcceleration = LARGE_NUMBER;
 			performance_.maxDeceleration = LARGE_NUMBER;
 			performance_.maxSpeed = LARGE_NUMBER;
+
+			// Enable snap to sidewalks
+			pos_.SetSnapLaneTypes(pos_.GetSnapLaneTypes() | roadmanager::Lane::LaneType::LANE_TYPE_SIDEWALK);
 		}
 
 		void SetCategory(std::string category)
@@ -604,6 +618,18 @@ namespace scenarioengine
 	{
 	public:
 		Entities() : nextId_(0) {}
+		~Entities()
+		{
+			for (auto* entry : object_)
+			{
+				delete entry;
+			}
+
+			for (auto* entry : object_pool_)
+			{
+				delete entry;
+			}
+		}
 
 		std::vector<Object*> object_;
 		std::vector<Object*> object_pool_;

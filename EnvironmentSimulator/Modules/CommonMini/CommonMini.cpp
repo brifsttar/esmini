@@ -13,8 +13,12 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <iostream>
-#include <random>
 #include <algorithm>
+#include <vector>
+#include <sstream>
+#include <locale>
+#include <array>
+
 
 // UDP network includes
 #ifndef _WIN32
@@ -99,6 +103,7 @@ std::map<int, std::string> ParseModelIds()
 	for (size_t i = 0; i < SE_Env::Inst().GetPaths().size(); i++)
 	{
 		file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], filename));
+		file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i] + "/../resources", filename));
 	}
 
 	size_t i;
@@ -123,17 +128,17 @@ std::map<int, std::string> ParseModelIds()
 
 	if (i == file_name_candidates.size())
 	{
-		printf("Failed to load %s file. Tried:\n", filename.c_str());
+		LOG("Failed to load %s file. Tried:", filename.c_str());
 		for (int j = 0; j < file_name_candidates.size(); j++)
 		{
-			printf("  %s\n", file_name_candidates[j].c_str());
+			LOG("  %s", file_name_candidates[j].c_str());
 		}
 
 		printf("  continue with internal hard coded list: \n");
 		for (int j = 0; j < sizeof(entityModelsFilesFallbackList_) / sizeof(char*); j++)
 		{
 			entity_model_map[j] = entityModelsFilesFallbackList_[j];
-			printf("    %2d: %s\n", j, entity_model_map[j].c_str());
+			LOG("    %2d: %s", j, entity_model_map[j].c_str());
 		}
 	}
 
@@ -396,6 +401,12 @@ double DistanceFromPointToLine2D(double x3, double y3, double x1, double y1, dou
 	return distance;
 }
 
+double DistanceFromPointToLine2DWithAngle(double x3, double y3, double x1, double y1, double angle)
+{
+	// https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line
+	return abs(cos(angle) * (y1 - y3) - sin(angle) * (x1 - x3));
+}
+
 int PointSideOfVec(double px, double py, double vx1, double vy1, double vx2, double vy2)
 {
 	// Use cross product
@@ -489,6 +500,11 @@ bool IsPointWithinSectorBetweenTwoLines(SE_Vector p, SE_Vector l0p0, SE_Vector l
 double GetLengthOfLine2D(double x1, double y1, double x2, double y2)
 {
 	return sqrt((x2 - x1)*(x2 - x1) + (y2 - y1)*(y2 - y1));
+}
+
+double GetLengthOfVector2D(double x, double y)
+{
+	return sqrt(x * x + y * y);
 }
 
 double GetLengthOfVector3D(double x, double y, double z)
@@ -612,7 +628,7 @@ double SE_getSimTimeStep(__int64 &time_stamp, double min_time_step, double max_t
 		{
 			SE_sleep((int)((min_time_step - dt) * 1000));
 			now = SE_getSystemTime();
-			dt = min_time_step;
+			dt = (now - time_stamp) * 0.001;
 		}
 	}
 	time_stamp = now;
@@ -654,6 +670,16 @@ std::string FileNameOf(const std::string& fname)
 	{
 		return fname;  // Assume filename with no separator
 	}
+}
+
+bool IsDirectoryName(const std::string& string)
+{
+	if (!string.empty() && (string.back() == '/' || string.back() == '\\'))
+	{
+		return true;
+	}
+
+	return false;
 }
 
 std::string FileNameExtOf(const std::string& fname)
@@ -700,6 +726,32 @@ std::string FileNameWithoutExtOf(const std::string& fname)
 	{
 		return (fname.substr(start_pos));
 	}
+}
+
+std::string ToLower(const std::string in_str)
+{
+	std::locale loc;
+	std::string out_str = in_str;
+
+	for (size_t i = 0; i < out_str.size(); i++)
+	{
+		out_str[i] = std::tolower(out_str[i], loc);
+	}
+
+	return out_str;
+}
+
+std::string ToLower(const char* in_str)
+{
+	std::locale loc;
+	std::string out_str = in_str;
+
+	for (size_t i = 0; i < out_str.size(); i++)
+	{
+		out_str[i] = std::tolower(out_str[i], loc);
+	}
+
+	return out_str;
 }
 
 double GetCrossProduct2D(double x1, double y1, double x2, double y2)
@@ -812,7 +864,7 @@ void R0R12EulerAngles(double h0, double p0, double r0, double h1, double p1, dou
 }
 
 SE_Env::SE_Env() : osiMaxLongitudinalDistance_(OSI_MAX_LONGITUDINAL_DISTANCE), osiMaxLateralDeviation_(OSI_MAX_LATERAL_DEVIATION),
-	logFilePath_(LOG_FILENAME), disableOffScreen_(false), collisionDetection_(false)
+	logFilePath_(LOG_FILENAME), datFilePath_(""), offScreenRendering_(true), collisionDetection_(false)
 {
 	seed_ = (std::random_device())();
 	gen_.seed(seed_);
@@ -1011,6 +1063,16 @@ void SE_Env::SetLogFilePath(std::string logFilePath)
 	}
 }
 
+void SE_Env::SetDatFilePath(std::string datFilePath)
+{
+	datFilePath_ = datFilePath;
+	if (Logger::Inst().IsFileOpen())
+	{
+		// Probably user wants another logfile with a new name
+		Logger::Inst().OpenLogfile();
+	}
+}
+
 /*
  * Logger for all vehicles contained in the Entities vector.
  *
@@ -1018,8 +1080,89 @@ void SE_Env::SetLogFilePath(std::string logFilePath)
  * in columnar format, with time running from top to bottom and
  * vehicles running from left to right, starting with the Ego vehicle
  */
-CSV_Logger::CSV_Logger(std::string scenario_filename, int numvehicles, std::string csv_filename)
+CSV_Logger::CSV_Logger() : data_index_(0), callback_(nullptr)
 {
+
+}
+
+CSV_Logger::~CSV_Logger()
+{
+	if (file_.is_open())
+	{
+		file_.close();
+	}
+
+	callback_ = 0;
+}
+
+void CSV_Logger::LogVehicleData(bool isendline, double timestamp, char const* name, int id, double speed,
+	double wheel_angle, double wheel_rot, double posX, double posY, double posZ, double velX, double velY,
+	double velZ, double accX, double accY, double accZ, double distance_road, double distance_lanem, double heading,
+	double heading_rate, double heading_angle, double heading_angle_driving_direction, double pitch, double curvature,
+	const char* collisions, ...)
+{
+	static char data_entry[max_csv_entry_length];
+
+	//If this data is for Ego (position 0 in the Entities vector) print using the first format
+	//Otherwise use the second format
+	if (id == 0)
+		snprintf(data_entry, max_csv_entry_length,
+			"%d, %f, %s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %s, ",
+			data_index_, timestamp, name, id, speed, wheel_angle, wheel_rot, posX, posY, posZ, velX,
+			velY, velZ, accX, accY, accZ, distance_road, distance_lanem, heading, heading_rate,
+			heading_angle, heading_angle_driving_direction, pitch, curvature, collisions);
+	else
+		snprintf(data_entry, max_csv_entry_length,
+			"%s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %s, ",
+			name, id, speed, wheel_angle, wheel_rot, posX, posY, posZ, velX, velY, velZ, accX, accY, accZ,
+			distance_road, distance_lanem, heading, heading_rate, heading_angle, heading_angle_driving_direction,
+			pitch, curvature, collisions);
+
+	//Add lines horizontally until the endline is reached
+	if (isendline == false)
+	{
+		file_ << data_entry;
+	}
+	else if (file_.is_open())
+	{
+
+		file_ << data_entry << std::endl;
+		file_.flush();
+
+		data_index_++;
+	}
+
+
+	if (callback_)
+	{
+		callback_(data_entry);
+	}
+}
+
+void CSV_Logger::SetCallback(FuncPtr callback)
+{
+	callback_ = callback;
+
+	static char message[1024];
+
+	snprintf(message, 1024, "esmini GIT REV: %s", esmini_git_rev());
+	callback_(message);
+	snprintf(message, 1024, "esmini GIT TAG: %s", esmini_git_tag());
+	callback_(message);
+	snprintf(message, 1024, "esmini GIT BRANCH: %s", esmini_git_branch());
+	callback_(message);
+	snprintf(message, 1024, "esmini BUILD VERSION: %s", esmini_build_version());
+	callback_(message);
+}
+
+//instantiator
+//Filename and vehicle number are used for dynamic header creation
+void CSV_Logger::Open(std::string scenario_filename, int numvehicles, std::string csv_filename)
+{
+	if (file_.is_open())
+	{
+		file_.close();
+	}
 
 	file_.open(csv_filename);
 	if (file_.fail())
@@ -1079,83 +1222,10 @@ CSV_Logger::CSV_Logger(std::string scenario_filename, int numvehicles, std::stri
 	callback_ = 0;
 }
 
-CSV_Logger::~CSV_Logger()
+CSV_Logger& CSV_Logger::Inst()
 {
-	if (file_.is_open())
-	{
-		file_.close();
-	}
-
-	callback_ = 0;
-}
-
-void CSV_Logger::LogVehicleData(bool isendline, double timestamp, char const* name, int id, double speed,
-	double wheel_angle, double wheel_rot, double posX, double posY, double posZ, double velX, double velY,
-	double velZ, double accX, double accY, double accZ, double distance_road, double distance_lanem, double heading,
-	double heading_rate, double heading_angle, double heading_angle_driving_direction, double pitch, double curvature,
-	const char* collisions, ...)
-{
-	static char data_entry[max_csv_entry_length];
-
-	//If this data is for Ego (position 0 in the Entities vector) print using the first format
-	//Otherwise use the second format
-	if (id == 0)
-		snprintf(data_entry, max_csv_entry_length,
-			"%d, %f, %s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %s, ",
-			data_index_, timestamp, name, id, speed, wheel_angle, wheel_rot, posX, posY, posZ, velX,
-			velY, velZ, accX, accY, accZ, distance_road, distance_lanem, heading, heading_rate,
-			heading_angle, heading_angle_driving_direction, pitch, curvature, collisions);
-	else
-		snprintf(data_entry, max_csv_entry_length,
-			"%s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %s, ",
-			name, id, speed, wheel_angle, wheel_rot, posX, posY, posZ, velX, velY, velZ, accX, accY, accZ,
-			distance_road, distance_lanem, heading, heading_rate, heading_angle, heading_angle_driving_direction,
-			pitch, curvature, collisions);
-
-	//Add lines horizontally until the endline is reached
-	if (isendline == false)
-	{
-		file_ << data_entry;
-	}
-	else if (file_.is_open())
-	{
-
-		file_ << data_entry << std::endl;
-		file_.flush();
-
-		data_index_++;
-	}
-
-
-
-	if (callback_)
-	{
-		callback_(data_entry);
-	}
-}
-
-void CSV_Logger::SetCallback(FuncPtr callback)
-{
-	callback_ = callback;
-
-	static char message[1024];
-
-	snprintf(message, 1024, "esmini GIT REV: %s", esmini_git_rev());
-	callback_(message);
-	snprintf(message, 1024, "esmini GIT TAG: %s", esmini_git_tag());
-	callback_(message);
-	snprintf(message, 1024, "esmini GIT BRANCH: %s", esmini_git_branch());
-	callback_(message);
-	snprintf(message, 1024, "esmini BUILD VERSION: %s", esmini_build_version());
-	callback_(message);
-}
-
-//instantiator
-//Filename and vehicle number are used for dynamic header creation
-CSV_Logger& CSV_Logger::InstVehicleLog(std::string scenario_filename, int numvehicles, std::string csv_filename)
-{
-	static CSV_Logger instance(scenario_filename, numvehicles, csv_filename);
-	return instance;
+	static CSV_Logger instance_;
+	return instance_;
 }
 
 SE_Thread::~SE_Thread()
@@ -1265,12 +1335,12 @@ void SE_Options::PrintUsage()
 	printf("\n");
 }
 
-void SE_Options::PrintArgs(int argc, char *argv[], std::string message)
+void SE_Options::PrintUnknownArgs(std::string message)
 {
 	printf("\n%s\n", message.c_str());
-	for (size_t i = 1; i < argc; i++)
+	for (const auto& arg : unknown_args_)
 	{
-		printf("  %s\n", argv[i]);
+		printf("  %s\n", arg.c_str());
 	}
 }
 
@@ -1312,31 +1382,35 @@ std::string SE_Options::GetOptionArg(std::string opt, int index)
 	}
 }
 
-static void ShiftArgs(int *argc, char** argv, int start_i)
-{
-	if (start_i >= 0 && start_i < *argc)
-	{
-		for (int i = start_i; i < *argc - 1; i++)
-		{
-			argv[i] = argv[i + 1];
-		}
-		(*argc)--;
-	}
-}
+static constexpr std::array<const char*, 10> OSG_ARGS = {
+	"--clear-color",
+	"--screen",
+	"--window",
+	"--borderless-window",
+	"--SingleThreaded",
+	"--CullDrawThreadPerContext",
+	"--SingleThreaded",
+	"--DrawThreadPerContext",
+	"--CullThreadPerCameraDrawThreadPerContext",
+	"--lodScale"
+};
 
-int SE_Options::ParseArgs(int *argc, char* argv[])
+int SE_Options::ParseArgs(int argc, const char* const argv[])
 {
-	app_name_ = FileNameWithoutExtOf(argv[0]);
+	std::vector<const char*> args = {argv, std::next(argv, argc)};
+
+
+	app_name_ = FileNameWithoutExtOf(args[0]);
 	int returnVal = 0;
 
-	for (size_t i = 0; i < *argc; i++)
+	for (size_t i = 0; i < argc; i++)
 	{
-		originalArgs_.push_back(argv[i]);
+		originalArgs_.push_back(args[i]);
 	}
 
-	for (size_t i = 1; i < *argc;)
+	for (size_t i = 1; i < argc;)
 	{
-		std::string arg = argv[i];
+		std::string arg = args[i];
 
 		if (!(arg.substr(0, strlen(OPT_PREFIX)) == OPT_PREFIX))
 		{
@@ -1344,17 +1418,17 @@ int SE_Options::ParseArgs(int *argc, char* argv[])
 			continue;
 		}
 
-		SE_Option *option = GetOption(&argv[i][strlen(OPT_PREFIX)]); // skip prefix
+		SE_Option *option = GetOption(&args[i][strlen(OPT_PREFIX)]); // skip prefix
 
 		if (option)
 		{
 			option->set_ = true;
 			if (option->opt_arg_ != "")
 			{
-				if (i < *argc - 1 && strncmp(argv[i + 1], "--", 2))
+				if (i < argc - 1 && strncmp(args[i + 1], "--", 2))
 				{
-					option->arg_value_.push_back(argv[i+1]);
-					ShiftArgs(argc, argv, (int)i);
+					option->arg_value_.push_back(args[i+1]);
+					i++;
 				}
 				else if (!option->default_value_.empty())
 				{
@@ -1367,12 +1441,17 @@ int SE_Options::ParseArgs(int *argc, char* argv[])
 					returnVal = -1;
 				}
 			}
-			ShiftArgs(argc, argv, (int)i);
 		}
 		else
 		{
-			i++;
+			auto it = std::find_if(std::begin(OSG_ARGS), std::end(OSG_ARGS), [&arg](const char* osg_arg) {
+			  return osg_arg == arg;
+			});
+			if (it == std::end(OSG_ARGS)) {
+				unknown_args_.push_back(args[i]);
+			}
 		}
+		i++;
 	}
 
 	return returnVal;
@@ -1398,6 +1477,11 @@ bool SE_Options::IsInOriginalArgs(std::string opt)
 	}
 
 	return false;
+}
+
+bool SE_Options::HasUnknownArgs()
+{
+	return !unknown_args_.empty();
 }
 
 int SE_WritePPM(const char* filename, int width, int height, const unsigned char* data, int pixelSize, int pixelFormat, bool upsidedown)
@@ -1535,6 +1619,43 @@ int SE_WriteTGA(const char* filename, int width, int height, const unsigned char
 	}
 
 	fclose(file);
+
+	return 0;
+}
+
+int SE_ReadCSVFile(const char* filename, std::vector<std::vector<std::string>>& content, int skip_lines)
+{
+	// Cred: https://java2blog.com/read-csv-file-in-cpp/
+	std::vector<std::string> row;
+	std::string line, word;
+
+	std::fstream file(filename, std::ios::in);
+	if (file.is_open())
+	{
+		for (int i = 0; i < skip_lines; i++)
+		{
+			if (!getline(file, line))
+			{
+				LOG("Failed to skip %d lines in CSV file %s", skip_lines, filename);
+				return -1;
+			}
+		}
+		while (getline(file, line))
+		{
+			row.clear();
+
+			std::stringstream str(line);
+
+			while (getline(str, word, ','))
+				row.push_back(word);
+			content.push_back(row);
+		}
+	}
+	else
+	{
+		LOG("Failed to open CSV file %s", filename);
+		return -1;
+	}
 
 	return 0;
 }

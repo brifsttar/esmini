@@ -9,14 +9,16 @@ if __name__ == "__main__":
     # Add the arguments
     parser.add_argument('--x_axis', help='x-axis parameter')
     parser.add_argument('--equal_axis_aspect', help='lock aspect ratio = 1:1', action='store_true')
-    parser.add_argument('filename', help='csv filename')
+    parser.add_argument('filename', help='dat filename')
+    parser.add_argument('--derive', help='derive values wrt x, i.e. dy/dx', action='store_true')
+    parser.add_argument('--dots', help='add dots', action='store_true')
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--list_params', help='list available parameters in given file', action='store_true')
     group.add_argument('--param', help='parameter to plot (can be specified multiple times)', action='append')
 
+
     # Execute the parse_args() method
     args = parser.parse_args()
-
     # Read the dat file
     dat = DATFile(args.filename)
 
@@ -39,12 +41,13 @@ if __name__ == "__main__":
                 print('Parameter \'{}\' is not plottable'.format(a))
             else:
                 print('Parameter \'{}\' is not available in dat file'.format(a))
-            exit(0)
+            #exit(0)
         parameter.append(a)
 
     objs = []
     x = []
     y = []
+    id2idx = {}
 
     if args.x_axis is None:
         x_axis = 'time'
@@ -53,25 +56,39 @@ if __name__ == "__main__":
 
     print('x_axis:', x_axis)
     print('parameters:', ', '.join(parameter))
-
     for data in dat.data:
-        i = int(data.id)
-        if i >= len(objs):
-            print('adding object {} {}'.format(i, data.name.decode('utf-8')))
-            objs.append(data.name.decode('utf-8'))
+        id = int(data.id)
+        if id not in id2idx:
+            print('adding object {} {}'.format(id, data.name.decode('utf-8')))
+            id2idx[id] = len(objs)
+            objs.append(data.name.decode('utf-8') + ' ({})'.format(id))
             x.append([])
             y.append([])
             for p in parameter:
-                y[i].append([])
+                y[id2idx[id]].append([])
 
         for j, p in enumerate(parameter):
-            y[i][j].append(float(getattr(data, p)))
-        x[i].append(float(getattr(data, x_axis)))
+            y[id2idx[id]][j].append(float(getattr(data, p)))
+        x[id2idx[id]].append(float(getattr(data, x_axis)))
+
+    if (args.derive):
+        for i in range(len(y)):
+            for j in range(len(y[i])):
+                new_y = []
+                for k in range(1,len(y[i][j])):
+                    y_prim = (y[i][j][k] - y[i][j][k-1]) / max((x[i][k] - x[i][k-1], 1e-10))
+                    new_y.append(y_prim)
+                new_y.append(new_y[-1])  # duplicate last entry
+                y[i][j] = new_y
 
     p1 = plt.figure(1)
     for i in range(len(x)):
         for j, p in enumerate(parameter):
-            plt.plot(x[i], y[i][j], linewidth=1.0, label=objs[i] + ' ' + p)
+            if args.dots:
+                p_style = '.-'
+            else:
+                p_style = '-'
+            plt.plot(x[i], y[i][j], p_style, linewidth=1.0, label=objs[i] + ' ' + p)
 
     plt.xlabel(x_axis)
     plt.legend(loc="upper right")

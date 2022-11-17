@@ -4,7 +4,7 @@
 <!-- with relative positions which means that the actual location will be aligned to the referred     -->
 <!-- entity, in this case the Ego vehicle, at the very moment the event being triggered.              -->
 <OpenSCENARIO xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceShemaLocation="OpenSccenario.xsd">
-    <FileHeader author="Mandolin" date="2020-05-23 18:34:25.159274" decription="myscenario" revMajor="1" revMinor="0"/>
+    <FileHeader author="esmini-team" date="2020-05-23 18:34:25.159274" decription="myscenario" revMajor="1" revMinor="0"/>
     <ParameterDeclarations>
         <ParameterDeclaration name="HostVehicle" parameterType="string" value="car_white"/>
         <ParameterDeclaration name="TargetVehicle" parameterType="string" value="car_red"/>
@@ -173,7 +173,7 @@
                                                 <Shape>
                                                     <Clothoid curvature="-0.1" curvatureDot="0.00036" length="70" startTime="0" stopTime="4">
                                                         <Position>
-                                                            <RelativeLanePosition dLane="0" ds="0" entityRef="Target" offset="0.0"/>
+                                                            <RelativeRoadPosition dt="0" ds="0" entityRef="Target"/>
                                                         </Position>
                                                     </Clothoid>
                                                 </Shape>
@@ -209,7 +209,7 @@
                                                     <Nurbs order="3">
                                                         <ControlPoint time="0" weight="1">
                                                             <Position>
-                                                                <RelativeLanePosition dLane="0" ds="0" entityRef="Target" offset="0.0"/>
+                                                                <RelativeRoadPosition dt="0" ds="0" entityRef="Target"/>
                                                             </Position>
                                                         </ControlPoint>
                                                         <ControlPoint time="3" weight="1.2">

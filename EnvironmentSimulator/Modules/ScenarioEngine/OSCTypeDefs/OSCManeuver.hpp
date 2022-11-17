@@ -27,8 +27,6 @@ namespace scenarioengine
 	class Event: public StoryBoardElement
 	{
 	public:
-		static void (*eventCallback)(const char* name, double timestamp, bool start);
-
 		typedef enum
 		{
 			OVERWRITE,
@@ -44,6 +42,18 @@ namespace scenarioengine
 		Trigger *start_trigger_;
 
 		Event() : start_trigger_(0), StoryBoardElement(StoryBoardElement::ElementType::EVENT) {}
+		~Event()
+		{
+			for (auto* entry : action_)
+			{
+				delete entry;
+			}
+
+			if (start_trigger_)
+			{
+				delete start_trigger_;
+			}
+		}
 
 		void Start(double simTime, double dt);
 		void End(double simTime);
@@ -52,16 +62,25 @@ namespace scenarioengine
 		void UpdateState();
 	};
 
-	class OSCManeuver
+	class Maneuver: public StoryBoardElement
 	{
 	public:
 		OSCParameterDeclarations parameter_declarations_;
 		std::vector<Event*> event_;
-		std::string name_;
+
+		Maneuver() : StoryBoardElement(StoryBoardElement::ElementType::MANEUVER) {}
+		~Maneuver() 
+		{
+			for (auto* entry : event_)
+			{
+				delete entry;
+			}
+		}
 
 		bool IsAnyEventActive();
 		bool AreAllEventsComplete();
 		void UpdateState();
+		void Reset();
 
 		void Print()
 		{

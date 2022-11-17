@@ -319,8 +319,8 @@ void FollowTrajectoryAction::Start(double simTime, double dt)
 		return;
 	}
 
-	traj_->Freeze();
-	object_->pos_.SetTrajectory(traj_);
+	traj_->Freeze(following_mode_);
+	object_->pos_.SetTrajectory(traj_.get());
 
 	object_->pos_.SetTrajectoryS(initialDistanceOffset_);
 	time_ = traj_->GetTimeAtS(initialDistanceOffset_);
@@ -330,8 +330,6 @@ void FollowTrajectoryAction::Start(double simTime, double dt)
 
 	// But totally decouple trajectory positioning from road heading
 	object_->pos_.SetAlignModeH(roadmanager::Position::ALIGN_MODE::ALIGN_SOFT);
-
-	object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL);
 }
 
 void FollowTrajectoryAction::End(double simTime)
@@ -363,7 +361,7 @@ void FollowTrajectoryAction::Step(double simTime, double dt)
 	}
 
 	// signal that an action owns control
-	object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL);
+	object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL | Object::DirtyBit::SPEED);
 
 	if (!object_->IsGhost() && simTime < 0.0)
 	{
@@ -420,7 +418,7 @@ void FollowTrajectoryAction::Step(double simTime, double dt)
 	{
 		// Reached end of trajectory
 		// Calculate road coordinates from final inertia (X, Y) coordinates
-		object_->pos_.XYZH2TrackPos(object_->pos_.GetX(), object_->pos_.GetY(), 0, object_->pos_.GetH());
+		object_->pos_.XYZH2TrackPos(object_->pos_.GetX(), object_->pos_.GetY(), object_->pos_.GetZ(), object_->pos_.GetH());
 
 		double remaningDistance = 0.0;
 		if (timing_domain_ == TimingDomain::NONE && !traj_->closed_ && object_->pos_.GetTrajectoryS() > (traj_->GetLength() - SMALL_NUMBER))
@@ -453,15 +451,15 @@ void FollowTrajectoryAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
 	}
 	if (traj_->shape_->type_ == roadmanager::Shape::ShapeType::CLOTHOID)
 	{
-		roadmanager::ClothoidShape* cl = (roadmanager::ClothoidShape*)traj_->shape_;
+		roadmanager::ClothoidShape* cl = (roadmanager::ClothoidShape*)traj_->shape_.get();
 		cl->pos_.ReplaceObjectRefs(&obj1->pos_, &obj2->pos_);
 	}
 	else if (traj_->shape_->type_ == roadmanager::Shape::ShapeType::POLYLINE)
 	{
-		roadmanager::PolyLineShape* pl = (roadmanager::PolyLineShape*)traj_->shape_;
+		roadmanager::PolyLineShape* pl = (roadmanager::PolyLineShape*)traj_->shape_.get();
 		for (size_t i = 0; i < pl->vertex_.size(); i++)
 		{
-			pl->vertex_[i]->pos_.ReplaceObjectRefs(&obj1->pos_, &obj2->pos_);
+			pl->vertex_[i].pos_.ReplaceObjectRefs(&obj1->pos_, &obj2->pos_);
 		}
 	}
 
@@ -470,13 +468,13 @@ void FollowTrajectoryAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
 void AcquirePositionAction::Start(double simTime, double dt)
 {
 	// Resolve route
-	route_ = new roadmanager::Route;
+	route_.reset(new roadmanager::Route);
 	route_->setName("AcquirePositionRoute");
 
 	route_->AddWaypoint(&object_->pos_);
 	route_->AddWaypoint(target_position_);
 
-	object_->pos_.SetRoute(route_);
+	object_->pos_.SetRoute(route_.get());
 	object_->SetDirtyBits(Object::DirtyBit::ROUTE);
 
 	OSCAction::Start(simTime, dt);
@@ -562,31 +560,33 @@ void LatLaneChangeAction::Start(double simTime, double dt)
 	else if (target_->type_ == Target::Type::RELATIVE_LANE)
 	{
 		// Find out target lane relative referred vehicle
-		target_lane_id_ = ((TargetRelative*)target_)->object_->pos_.GetLaneId() + target_->value_;
+		target_lane_id_ = ((TargetRelative*)target_.get())->object_->pos_.GetLaneId() + target_->value_;
 
-		if (target_lane_id_ == 0 || SIGN(((TargetRelative*)target_)->object_->pos_.GetLaneId()) != SIGN(target_lane_id_))
+		if (target_lane_id_ == 0 || SIGN(((TargetRelative*)target_.get())->object_->pos_.GetLaneId()) != SIGN(target_lane_id_))
 		{
 			// Skip reference lane (id == 0)
 			target_lane_id_ = SIGN(target_lane_id_ - object_->pos_.GetLaneId()) * (abs(target_lane_id_) + 1);
 		}
 	}
 
-	// Switch internal position to the target lane
-	internal_pos_ = object_->pos_;
-	internal_pos_.ForceLaneId(target_lane_id_);
-
-	// Make offsets agnostic to lane sign
-	transition_.SetStartVal(SIGN(internal_pos_.GetLaneId()) * internal_pos_.GetOffset());
-	transition_.SetTargetVal(SIGN(target_lane_id_) * target_lane_offset_);
+	// Reset orientation, align to road
+	object_->pos_.SetHeadingRelativeRoadDirection(0.0);
+	object_->pos_.SetPitchRelative(0.0);
+	object_->pos_.SetRollRelative(0.0);
+	object_->pos_.EvaluateOrientation();
 
 	// Set initial state
-	internal_pos_.SetLanePos(internal_pos_.GetTrackId(), internal_pos_.GetLaneId(), internal_pos_.GetS(),
-		SIGN(internal_pos_.GetLaneId()) * transition_.Evaluate());
+	object_->pos_.ForceLaneId(target_lane_id_);
+	internal_pos_ = object_->pos_;
+
+	// Make offsets agnostic to lane sign
+	transition_.SetStartVal(SIGN(object_->pos_.GetLaneId()) * object_->pos_.GetOffset());
+	transition_.SetTargetVal(SIGN(target_lane_id_) * target_lane_offset_);
 }
 
 void LatLaneChangeAction::Step(double simTime, double dt)
 {
-	double offset_agnostic = internal_pos_.GetOffset() * internal_pos_.GetLaneId();
+	double offset_agnostic = internal_pos_.GetOffset() * SIGN(internal_pos_.GetLaneId());
 	double angle = 0;
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
@@ -615,30 +615,21 @@ void LatLaneChangeAction::Step(double simTime, double dt)
 	offset_agnostic = transition_.Evaluate();
 	double rate = transition_.EvaluateScaledPrim();
 
-	// Fetch any assigned route and/or trajectory
-	internal_pos_.SetTrajectory(object_->pos_.GetTrajectory());
-	internal_pos_.SetTrajectoryS(object_->pos_.GetTrajectoryS());
-	internal_pos_.SetTrajectoryT(object_->pos_.GetTrajectoryT());
-	internal_pos_.SetRoute(object_->pos_.GetRoute());
-
-	// Update internal position with new offset
-	internal_pos_.SetLanePos(internal_pos_.GetTrackId(), internal_pos_.GetLaneId(), internal_pos_.GetS(), offset_agnostic * SIGN(internal_pos_.GetLaneId()));
+	// Restore position to target lane and new offset
+	object_->pos_.SetLanePos(internal_pos_.GetTrackId(), internal_pos_.GetLaneId(), internal_pos_.GetS(), offset_agnostic * SIGN(internal_pos_.GetLaneId()));
 
 	// Update longitudinal position
 	double ds = object_->pos_.DistanceToDS(object_->speed_ * dt);
 	roadmanager::Position::ReturnCode retval = roadmanager::Position::ReturnCode::OK;
-	if (internal_pos_.GetRoute() && internal_pos_.GetRoute()->IsValid())
+	if (object_->pos_.GetRoute() && object_->pos_.GetRoute()->IsValid())
 	{
-		retval = internal_pos_.MoveRouteDS(ds, false);
-		object_->pos_ = internal_pos_;
+		retval = object_->pos_.MoveRouteDS(ds, false);
+		internal_pos_.SetLanePos(object_->pos_.GetTrackId(), object_->pos_.GetLaneId(), object_->pos_.GetS(), object_->pos_.GetOffset());
 	}
 	else
 	{
-		retval = internal_pos_.MoveAlongS(ds, 0.0, -1.0);
-		object_->pos_ = internal_pos_;
-
-		// Attach object position to closest road and lane, look up via inertial coordinates
-		object_->pos_.XYZH2TrackPos(object_->pos_.GetX(), object_->pos_.GetY(), object_->pos_.GetZ(), object_->pos_.GetH());
+		retval = object_->pos_.MoveAlongS(ds, 0.0, -1.0);
+		internal_pos_.SetLanePos(object_->pos_.GetTrackId(), object_->pos_.GetLaneId(), object_->pos_.GetS(), object_->pos_.GetOffset());
 	}
 
 	if (object_->pos_.GetRoute())
@@ -673,8 +664,9 @@ void LatLaneChangeAction::Step(double simTime, double dt)
 			// Convert rate (lateral-movment/time) to lateral-movement/long-movement
 			angle = atan(rate / AVOID_ZERO(object_->GetSpeed()));
 		}
-		object_->pos_.SetHeadingRelativeRoadDirection((IsAngleForward(internal_pos_.GetHRelative()) ? 1 : -1) * SIGN(internal_pos_.GetLaneId()) * angle);
+		object_->pos_.SetHeadingRelativeRoadDirection((IsAngleForward(object_->pos_.GetHRelative()) ? 1 : -1) * SIGN(object_->pos_.GetLaneId()) * angle);
 	}
+	object_->pos_.EvaluateOrientation();
 
 	if (transition_.dimension_ == DynamicsDimension::DISTANCE)
 	{
@@ -690,7 +682,13 @@ void LatLaneChangeAction::Step(double simTime, double dt)
 		object_->SetSpeed(0.0);
 	}
 
-	object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL);
+	if (!(object_->pos_.GetRoute() && object_->pos_.GetRoute()->IsValid()))
+	{
+		// Attach object position to closest road and lane, look up via inertial coordinates
+		object_->pos_.XYZH2TrackPos(object_->pos_.GetX(), object_->pos_.GetY(), object_->pos_.GetZ(), object_->pos_.GetH());
+	}
+
+	object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL | Object::DirtyBit::SPEED);
 }
 
 void LatLaneChangeAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
@@ -702,9 +700,9 @@ void LatLaneChangeAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
 
 	if (target_->type_ == Target::Type::RELATIVE_LANE)
 	{
-		if (((TargetRelative*)target_)->object_ == obj1)
+		if (((TargetRelative*)target_.get())->object_ == obj1)
 		{
-			((TargetRelative*)target_)->object_ = obj2;
+			((TargetRelative*)target_.get())->object_ = obj2;
 		}
 	}
 }
@@ -731,7 +729,7 @@ void LatLaneOffsetAction::Start(double simTime, double dt)
 		int lane_id = object_->pos_.GetLaneId();
 
 		// Find out referred object track position
-		roadmanager::Position refpos = ((TargetRelative*)target_)->object_->pos_;
+		roadmanager::Position refpos = ((TargetRelative*)target_.get())->object_->pos_;
 		refpos.SetTrackPos(refpos.GetTrackId(), refpos.GetS(), refpos.GetT() + target_->value_);
 		refpos.ForceLaneId(lane_id);
 
@@ -789,9 +787,9 @@ void LatLaneOffsetAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
 
 	if (target_->type_ == Target::Type::RELATIVE_OFFSET)
 	{
-		if (((TargetRelative*)target_)->object_ == obj1)
+		if (((TargetRelative*)target_.get())->object_ == obj1)
 		{
-			((TargetRelative*)target_)->object_ = obj2;
+			((TargetRelative*)target_.get())->object_ = obj2;
 		}
 	}
 }
@@ -909,10 +907,448 @@ void LongSpeedAction::Step(double simTime, double dt)
 
 	object_->SetSpeed(ABS_LIMIT(new_speed, object_->performance_.maxSpeed));
 
-	if (target_speed_reached_ && !(target_->type_ == Target::TargetType::RELATIVE_SPEED && ((TargetRelative*)target_)->continuous_ == true))
+	if (target_speed_reached_ && !(target_->type_ == Target::TargetType::RELATIVE_SPEED && ((TargetRelative*)target_.get())->continuous_ == true))
 	{
 		OSCAction::End(simTime);
 	}
+}
+
+void LongSpeedProfileAction::Start(double simTime, double timestep)
+{
+	OSCAction::Start(simTime, timestep);
+
+	if (entry_.size() == 0 || object_ == nullptr)
+	{
+		return;
+	}
+
+	double speed_offset = entity_ref_ != nullptr ? entity_ref_->GetSpeed() : 0.0;
+	double init_time_ = simTime;
+
+	if (object_->GetDirtyBitMask() & Object::DirtyBit::SPEED)
+	{
+		// Speed has already been updated by another action, set start time at end of this timestep
+		init_time_ += timestep;
+	}
+
+	init_acc_ = object_->pos_.GetAccLong();
+
+	std::vector<EntryVertex> vertex;
+	int index = 0;
+
+	// Check need for initial entry with current speed
+	if (entry_[0].time_ > SMALL_NUMBER)
+	{
+		// insert initial entry at time = 0 with initial/current speed
+		vertex.push_back(EntryVertex(init_time_, object_->GetSpeed()));
+	}
+	else if (entry_[0].time_ > -SMALL_NUMBER)
+	{
+		if (following_mode_ == FollowingMode::FOLLOW)
+		{
+			// replace first entry at time = 0.0 with current speed
+			vertex.push_back(EntryVertex(init_time_, object_->GetSpeed()));
+			index = 1;  // Skip first entry
+		}
+		else
+		{
+			// in linear mode use specified initial speed
+			vertex.push_back(EntryVertex(init_time_, entry_[0].speed_));
+		}
+	}
+	else  // negative time indicating time attribute omitted
+	{
+		// Create a first entry at current time and speed
+		vertex.push_back(EntryVertex(init_time_, object_->GetSpeed()));
+	}
+
+	// First filter out any obsolete middle points on straight acceleration lines
+	double delta_k, j = 0.0, time = init_time_;
+	for (; index < entry_.size(); index++)
+	{
+		if (entry_[index].time_ < -SMALL_NUMBER)
+		{
+			if (abs(entry_[index].speed_ + speed_offset - vertex.back().v_) < SMALL_NUMBER)
+			{
+				// same speed as previous vertex, skip entry
+				continue;
+			}
+			// negative time is interpreted as missing time stamp
+			double dv = entry_[index].speed_ + speed_offset - vertex.back().v_;
+			double acc = 0.0;
+			if (dv < 0)
+			{
+				acc = MIN(-SMALL_NUMBER, -dynamics_.max_deceleration_);
+			}
+			else
+			{
+				acc = MAX(SMALL_NUMBER, dynamics_.max_acceleration_);
+			}
+
+			vertex.back().t_ = time;
+			time += dv / acc;
+		}
+		else
+		{
+			time += entry_[index].time_;
+		}
+
+		double dt = time - vertex.back().t_;
+
+		if (index < entry_.size() - 1)
+		{
+			if (dt < SMALL_NUMBER)
+			{
+				// replace previous entry
+				vertex.back() = EntryVertex(time, entry_[index].speed_ + speed_offset);
+				continue;  // skip entry
+			}
+		}
+
+		vertex.back().SetK((entry_[index].speed_ + speed_offset - (vertex.back().v_)) / dt);
+
+
+		if (index > 1)
+		{
+			delta_k = vertex.back().k_ - (vertex.rbegin()+1)->k_; // last - second last
+		}
+		else
+		{
+			delta_k = vertex.back().k_ - init_acc_;  // slope is zero at start - no delta
+		}
+
+		if (abs(delta_k) < SMALL_NUMBER && index > 1)
+		{
+			// replace previous entry
+			double new_k = (entry_[index].speed_ + speed_offset - (vertex.rbegin() + 1)->v_) / (time - (vertex.rbegin() + 1)->t_);
+			vertex.back() = EntryVertex(time, entry_[index].speed_ + speed_offset, new_k);
+			continue;  // skip entry
+		}
+
+		if (index == entry_.size() - 1)
+		{
+			// Final entry, set k = 0
+			vertex.push_back(EntryVertex(time, entry_[index].speed_ + speed_offset, 0.0));
+		}
+		else
+		{
+			vertex.push_back(EntryVertex(time, entry_[index].speed_ + speed_offset));
+		}
+	}
+
+	EntryVertex vtx = vertex[0];
+	double t0, t1, t3 = vtx.t_, v0, v3 = 0.0, m0, m1 = 0.0, k1 = 0.0;
+	double k0 = init_acc_;
+
+	segment_.clear();
+
+	// Some info on the implementation concept and equations systems can be found here:
+	// https://drive.google.com/file/d/1DmjVHftcsbU71Ce_GASZ6IArcPA6teNF/view?usp=sharing
+
+	if (vertex.size() == 1)
+	{
+		AddSpeedSegment(vtx.t_, vtx.v_, 0.0, 0.0);
+	}
+	else if (following_mode_ == FollowingMode::FOLLOW && vertex.size() == 2)
+	{
+		// Special case: Single speed target, following mode = follow
+		// Reach target speed with given jerk contraint. Add linear segment if needed.
+
+		// Set first jerk segment
+
+		j = (vertex[0].k_ - k0) < 0 ? -dynamics_.max_deceleration_rate_ : dynamics_.max_acceleration_rate_;
+		AddSpeedSegment(vtx.t_, vtx.v_, k0, j);
+
+		double j0 = j;
+		double j1 = 0.0, t2 = 0.0, v1 = 0.0, v2 = 0.0;
+
+		// Find jerk at endpoint, where acceleration / k is zero
+		if (vertex[0].k_ < 0)
+		{
+			j1 = dynamics_.max_acceleration_rate_;
+		}
+		else
+		{
+			j1 = -dynamics_.max_deceleration_rate_;
+		}
+
+		t0 = vertex[0].t_;
+		v0 = vertex[0].v_;
+		t3 = vertex[1].t_;
+		v3 = vertex[1].v_;
+
+		if (fabs(j1 - j0) < SMALL_NUMBER)
+		{
+			//following_mode_ = FollowingMode::POSITION;
+			if (fabs(t0 - t3) > SMALL_NUMBER && fabs(j1 * (t0 - t3) - k0) > SMALL_NUMBER)
+			{
+				t1 = (2 * j1 * (v0 + t0 * j1 * (t0 - t3) - v3) + pow(k0, 2) + 2 * k0 * j1 * (t3 - 2 * t0)) / (2 * j1 * (j1 * (t0 - t3) - k0));
+				if (t1 < 0)
+				{
+					LOG("SpeedProfile: No solution found (t1) - fallback to Position mode");
+				}
+				else
+				{
+					v1 = v0 + k0 * (t1 - t0) + j0 * 0.5 * pow((t1 - t0), 2);
+					k1 = k0 + j0 * (t1 - t0);
+					t2 = (k1 / j1) + t3;
+					if (t2 < 0)
+					{
+						LOG("SpeedProfile: No solution found (t2)");
+					}
+					else
+					{
+						v2 = v1 + k1 * (t2 - t1);
+						if (k1 < dynamics_.max_acceleration_ && k1 > -dynamics_.max_deceleration_)
+						{
+							// add linear segment
+							AddSpeedSegment(t1, v1, k1, 0.0);
+						}
+					}
+				}
+			}
+			else
+			{
+				LOG("SpeedProfile: No solution found (t3)");
+			}
+		}
+		else
+		{
+			double factor = j0 * j1 * (2 * v0 * (j1 - j0) + pow(k0, 2) + 2 * k0 * j1 * (t3 - t0) + j0 * j1 * pow(t0 - t3, 2) + 2 * v3 * (j0 - j1));
+
+			if (factor < 0.0)
+			{
+				// no room or time for linear segment of constant acceleration
+				t2 = (sqrt(j1 * (-(j0 - j1)) * (j0 * (2 * v3 - 2 * v0) + pow(k0, 2))) + (j0 - j1) * (t0 * j0 - k0)) / (j0 * (j0 - j1));
+				v2 = v0 + k0 * (t2 - t0) + j0 * 0.5 * pow(t2 - t0, 2);
+				k1 = k0 + j0 * (t2 - t0);
+				t3 = t2 - k1 / j1;
+
+				if (IS_IN_SPAN(k1, -dynamics_.max_deceleration_, dynamics_.max_acceleration_) && t3 > vertex[1].t_)
+				{
+					LOG("SpeedProfile: Can't reach target speed %.2f on target time %.2fs with given jerk constraints, extend to %.2fs",
+						v3, vertex[1].t_, t3);
+				}
+			}
+			else
+			{
+				// need a linear segment to reach speed at specified time
+				LOG("SpeedProfile: Add linear segment to reach target speed on time.");
+				t1 = (-sqrt(factor) - j0 * (k0 + t3 * j1) + t0 * pow(j0, 2)) / (j0 * (j0 - j1));
+				v1 = v0 + k0 * (t1 - t0) + j0 * 0.5 * pow(t1 - t0, 2);
+				k1 = init_acc_ + j0 * (t1 - t0);
+				t2 = (k1 / j1) + t3;
+				v2 = v1 + k1 * (t2 - t1);
+
+				if (IS_IN_SPAN(k1, -dynamics_.max_deceleration_, dynamics_.max_acceleration_))
+				{
+					// add linear segment
+					AddSpeedSegment(t1, v1, k1, 0.0);
+				}
+			}
+		}
+
+		if (IS_IN_SPAN(k1, -dynamics_.max_deceleration_, dynamics_.max_acceleration_))
+		{
+			// add second jerk segment
+			AddSpeedSegment(t2, v2, k1, j1);
+			// add end segment
+			AddSpeedSegment(t3, v3, 0.0, 0.0);
+		}
+		else
+		{
+			if (k1 > dynamics_.max_acceleration_)
+			{
+				LOG("SpeedProfile: Constraining acceleration from %.2f to %.2f", k1, dynamics_.max_acceleration_);
+				k1 = dynamics_.max_acceleration_;
+			}
+			else if (k1 < -dynamics_.max_deceleration_)
+			{
+				LOG("SpeedProfile: Constraining deceleration from %.2f to %.2f", -k1, dynamics_.max_deceleration_);
+				k1 = -dynamics_.max_deceleration_;
+			}
+
+			t1 = t0 + (k1 - k0) / j0;
+			v1 = v0 + k0 * (t1 - t0) + 0.5 * j0 * pow(t1 - t0, 2);
+			t2 = (v3 - v1) / k1 + t1 + k1 / (2 * j1);
+			v2 = v3 + pow(k1, 2) / (2 * j1);
+			t3 = -v1 / k1 + v3 / k1 + t1 - k1 / (2 * j1);
+
+			LOG("SpeedProfile: Extend %.2f s", t3 - vertex.back().t_);
+
+			// add linear segment
+			AddSpeedSegment(t1, v1, k1, 0.0);
+			// add second jerk segment
+			AddSpeedSegment(t2, v2, k1, j1);
+			// add end segment
+			AddSpeedSegment(t3, v3, 0.0, 0.0);
+		}
+	}
+	else
+	{
+		// Normal case: Follow acceleration (slopes) of multiple speed targets over time
+
+		if (following_mode_ == FollowingMode::FOLLOW)
+		{
+			if (abs(vtx.k_) > SMALL_NUMBER)
+			{
+				j = (vertex[0].k_ - k0) < 0 ? -dynamics_.max_deceleration_rate_ : dynamics_.max_acceleration_rate_;
+				AddSpeedSegment(vtx.t_, vtx.v_, k0, j);
+
+				t3 = vtx.t_ + (abs(j) > SMALL_NUMBER ? (vtx.k_ - k0) / j : 0.0);  // duration of first jerk t = a / j
+			}
+
+			v3 = vtx.v_ + k0 * (t3 - init_time_) + 0.5 * j * pow((t3 - init_time_), 2);  // speed after initial jerk
+			k1 = vtx.k_;  // slope of first linear segment
+			m1 = v3 - k1 * t3;  // eq constant for second acceleration line
+
+			// add first linear segment
+			AddSpeedSegment(t3, v3, k1, 0.0);
+		}
+
+		for (index = 0; index < vertex.size(); index++)
+		{
+			if (following_mode_ == FollowingMode::POSITION)
+			{
+				vtx = vertex[index];
+				AddSpeedSegment(vtx.t_, vtx.v_, vtx.k_, 0.0);
+			}
+			else if (index < vertex.size() - 1)
+			{
+				k0 = k1;
+				vtx = vertex[index + 1];
+				t0 = t3;
+				v0 = v3;
+				m0 = m1;
+				k1 = vtx.k_;
+				m1 = vtx.m_;
+
+				if (index < vertex.size() - 1)
+				{
+					j = vtx.k_ - k0 < 0 ? -dynamics_.max_deceleration_rate_ : dynamics_.max_acceleration_rate_;
+				}
+
+				if (abs(k0 - k1) < SMALL_NUMBER)
+				{
+					// no change in acceleration, skip jerk segment
+					t3 = t0;
+					v3 = v0;
+				}
+				else
+				{
+					// find time for next jerk
+					// https://www.wolframalpha.com/input?i=solve+b%3Dk*g%2Bn%2Cd%3Dl*j%2Bo%2Cd%3Db%2Bk*%28j-g%29%2Bm*%28j-g%29%5E2%2F2%2Cl%3Dk%2Bm*%28j-g%29+for+b%2Cd%2Cg%2Cj
+					// solve b = k * g + n, d = l * j + o, d = b + k * (j - g) + m * (j - g) ^ 2 / 2, l = k + m * (j - g) for b, d, g, j
+					// substitutions: a = v0, b = v1, c = v2, d = v3, f = t0, g = t1, h = t2, j = t3, k = k0, l = k1, m = j, n = m0, o = m1
+					// g = (k ^ 2 - 2 k l + l ^ 2 - 2 m(n - o)) / (2 m(k - l))
+					t1 = (pow(k0, 2) - 2 * k0 * k1 + pow(k1, 2) - 2 * j * (m0 - m1)) / (2 * j * (k0 - k1));
+
+					if (t1 < t0)
+					{
+						LOG("LongSpeedProfileAction failed at point %d (time=%.2f). Falling back to linear (Position) mode.", index, vertex[index].t_);
+						following_mode_ = FollowingMode::POSITION;
+						continue;
+					}
+
+					double v1 = v0 + k0 * (t1 - t0);
+					t3 = t1 + (vtx.k_ - k0) / j;
+					v3 = v1 + k0 * (t3 - t1) + 0.5 * j * pow(t3 - t1, 2);
+
+					// add jerk segment
+					AddSpeedSegment(t1, v1, k0, j);
+				}
+
+				// add linear segment
+				AddSpeedSegment(t3, v3, vtx.k_, 0.0);
+			}
+		}
+	}
+
+	cur_index_ = 0;
+	speed_ = object_->GetSpeed();
+}
+
+void LongSpeedProfileAction::Step(double simTime, double dt)
+{
+	double time = simTime + dt;
+
+	if (time < segment_.back().t + 10 && !(time > segment_.back().t and abs(speed_ - segment_.back().v) < SMALL_NUMBER))
+	{
+		while (cur_index_ < segment_.size() - 1 && time > segment_[cur_index_ + 1].t - SMALL_NUMBER)
+		{
+			cur_index_++;
+		}
+
+		SpeedSegment* s = &segment_[cur_index_];
+
+		speed_ = s->v + s->k * (time - s->t) + 0.5 * s->j * pow(time - s->t, 2);
+	}
+
+	elapsed_ = MAX(0.0, time - segment_[0].t);
+
+	if (cur_index_ >= entry_.size() - 1 && fabs(speed_ - segment_.back().v) < SMALL_NUMBER)
+	{
+		speed_ = segment_.back().v;
+		OSCAction::End(simTime);
+	}
+
+	object_->SetSpeed(speed_);
+}
+
+void LongSpeedProfileAction::CheckAcceleration(double acc)
+{
+	if (following_mode_ == FollowingMode::POSITION)
+	{
+		return;
+	}
+
+	if (acc > dynamics_.max_acceleration_ + SMALL_NUMBER || acc < -dynamics_.max_deceleration_ - SMALL_NUMBER)
+	{
+		LOG("Acceleration %.2f not within constrained span [%.2f:%.2f], revert to linear mode",
+			acc, dynamics_.max_acceleration_, -dynamics_.max_deceleration_);
+
+		following_mode_ = FollowingMode::POSITION;
+	}
+}
+
+void LongSpeedProfileAction::CheckAccelerationRate(double acc_rate)
+{
+	if (following_mode_ == FollowingMode::POSITION)
+	{
+		return;
+	}
+
+	if (acc_rate > dynamics_.max_acceleration_rate_ + SMALL_NUMBER || acc_rate < -dynamics_.max_deceleration_rate_ - SMALL_NUMBER)
+	{
+		LOG("Acceleration rate %.2f not within constrained span [%.2f:%.2f], revert to linear mode",
+			acc_rate, dynamics_.max_acceleration_rate_, -dynamics_.max_deceleration_rate_);
+
+		following_mode_ = FollowingMode::POSITION;
+	}
+}
+
+void LongSpeedProfileAction::CheckSpeed(double speed)
+{
+	if (following_mode_ == FollowingMode::POSITION)
+	{
+		return;
+	}
+
+	if (speed > dynamics_.max_speed_ + SMALL_NUMBER || speed < -dynamics_.max_speed_ - SMALL_NUMBER)
+	{
+		LOG("Speed %.2f not within constrained span [%.2f:%.2f], revert to linear mode",
+			speed, dynamics_.max_speed_, -dynamics_.max_speed_);
+
+		following_mode_ = FollowingMode::POSITION;
+	}
+}
+
+void LongSpeedProfileAction::AddSpeedSegment(double t, double v, double k, double j)
+{
+	CheckSpeed(v);
+	CheckAcceleration(k);
+	CheckAccelerationRate(j);
+	segment_.push_back({ t, v, k, j });
 }
 
 void LongSpeedAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
@@ -924,9 +1360,9 @@ void LongSpeedAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
 
 	if (target_->type_ == Target::TargetType::RELATIVE_SPEED)
 	{
-		if (((TargetRelative*)target_)->object_ == obj1)
+		if (((TargetRelative*)target_.get())->object_ == obj1)
 		{
-			((TargetRelative*)target_)->object_ = obj2;
+			((TargetRelative*)target_.get())->object_ = obj2;
 		}
 	}
 }
@@ -1037,7 +1473,7 @@ void LongDistanceAction::Step(double simTime, double)
 		OSCAction::End(simTime);
 	}
 
-	if (dynamics_.none_ == true)
+	if (dynamics_.max_acceleration_ >= LARGE_NUMBER || dynamics_.max_deceleration_ >= LARGE_NUMBER)
 	{
 		// Set position according to distance and copy speed of target vehicle
 		object_->pos_.MoveAlongS(distance_diff);
@@ -1096,7 +1532,8 @@ void TeleportAction::Start(double simTime, double dt)
 
 		object_->trail_.Reset();
 
-		if (object_->ghost_Ego_ != 0)
+		// The following code will copy speed from the Ego that ghost relates to
+		if (object_->ghost_Ego_ != nullptr)
 		{
 			object_->SetSpeed(object_->ghost_Ego_->GetSpeed());
 		}
@@ -1116,7 +1553,7 @@ void TeleportAction::Start(double simTime, double dt)
 		return;  // position controlled by tow vehicle
 	}
 
-	object_->pos_.TeleportTo(position_);
+ 	object_->pos_.TeleportTo(position_);
 	if (!object_->TowVehicle() && object_->TrailerVehicle())
 	{
 		((Vehicle*)object_)->AlignTrailers();
@@ -1124,7 +1561,7 @@ void TeleportAction::Start(double simTime, double dt)
 
 	LOG("%s New position:", object_->name_.c_str());
 	object_->pos_.Print();
-	object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL);
+	object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL | Object::DirtyBit::SPEED);
 	object_->reset_ = true;
 }
 
@@ -1219,8 +1656,6 @@ void SynchronizeAction::PrintStatus(const char* custom_msg)
 
 void SynchronizeAction::Start(double simTime, double dt)
 {
-	sim_time_ = simTime;
-
 	// resolve steady state -> translate into dist
 	if (steadyState_.type_ == SteadyStateType::STEADY_STATE_TIME)
 	{
@@ -1246,12 +1681,9 @@ void SynchronizeAction::Start(double simTime, double dt)
 	}
 }
 
-void SynchronizeAction::Step(double simTime, double)
+void SynchronizeAction::Step(double simTime, double dt)
 {
 	bool done = false;
-
-	double dt = simTime - sim_time_;
-	sim_time_ = simTime;
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
 		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LONG))
@@ -1284,19 +1716,11 @@ void SynchronizeAction::Step(double simTime, double)
 	if (dist < tolerance_ + SMALL_NUMBER)
 	{
 		LOG("Synchronize dist (%.2f) < tolerance (%.2f)", dist, tolerance_);
-		if (final_speed_)
-		{
-			object_->SetSpeed(final_speed_->GetValue());
-		}
 		done = true;
 	}
 	else if (masterDist < tolerance_master_ + SMALL_NUMBER)
 	{
 		LOG("Synchronize masterDist (%.2f) < tolerance (%.2f)", masterDist, tolerance_master_);
-		if (final_speed_)
-		{
-			object_->SetSpeed(final_speed_->GetValue());
-		}
 		done = true;
 	}
 	else if (dist > lastDist_)
@@ -1317,17 +1741,28 @@ void SynchronizeAction::Step(double simTime, double)
 	dist = MAX(dist - tolerance_, SMALL_NUMBER);
 	masterDist = MAX(masterDist - tolerance_master_, SMALL_NUMBER);
 
+	double masterTimeToDest = LARGE_NUMBER;
+	if (master_object_->speed_ > SMALL_NUMBER)
+	{
+		masterTimeToDest = masterDist / master_object_->speed_;
+
+		if (masterTimeToDest < dt)
+		{
+			LOG("Synchronize masterTimeToDest (%.3f) reached within this timestep (%.3f)", masterTimeToDest, dt);
+			done = true;
+		}
+	}
+
 	if (done)
 	{
+		if (final_speed_)
+		{
+			object_->SetSpeed(final_speed_->GetValue());
+		}
 		OSCAction::End(simTime);
 	}
 	else
 	{
-		double masterTimeToDest = LARGE_NUMBER;
-		if (master_object_->speed_ > SMALL_NUMBER)
-		{
-			masterTimeToDest = masterDist / master_object_->speed_;
-		}
 		double average_speed = dist / masterTimeToDest;
 		double acc = 0;
 
@@ -1485,6 +1920,7 @@ void SynchronizeAction::Step(double simTime, double)
 				{
 					// Passed apex. Switch to linear mode (constant acc) to reach final destination and speed
 					mode_ = SynchMode::MODE_LINEAR;
+					//PrintStatus("Passed apex");
 
 					// Keep current speed for this time step
 					return;

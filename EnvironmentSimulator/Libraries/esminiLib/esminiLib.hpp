@@ -22,55 +22,59 @@
 
 typedef struct
 {
-	int id;              // Automatically generated unique object id
-	int model_id;        // Id to control what 3D model to represent the vehicle - see carModelsFiles_[] in scenarioenginedll.cpp
-	int ctrl_type;       // 0: DefaultController 1: External. Further values see Controller::Type enum
-	float timestamp;     // Not used yet (idea is to use it to interpolate position for increased sync bewtween simulators)
-	float x;             // global x coordinate of position
-	float y;             // global y coordinate of position
-	float z;             // global z coordinate of position
-	float h;             // heading/yaw in global coordinate system
-	float p;             // pitch in global coordinate system
-	float r;             // roll in global coordinate system
-	int roadId;          // road ID
-	int junctionId;      // Junction ID (-1 if not in a junction)
-	float t;             // lateral position in road coordinate system
-	int laneId;          // lane ID
-	float laneOffset;    // lateral offset from lane center
-	float s;             // longitudinal position in road coordinate system
-	float speed;         // speed
-	float centerOffsetX; // x coordinate of bounding box center relative object reference point (local coordinate system)
-	float centerOffsetY; // y coordinate of bounding box center relative object reference point (local coordinate system)
-	float centerOffsetZ; // z coordinate of bounding box center relative object reference point (local coordinate system)
-	float width;         // width
-	float length;        // length
-	float height;        // height
-	int objectType;      // Main type according to entities.hpp / Object / Type
-	int objectCategory;  // Sub category within type, according to entities.hpp / Vehicle, Pedestrian, MiscObject / Category
+    int id;              // Automatically generated unique object id
+    int model_id;        // Id to control what 3D model to represent the vehicle - see carModelsFiles_[] in scenarioenginedll.cpp
+    int ctrl_type;       // 0: DefaultController 1: External. Further values see Controller::Type enum
+    float timestamp;     // Not used yet (idea is to use it to interpolate position for increased sync bewtween simulators)
+    float x;             // global x coordinate of position
+    float y;             // global y coordinate of position
+    float z;             // global z coordinate of position
+    float h;             // heading/yaw in global coordinate system
+    float p;             // pitch in global coordinate system
+    float r;             // roll in global coordinate system
+    int roadId;          // road ID
+    int junctionId;      // Junction ID (-1 if not in a junction)
+    float t;             // lateral position in road coordinate system
+    int laneId;          // lane ID
+    float laneOffset;    // lateral offset from lane center
+    float s;             // longitudinal position in road coordinate system
+    float speed;         // speed
+    float centerOffsetX; // x coordinate of bounding box center relative object reference point (local coordinate system)
+    float centerOffsetY; // y coordinate of bounding box center relative object reference point (local coordinate system)
+    float centerOffsetZ; // z coordinate of bounding box center relative object reference point (local coordinate system)
+    float width;         // width
+    float length;        // length
+    float height;        // height
+    int objectType;      // Main type according to entities.hpp / Object / Type
+    int objectCategory;  // Sub category within type, according to entities.hpp / Vehicle, Pedestrian, MiscObject / Category
+    float wheel_angle;   // Steering angle of the wheel
+    float wheel_rot;     // Rotation angle of the wheel
 } SE_ScenarioObjectState;
 
+// asciidoc tag::SE_RoadInfo_struct[]
 typedef struct
 {
-	float global_pos_x;	 // target position, in global coordinate system
-	float global_pos_y;	 // target position, in global coordinate system
-	float global_pos_z;	 // target position, in global coordinate system
-	float local_pos_x;	 // target position, relative vehicle (pivot position object) coordinate system
-	float local_pos_y;	 // target position, relative vehicle (pivot position object) coordinate system
-	float local_pos_z;	 // target position, relative vehicle (pivot position object) coordinate system
-	float angle;		 // heading angle to target from and relative vehicle (pivot position object) coordinate system
-	float road_heading;	 // road heading at steering target point
-	float road_pitch;	 // road pitch (inclination) at steering target point
-	float road_roll;	 // road roll (camber) at target point
-	float trail_heading; // trail heading (only when used for trail lookups, else equals road_heading)
-	float curvature;	 // road curvature at steering target point
-	float speed_limit;	 // speed limit given by OpenDRIVE type entry
-	int roadId;			 // target position, road ID
-	int junctionId;      // target position, junction ID (-1 if not in a junction)
-	int laneId;			 // target position, lane ID
-	float laneOffset;	 // target position, lane offset (lateral distance from lane center)
-	float s;			 // target position, s (longitudinal distance along reference line)
-	float t;			 // target position, t (lateral distance from reference line)
+    float global_pos_x;  // target position, in global coordinate system
+    float global_pos_y;  // target position, in global coordinate system
+    float global_pos_z;  // target position, in global coordinate system
+    float local_pos_x;   // target position, relative vehicle (pivot position object) coordinate system
+    float local_pos_y;   // target position, relative vehicle (pivot position object) coordinate system
+    float local_pos_z;   // target position, relative vehicle (pivot position object) coordinate system
+    float angle;         // heading angle to target from and relative vehicle (pivot position object) coordinate system
+    float road_heading;  // road heading at steering target point
+    float road_pitch;    // road pitch (inclination) at steering target point
+    float road_roll;     // road roll (camber) at target point
+    float trail_heading; // trail heading (only when used for trail lookups, else equals road_heading)
+    float curvature;     // road curvature at steering target point
+    float speed_limit;   // speed limit given by OpenDRIVE type entry
+    int roadId;          // target position, road ID
+    int junctionId;      // target position, junction ID (-1 if not in a junction)
+    int laneId;          // target position, lane ID
+    float laneOffset;    // target position, lane offset (lateral distance from lane center)
+    float s;             // target position, s (longitudinal distance along reference line)
+    float t;             // target position, t (lateral distance from reference line)
 } SE_RoadInfo;
+// asciidoc end::SE_RoadInfo_struct[]
 
 typedef struct
 {
@@ -102,8 +106,8 @@ typedef struct
 	float h;
 	float p;
 	float speed;
-	float whee_rotation;
-	float whee_angle;
+	float wheel_rotation;
+	float wheel_angle;
 } SE_SimpleVehicleState;
 
 typedef struct
@@ -185,13 +189,38 @@ extern "C"
 	SE_DLL_API void SE_ClearPaths();
 
 	/**
-		Specify logfile name, optionally including directory path
-		examples: "../logfile.txt" "c:/tmp/esmini.log" "my.log"
+		Specify scenario logfile (.txt) file path,
+		optionally including directory path and/or filename
+		Specify only directory (end with "/" or "\") to let esmini set default filename
+		Specify only filename (no leading "/" or "\") to let esmini set default directory
 		Set "" to disable logfile
+		examples:
+		  "../logfile.txt" (relative current directory)
+		  "c:/tmp/esmini.log" (absolute path)
+		  "my.log" (put it in current directory)
+		  "c:/tmp/" (use default filename)
+		  "" (prevent creation of logfile)
 		Note: Needs to be called prior to calling SE_Init()
 		@param path Logfile path
 	*/
 	SE_DLL_API void SE_SetLogFilePath(const char *logFilePath);
+
+	/**
+		Specify scenario recording (.dat) file path,
+		optionally including directory path and/or filename
+		Specify only directory (end with "/" or "\") to let esmini set default filename
+		Specify only filename (no leading "/" or "\") to let esmini set default directory
+		Set "" to use default .dat filename
+		examples:
+		  "../my_sim.dat" (relative current directory)
+		  "c:/tmp/esmini.dat" (absolute path)
+		  "my_sim.dat" (put it in current directory)
+		  "c:/tmp/" (use default filename)
+		  "" (use current directory and default .dat filename)
+		Note: Needs to be called prior to calling SE_Init()
+		@param path Recording (.dat) file path
+	*/
+	SE_DLL_API void SE_SetDatFilePath(const char* datFilePath);
 
 	/**
 	Get seed that esmini uses for current session. It can then be re-used
@@ -317,9 +346,14 @@ extern "C"
 	SE_DLL_API void SE_CollisionDetection(bool mode);
 
 	/**
-		Get simulation time in seconds
+		Get simulation time in seconds - float (32 bit) precision
 	*/
 	SE_DLL_API float SE_GetSimulationTime(); // Get simulation time in seconds
+
+	/**
+		Get simulation time in seconds - double (64 bit) precision
+	*/
+	SE_DLL_API double SE_GetSimulationTimeDouble();
 
 	/**
 		Get simulation time step in seconds
@@ -546,10 +580,9 @@ extern "C"
 		@param h Heading / yaw
 		@param p Pitch
 		@param r Roll
-		@param speed Speed in forward direction of the enitity
 		@return 0 if successful, -1 if not
 	*/
-	SE_DLL_API int SE_ReportObjectPos(int object_id, float timestamp, float x, float y, float z, float h, float p, float r, float speed);
+	SE_DLL_API int SE_ReportObjectPos(int object_id, float timestamp, float x, float y, float z, float h, float p, float r);
 
 	/**
 		Report object position in limited set of cartesian coordinates x, y and heading,
@@ -559,10 +592,9 @@ extern "C"
 		@param x X coordinate
 		@param y Y coordinate
 		@param h Heading / yaw
-		@param speed Speed in forward direction of the enitity
 		@return 0 if successful, -1 if not
 	*/
-	SE_DLL_API int SE_ReportObjectPosXYH(int object_id, float timestamp, float x, float y, float h, float speed);
+	SE_DLL_API int SE_ReportObjectPosXYH(int object_id, float timestamp, float x, float y, float h);
 
 	/**
 		Report object position in road coordinates
@@ -572,10 +604,9 @@ extern "C"
 		@param laneId Id of the lane
 		@param laneOffset Lateral offset from center of specified lane
 		@param s Longitudinal distance of the position along the specified road
-		@param speed Speed in forward direction (s axis) of the enitity
 		@return 0 if successful, -1 if not
 	*/
-	SE_DLL_API int SE_ReportObjectRoadPos(int object_id, float timestamp, int roadId, int laneId, float laneOffset, float s, float speed);
+	SE_DLL_API int SE_ReportObjectRoadPos(int object_id, float timestamp, int roadId, int laneId, float laneOffset, float s);
 
 	/**
 		Report object longitudinal speed. Useful for an external longitudinal controller.
@@ -678,6 +709,13 @@ extern "C"
 	SE_DLL_API int SE_GetId(int index);
 
 	/**
+	Get the Id of an entity present in the current scenario
+	@param name Name of the object.
+	@return Id of the object, -1 on error e.g. scenario not initialized
+	*/
+	SE_DLL_API int SE_GetIdByName(const char* name);
+
+	/**
 		Get the state of specified object
 		@param object_id Id of the object.
 		@param state Pointer/reference to a SE_ScenarioObjectState struct to be filled in
@@ -760,7 +798,14 @@ extern "C"
 		@param data Struct including all result values, see typedef for details
 		@param lookAheadMode Measurement strategy: Along 0=lane center, 1=road center (ref line) or 2=current lane offset. See roadmanager::Position::LookAheadMode enum
 		@param inRoadDrivingDirection If true look along lane driving direction. If false, look in closest direction according to object heading.
-		@return 0 if successful, 1 if probe reached end of road, 2 if end ouf route, -1 if some error
+		@return 0 = OK,
+			ERROR_OFF_ROAD = -4,
+			ERROR_END_OF_ROUTE = -3,
+			ERROR_END_OF_ROAD = -2,
+			ERROR_GENERIC = -1,
+			ENTERED_NEW_ROAD = 1,
+			MADE_JUNCTION_CHOICE = 2
+			(see roadmanager.hpp -> Position::ReturnCode)
 	*/
 	SE_DLL_API int SE_GetRoadInfoAtDistance(int object_id, float lookahead_distance, SE_RoadInfo *data, int lookAheadMode, bool inRoadDrivingDirection);
 
@@ -833,15 +878,29 @@ extern "C"
 	*/
 	SE_DLL_API void SE_RegisterConditionCallback(void (*fnPtr)(const char* name, double timestamp));
 
-	/**
-	Registers a function to be called back from esmini every time an event starts or ends.
-	The name of the respective event, the current timestamp and whether the event
-	starts (true) or ends (false) will be returned.
-	In case an event starts and ends within the same simulation step, only the end-transition may occur.
-	Registered callbacks will be cleared between SE_Init calls.
-	@param fnPtr A pointer to the function to be invoked
-	*/
-	SE_DLL_API void SE_RegisterEventCallback(void (*fnPtr)(const char* name, double timestamp, bool start));
+    /**
+    Registers a function to be called back from esmini every time a StoryBoardElement changes its state.
+    The name of the respective StoryBoardElement, the type and the state will be returned.
+
+     Values for the StoryBoardElement type
+        STORY = 1,
+        ACT = 2,
+        MANEUVER_GROUP = 3,
+        MANEUVER = 4,
+        EVENT = 5,
+        ACTION = 6,
+        UNDEFINED_ELEMENT_TYPE = 0
+
+     Values for the StoryBoardElement state
+        STANDBY = 1,
+        RUNNING = 2,
+        COMPLETE = 3,
+        UNDEFINED_ELEMENT_STATE = 0
+
+    Registered callbacks will be cleared between SE_Init calls.
+    @param fnPtr A pointer to the function to be invoked
+    */
+    SE_DLL_API void SE_RegisterStoryBoardElementStateChangeCallback(void (*fnPtr)(const char* name, int type, int state));
 
 	/**
 		Get the number of road signs along specified road
@@ -896,6 +955,12 @@ extern "C"
 		@param filename Optional filename, including path. Set to 0 or "" to use default.
 	*/
 	SE_DLL_API void SE_EnableOSIFile(const char *filename);
+
+	/**
+		Enforce flushing OSI file (save all buffered data to file)
+		@return 0
+	*/
+	SE_DLL_API void SE_FlushOSIFile();
 
 	/**
 		The SE_ClearOSIGroundTruth clears the certain groundtruth data
@@ -1099,10 +1164,16 @@ extern "C"
 	*/
 	SE_DLL_API void SE_SimpleVehicleGetState(void *handleSimpleVehicle, SE_SimpleVehicleState *state);
 
+	/**
+	Enable (default) or disable callback that handles framebuffer image capturing. NOTE: Needs to be called before SE_Init()
+	@param state true (default) = enable off-screen rendering callback, false = disable off-screen rendering callback
+	@return 0 if successful, -1 if not
+	*/
+	SE_DLL_API int SE_SetOffScreenRendering(bool state);
 
 	/**
 	Capture rendered image to RAM for possible fetch via API, e.g. SE_FetchImage()
-	@param state true=capture images (default), false=don't capture (might improve performance on some systems)
+	@param state true=capture images, false=don't capture (default, might improve performance on some systems)
 	@return 0 if successful, -1 if not
 	*/
 	SE_DLL_API int SE_SaveImagesToRAM(bool state);
@@ -1159,15 +1230,46 @@ extern "C"
 	SE_DLL_API int SE_WriteTGAImage(const char* filename, int width, int height, const unsigned char* data, int pixelSize, int pixelFormat, bool upsidedown);
 
 	/**
-	Add a camera mode with custom position and orientation (heading and pitch)
-	@param x X coordinate relative vehicle curerntly in focus
-	@param y Y coordinate relative vehicle curerntly in focus
-	@param z Z coordinate relative vehicle curerntly in focus
-	@param h H Heading (yaw) relative vehicle curerntly in focus
-	@param p P Pitch relative vehicle curerntly in focus
+	Add a camera with relative position and orientation (heading and pitch)
+	@param x X coordinate relative vehicle currently in focus
+	@param y Y coordinate relative vehicle currently in focus
+	@param z Z coordinate relative vehicle currently in focus
+	@param h Heading (yaw) (radians) relative vehicle currently in focus
+	@param p Pitch (radians) relative vehicle currently in focus
 	@return 0 if successful, -1 if not
 	*/
 	SE_DLL_API int SE_AddCustomCamera(double x, double y, double z, double h, double p);
+
+	/**
+	Add a fixed camera at custom global position and orientation (heading and pitch)
+	@param x X coordinate
+	@param y Y coordinate
+	@param z Z coordinate
+	@param h Heading (yaw) (radians)
+	@param p P Pitch (radians)
+	@return 0 if successful, -1 if not
+	*/
+	SE_DLL_API int SE_AddCustomFixedCamera(double x, double y, double z, double h, double p);
+
+	/**
+	Add a camera with fixed position but continuously looking at current entity
+	@param x X coordinate
+	@param y Y coordinate
+	@param z Z coordinate
+	@return 0 if successful, -1 if not
+	*/
+	SE_DLL_API int SE_AddCustomSemiFixedCamera(double x, double y, double z);
+
+	/**
+	Add a top view camera with fixed position and rotation
+	@param x X coordinate
+	@param y Y coordinate
+	@param z Z coordinate
+	@param rot Rotation (radians)
+	@return 0 if successful, -1 if not
+	*/
+	SE_DLL_API int SE_AddCustomFixedTopCamera(double x, double y, double z, double rot);
+
 
 	/**
 	Select camera mode

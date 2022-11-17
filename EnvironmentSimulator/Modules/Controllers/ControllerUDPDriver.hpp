@@ -37,7 +37,8 @@ namespace scenarioengine
 			NO_INPUT = 0,
 			DRIVER_INPUT = 1,
 			VEHICLE_STATE_XYZHPR = 2,
-			VEHICLE_STATE_XYH = 3
+			VEHICLE_STATE_XYH = 3,
+			VEHICLE_STATE_H = 4
 		};
 
 		enum class ExecMode
@@ -61,7 +62,16 @@ namespace scenarioengine
 			double h;
 			double speed;
 			double wheelAngle;
+			unsigned char deadReckon;
 		} DMMSGVehicleStateXYH;
+
+		typedef struct
+		{
+			double h;
+			double speed;
+			double wheelAngle;
+			unsigned char deadReckon;
+		} DMMSGVehicleStateH;
 
 		typedef struct
 		{
@@ -73,6 +83,7 @@ namespace scenarioengine
 			double r;
 			double speed;
 			double wheelAngle;
+			unsigned char deadReckon;
 		} DMMSGVehicleStateXYZHPR;
 
 		typedef struct
@@ -87,6 +98,7 @@ namespace scenarioengine
 			DMHeader header;
 			union
 			{
+				DMMSGVehicleStateH stateH;
 				DMMSGVehicleStateXYH stateXYH;
 				DMMSGVehicleStateXYZHPR stateXYZHPR;
 				DMMSGDriverInput driverInput;

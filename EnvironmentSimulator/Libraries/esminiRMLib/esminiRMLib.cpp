@@ -159,7 +159,7 @@ extern "C"
 
 		if (!roadmanager::Position::LoadOpenDrive(odrFilename))
 		{
-			printf("Failed to load ODR %s\n", odrFilename);
+			LOG("Failed to load ODR %s", odrFilename);
 			return -1;
 		}
 		odrManager = roadmanager::Position::GetOpenDrive();
@@ -360,13 +360,20 @@ extern "C"
 			roadmanager::Road *road = odrManager->GetRoadById(roadId);
 
 			// Consider only drivable lanes
-			roadmanager::LaneSection *laneSection = road->GetLaneSectionByS(s);
-			for (size_t i = 0; i < laneSection->GetNumberOfLanes(); i++)
+			if (road)
 			{
-				if (laneSection->GetLaneByIdx((int)i)->IsDriving())
+				roadmanager::LaneSection* laneSection = road->GetLaneSectionByS(s);
+				for (size_t i = 0; i < laneSection->GetNumberOfLanes(); i++)
 				{
-					numberOfDrivableLanes++;
+					if (laneSection->GetLaneByIdx((int)i)->IsDriving())
+					{
+						numberOfDrivableLanes++;
+					}
 				}
+			}
+			else
+			{
+				return -1;
 			}
 		}
 
@@ -438,22 +445,25 @@ extern "C"
 		else
 		{
 			roadmanager::Position *pos = &position[handle];
-			pos->SetLanePos(roadId, laneId, s, laneOffset);
-
-			if (align)
+			if (pos)
 			{
-				if (laneId < 0)
+				int retval = (int)pos->SetLanePos(roadId, laneId, s, laneOffset);
+				if (align)
 				{
-					pos->SetHeadingRelative(0);
+					if (laneId < 0)
+					{
+						pos->SetHeadingRelative(0);
+					}
+					else
+					{
+						pos->SetHeadingRelative(M_PI);
+					}
 				}
-				else
-				{
-					pos->SetHeadingRelative(M_PI);
-				}
+				return retval;
 			}
 		}
 
-		return 0;
+		return -1;
 	}
 
 	RM_DLL_API int RM_SetWorldPosition(int handle, float x, float y, float z, float h, float p, float r)
@@ -465,10 +475,13 @@ extern "C"
 		else
 		{
 			roadmanager::Position *pos = &position[handle];
-			pos->SetInertiaPos(x, y, z, h, p, r);
+			if (pos)
+			{
+				return pos->SetInertiaPos(x, y, z, h, p, r);
+			}
 		}
 
-		return 0;
+		return -1;
 	}
 
 	RM_DLL_API int RM_SetWorldXYHPosition(int handle, float x, float y, float h)
@@ -480,10 +493,13 @@ extern "C"
 		else
 		{
 			roadmanager::Position *pos = &position[handle];
-			pos->XYZH2TrackPos(x, y, pos->GetZ(), h);
+			if (pos)
+			{
+				return (int)pos->XYZH2TrackPos(x, y, pos->GetZ(), h);
+			}
 		}
 
-		return 0;
+		return -1;
 	}
 
 	RM_DLL_API int RM_SetWorldXYZHPosition(int handle, float x, float y, float z, float h)
@@ -495,10 +511,31 @@ extern "C"
 		else
 		{
 			roadmanager::Position* pos = &position[handle];
-			pos->XYZH2TrackPos(x, y, z, h);
+			if (pos)
+			{
+				return (int)pos->XYZH2TrackPos(x, y, z, h);
+			}
 		}
 
-		return 0;
+		return -1;
+	}
+
+	RM_DLL_API int RM_SetRoadId(int handle, int roadId)
+	{
+		if (odrManager == nullptr || handle >= position.size())
+		{
+			return -1;
+		}
+		else
+		{
+			roadmanager::Position* pos = &position[handle];
+			if (pos)
+			{
+				return (int)pos->XYZH2TrackPos(pos->GetX(), pos->GetY(), pos->GetZ(), pos->GetH(), false, roadId, false);
+			}
+		}
+
+		return -1;
 	}
 
 	RM_DLL_API int RM_SetS(int handle, float s)
@@ -510,10 +547,13 @@ extern "C"
 		else
 		{
 			roadmanager::Position *pos = &position[handle];
-			pos->SetLanePos(pos->GetTrackId(), pos->GetLaneId(), s, pos->GetOffset());
+			if (pos)
+			{
+				return (int)pos->SetLanePos(pos->GetTrackId(), pos->GetLaneId(), s, pos->GetOffset());
+			}
 		}
 
-		return 0;
+		return -1;
 	}
 
 	RM_DLL_API int RM_PositionMoveForward(int handle, float dist, float junctionSelectorAngle)
@@ -526,8 +566,13 @@ extern "C"
 		{
 			roadmanager::Position *pos = &position[handle];
 
-			return(static_cast<int>(pos->MoveAlongS(dist, 0.0, junctionSelectorAngle)));
+			if (pos)
+			{
+				return (int)pos->MoveAlongS(dist, 0.0, junctionSelectorAngle);
+			}
 		}
+
+		return -1;
 	}
 
 	RM_DLL_API int RM_GetPositionData(int handle, RM_PositionData *data)

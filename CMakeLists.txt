@@ -8,6 +8,7 @@ else()
   cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
 endif()
 
+
 project (EnvironmentSimulator)
 
 if(MSVC)
@@ -16,6 +17,7 @@ elseif (MINGW)
 endif()
 
 set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Allow for folder structure
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -49,6 +51,8 @@ endif()
 
 
 include_directories( ${PUGIXML_INCLUDE_DIR} ${EXPR_INCLUDE_DIR})
+
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/project_options.cmake)
 
 add_subdirectory(EnvironmentSimulator)
 

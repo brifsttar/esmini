@@ -59,10 +59,13 @@ namespace viewer
 		NODE_MASK_ENTITY_MODEL =     (1 << 7),
 		NODE_MASK_ENTITY_BB =        (1 << 8),
 		NODE_MASK_INFO =             (1 << 9),
-		NODE_MASK_ROAD_SENSORS =     (1 << 10),
-		NODE_MASK_TRAJECTORY_LINES = (1 << 11),
-		NODE_MASK_ROUTE_WAYPOINTS  = (1 << 12),
+		NODE_MASK_INFO_PER_OBJ =     (1 << 10),
+		NODE_MASK_ROAD_SENSORS =     (1 << 11),
+		NODE_MASK_TRAJECTORY_LINES = (1 << 12),
+		NODE_MASK_ROUTE_WAYPOINTS  = (1 << 13),
 	} NodeMask;
+
+	osg::Vec4 ODR2OSGColor(roadmanager::RoadMarkColor color);
 
 	class PolyLine
 	{
@@ -210,7 +213,7 @@ namespace viewer
 
 	private:
 		osgViewer::Viewer* viewer_;
-		PolyLine* pline_;
+		std::unique_ptr<PolyLine> pline_;
 	};
 
 	class RouteWayPoints
@@ -243,14 +246,24 @@ namespace viewer
 		void Hide() { group_->setNodeMask(0x0); };
 	};
 
+	class OnScreenText
+	{
+	public:
+		OnScreenText() { string_[0] = 0; }
+		char string_[256];
+		osg::ref_ptr<osg::Geode> geode_;
+		osg::ref_ptr<osgText::Text> osg_text_;
+	};
+
 	class EntityModel
 	{
 	public:
 
 		enum class EntityType
 		{
-			VEHICLE,
-			OTHER
+			ENTITY = 1 << 0,
+			MOVING = ENTITY | 1 << 1,
+			VEHICLE = MOVING | 1 << 2,
 		};
 
 		osg::ref_ptr<osg::Group> group_;
@@ -262,9 +275,15 @@ namespace viewer
 		osg::ref_ptr<osg::Group> parent_;
 		osg::BoundingBox modelBB_;
 
-		Trajectory* trajectory_;
-		static const EntityType entity_type_ = EntityType::OTHER;
+		std::unique_ptr<Trajectory> trajectory_;
+		static const EntityType entity_type_ = EntityType::ENTITY;
 		virtual EntityType GetType() { return entity_type_; }
+
+		/* Returns true if type is or inherits from MOVING */
+		bool IsMoving() { return static_cast<int>(GetType()) & 1 << 1; }
+
+		/* Returns true if type is or inherits from VEHICLE */
+		bool IsVehicle() { return static_cast<int>(GetType()) & 1 << 2; }
 
 		std::string name_;
 		std::string filename_;
@@ -274,31 +293,44 @@ namespace viewer
 		EntityModel(osgViewer::Viewer* viewer, osg::ref_ptr<osg::Group> group, osg::ref_ptr<osg::Group> parent,
 			osg::ref_ptr<osg::Group> trail_parent, osg::ref_ptr<osg::Group>traj_parent, osg::ref_ptr<osg::Node> dot_node,
 			osg::ref_ptr<osg::Group> route_waypoint_parent, osg::Vec4 trail_color, std::string name);
-		~EntityModel();
+		virtual ~EntityModel();
 		void SetPosition(double x, double y, double z);
 		void SetRotation(double hRoad, double pRoad, double hRelative, double r);
 		void SetRotation(double h, double p, double r);
 
 		void SetTransparency(double factor);
 
-
-		PolyLine* trail_;
-		RouteWayPoints* routewaypoints_;
+		std::unique_ptr<PolyLine> trail_;
+		std::unique_ptr<RouteWayPoints> routewaypoints_;
 		osgViewer::Viewer* viewer_;
+		OnScreenText on_screen_info_;
 	};
 
-	class CarModel : public EntityModel
+	class MovingModel : public EntityModel
+	{
+	public:
+		PointSensor* road_sensor_;
+		PointSensor* lane_sensor_;
+		PointSensor* route_sensor_;
+		PointSensor* trail_sensor_;
+		PointSensor* steering_sensor_;
+		static const EntityType entity_type_ = EntityType::MOVING;
+		virtual EntityType GetType() { return entity_type_; }
+
+		MovingModel(osgViewer::Viewer* viewer, osg::ref_ptr<osg::Group> group, osg::ref_ptr<osg::Group> parent,
+			osg::ref_ptr<osg::Group> trail_parent, osg::ref_ptr<osg::Group>traj_parent, osg::ref_ptr<osg::Node> dot_node,
+			osg::ref_ptr<osg::Group> route_waypoint_parent, osg::Vec4 trail_color, std::string name);
+		~MovingModel() {}
+		void ShowRouteSensor(bool mode);
+	};
+
+	class CarModel : public MovingModel
 	{
 	public:
 		std::vector<osg::ref_ptr<osg::PositionAttitudeTransform>> front_wheel_;
 		std::vector<osg::ref_ptr<osg::PositionAttitudeTransform>> rear_wheel_;
 		double wheel_angle_;
 		double wheel_rot_;
-		PointSensor* road_sensor_;
-		PointSensor* route_sensor_;
-		PointSensor* lane_sensor_;
-		PointSensor* trail_sensor_;
-		PointSensor* steering_sensor_;
 		static const EntityType entity_type_ = EntityType::VEHICLE;
 		virtual EntityType GetType() { return entity_type_; }
 
@@ -309,15 +341,13 @@ namespace viewer
 		osg::ref_ptr<osg::PositionAttitudeTransform>  AddWheel(osg::ref_ptr<osg::Node> carNode, const char* wheelName);
 		void UpdateWheels(double wheel_angle, double wheel_rotation);
 		void UpdateWheelsDelta(double wheel_angle, double wheel_rotation_delta);
-		void ShowRouteSensor(bool mode);
 	};
 
 	class VisibilityCallback : public osg::NodeCallback
 	{
 	public:
-		VisibilityCallback(osg::Node* node, scenarioengine::Object* object, EntityModel* entity)
+		VisibilityCallback(scenarioengine::Object* object, EntityModel* entity)
 		{
-			node_ = (osg::LOD*)node;
 			object_ = object;
 			entity_ = entity;
 		}
@@ -329,7 +359,6 @@ namespace viewer
 	private:
 		scenarioengine::Object* object_;
 		EntityModel* entity_;
-		osg::LOD* node_;
 	};
 
 	// Callback for fetching key strokes
@@ -387,7 +416,7 @@ namespace viewer
 		osg::ref_ptr<osg::Group> roadSensors_;
 		osg::ref_ptr<osg::Group> trails_;
 		roadmanager::OpenDrive* odrManager_;
-		RoadGeom* roadGeom;
+		std::unique_ptr<RoadGeom> roadGeom;
 
 		std::string exe_path_;
 		std::vector<KeyEventCallback> callback_;
@@ -395,10 +424,13 @@ namespace viewer
 
 		osg::ref_ptr<osg::Camera> infoTextCamera;
 		osg::ref_ptr<osgText::Text> infoText;
+		osg::ref_ptr<osg::Camera> onScreenTextCamera;
 
 		std::vector<PolyLine*> polyLine_;
 		OffScreenImage capturedImage_;
 		int captureCounter_;
+		int frameCounter_;
+		int lightCounter_;
 
 		SE_Semaphore renderSemaphore;
 		SE_Mutex imageMutex;
@@ -406,7 +438,11 @@ namespace viewer
 		Viewer(roadmanager::OpenDrive* odrManager, const char* modelFilename, const char* scenarioFilename, const char* exe_path, osg::ArgumentParser arguments, SE_Options* opt = 0);
 		~Viewer();
 		static void PrintUsage();
-		void AddCustomCamera(double x, double y, double z, double h, double p);
+		void AddCustomCamera(double x, double y, double z, double h, double p, bool fixed_pos = false);
+		void AddCustomCamera(double x, double y, double z, bool fixed_pos = false);
+		void AddCustomFixedTopCamera(double x, double y, double z, double rot);
+		int GetCameraPosAndRot(osg::Vec3& pos, osg::Vec3& rot);
+		int AddCustomLightSource(double x, double y, double z, double intensity);
 
 		/**
 		* Set mode of the esmini camera model
@@ -440,7 +476,6 @@ namespace viewer
 		bool getKeyRight() { return keyRight_; }
 		void SetQuitRequest(bool value) { quit_request_ = value; }
 		bool GetQuitRequest() { return quit_request_; }
-		void SetInfoTextProjection(int width, int height);
 		void SetInfoText(const char* text);
 		void SetNodeMaskBits(int bits);
 		void SetNodeMaskBits(int mask, int bits);
@@ -448,7 +483,7 @@ namespace viewer
 		void ToggleNodeMaskBits(int bits);
 		int GetNodeMaskBit(int mask);
 		PointSensor* CreateSensor(double color[], bool create_ball, bool create_line, double ball_radius, double line_width);
-		bool CreateRoadSensors(CarModel* vehicle_model);
+		bool CreateRoadSensors(MovingModel* moving_model);
 		void SetWindowTitle(std::string title);
 		void SetWindowTitleFromArgs(std::vector<std::string>& arg);
 		void SetWindowTitleFromArgs(int argc, char* argv[]);
@@ -459,7 +494,6 @@ namespace viewer
 
 		void SaveImagesToFile(int nrOfFrames);
 		int GetSaveImagesToFile() { return saveImagesToFile_; }
-		bool GetDisableOffScreen() { return disable_off_screen_; }
 
 		void SaveImagesToRAM(bool state) { saveImagesToRAM_ = state; };
 		bool GetSaveImagesToRAM() { return saveImagesToRAM_; }

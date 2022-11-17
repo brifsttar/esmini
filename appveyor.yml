@@ -89,72 +89,28 @@ for:
           cd ..
 
     after_build:
-      - sh: >-
-
-          if [[ $APPVEYOR_REPO_COMMIT_MESSAGE = *#store_bins* ]] || [ "$APPVEYOR_REPO_TAG" == "true" ];
-          then
-            cd ../;zip -r esmini/esmini-bin_ubuntu.zip esmini/bin esmini/EnvironmentSimulator/Applications/odrplot/xodr.py esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMLib.hpp esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMWrapper.cs esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMUnityUtil.cs esmini/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp esmini/EnvironmentSimulator/Libraries/esminiLib/ESMiniWrapper.cs esmini/version.txt;cd -
-          else
-            echo "Skip binary artifacts";
-          fi
-
-          chmod -R +x ./run/*
-          chmod -R +x ./scripts/*
-
-          ./generate_binary_dist.sh
-
-          if [ "$APPVEYOR_REPO_TAG" == "true" ];
-          then
-              mv esmini-demo.zip esmini-demo_ubuntu.zip;
-          else
-              rm esmini-demo.zip;
-          fi
+      - if [[ $APPVEYOR_REPO_COMMIT_MESSAGE = *#store_bins* ]] || [ "$APPVEYOR_REPO_TAG" == "true" ]; then
+          cd ../ &&
+          zip -r esmini/esmini-bin_ubuntu.zip esmini/bin esmini/EnvironmentSimulator/Applications/odrplot/xodr.py  esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMLib.hpp esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMWrapper.cs esmini/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMUnityUtil.cs esmini/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp esmini/EnvironmentSimulator/Libraries/esminiLib/ESMiniWrapper.cs esmini/version.txt &&
+          cd -;
+        else
+          echo "Skip binary artifacts";
+        fi
+      - chmod -R +x ./run/*
+      - chmod -R +x ./scripts/*
+      - ./generate_binary_dist.sh
+      - if [ "$APPVEYOR_REPO_TAG" == "true" ]; then
+          mv esmini-demo.zip esmini-demo_ubuntu.zip;
+        else
+          rm esmini-demo.zip;
+        fi
 
     test_script:
-      - sh: Xvfb :99 -screen 0 1920x1080x24+32 & export DISPLAY=:99
-      - ps: |
-            cd build/EnvironmentSimulator/Unittest
-            $env:path += "../../../bin"
+      - sh: >-
 
-            ./OperatingSystem_test
-            if ($lastExitCode -ne 0) {
-                throw "OperatingSystem_test failed"
-            }
+          Xvfb :99 -screen 0 1920x1080x24+32 & export DISPLAY=:99
 
-            ./CommonMini_test
-            if ($lastExitCode -ne 0) {
-                throw "CommonMini_test failed"
-            }
-
-            ./RoadManager_test
-            if ($lastExitCode -ne 0) {
-                throw "RoadManager_test failed"
-            }
-
-            ./ScenarioEngine_test
-            if ($lastExitCode -ne 0) {
-                throw "ScenarioEngine_test failed"
-            }
-
-            ./ScenarioEngineDll_test
-            if ($lastExitCode -ne 0) {
-                throw "ScenarioEngineDll_test failed"
-            }
-
-            dir *.tga, *.ppm
-
-            cd ../../../test
-
-            python3 smoke_test.py
-            $r0 = $LASTEXITCODE
-
-            python3 alks_suite.py
-            $r1 = $LASTEXITCODE
-
-            if (($r0 -ne 0) -or ($r1 -ne 0))
-            {
-              throw "Test NOK"
-            }
+          ./scripts/run_tests.sh
 
     artifacts:
       - path: esmini-*_ubuntu.zip
@@ -174,7 +130,7 @@ for:
 
           cd build
 
-          cmake -G Xcode ..
+          cmake -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" ..
 
           cmake --build . -j --config Release --target install
 
@@ -187,7 +143,7 @@ for:
 
           cd build-no-osg
 
-          cmake -G Xcode -D USE_OSG=False -D USE_SUMO=False -D USE_OSI=False ..
+          cmake -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DUSE_OSG=False -DUSE_SUMO=False -DUSE_OSI=False ..
 
           cmake --build . -j --config Release
 
@@ -221,19 +177,7 @@ for:
           fi
 
     test_script:
-      - ps: |
-            cd test
-
-            python3 smoke_test.py
-            $r0 = $LASTEXITCODE
-
-            python3 alks_suite.py
-            $r1 = $LASTEXITCODE
-
-            if (($r0 -ne 0) -or ($r1 -ne 0))
-            {
-              throw "Test NOK"
-            }
+      - sh: ./scripts/run_tests.sh
 
     artifacts:
       - path: esmini-*_mac_catalina.zip
@@ -298,7 +242,7 @@ for:
       - cmd:
           cd ..
 
-          curl -L "https://downloads.fdossena.com/geth.php?r=mesa64-latest" -o mesa_win64.7z
+          curl -kL "https://downloads.fdossena.com/geth.php?r=mesa64-latest" -o mesa_win64.7z
 
           7z x mesa_win64.7z -omesa
 
@@ -312,43 +256,11 @@ for:
     #   - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
 
     test_script:
-      - ps: |
-            cd build/EnvironmentSimulator/Unittest
-            $env:path += ";../../../bin"
+      - cmd: >-
 
-            ./Release/OperatingSystem_test
-            if ($lastExitCode -ne 0) {
-                throw "OperatingSystem_test failed"
-            }
+          set PATH="c:/Program Files/Git/bin";%PATH%
 
-            ./Release/CommonMini_test
-            if ($lastExitCode -ne 0) {
-                throw "CommonMini_test failed"
-            }
-
-            ./Release/RoadManager_test
-            if ($lastExitCode -ne 0) {
-                throw "RoadManager_test failed"
-            }
-
-            ./Release/ScenarioEngine_test
-            if ($lastExitCode -ne 0) {
-                throw "ScenarioEngine_test failed"
-            }
-
-            ./Release/ScenarioEngineDll_test
-            if ($lastExitCode -ne 0) {
-                throw "ScenarioEngineDll_test failed"
-            }
-
-            dir *.tga, *.ppm
-
-      - cmd:
-            cd ../../../test
-
-            C:/Python38/python smoke_test.py
-
-            C:/Python38/python alks_suite.py
+          .\scripts\run_tests.sh
 
     artifacts:
       - path: esmini-*_win*.zip

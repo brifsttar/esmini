@@ -3,9 +3,16 @@
    it offers three modes of input:
       0. driverInput in terms of throttle, brake and SteeringWheelAngle
       1. state in terms of X, Y, Z, Head, Pitch, Roll, Speed, SteeringWheelAngle
-      2. state in terms of X, Y, Head, Speed, SteeringWheelAngle 
-   Mode 0 and 2 will align to road, while for 1 all values will be respected, even 
+      2. state in terms of X, Y, Head, Speed, SteeringWheelAngle
+   Mode 0 and 2 will align to road, while for 1 all values will be respected, even
    if vehicle will "hang" in the air.
+
+   Python dependencies:
+      protobuf
+         pip install protobuf==3.19
+      tkinter (usually included with Python on Windows)
+         test if installed: python -m tkinter (or python3 -m tkinter)
+         sudo apt-get install python3-tk
 
    To run it:
    1. Open two terminals
@@ -19,8 +26,8 @@
    You might need to open ports in firewall. E.g. in Windows add a Inbound Rule for UDP messages on port range 49950-49999.
 
    Running controllers and esmini on different hosts works as long as they have the same endianess/byte-order, so e.g.
-   Mac, Linux and Mac on Intel or the new Mac M1 chip should all work (since they are little-endian). 
-   
+   Mac, Linux and Mac on Intel or the new Mac M1 chip should all work (since they are little-endian).
+
    For other endianess, e.g. dSPACE runtime platform, you would need to swap byteorder on sender or receiver side.
 
    For complete message definitions, see esmini/EnvironmentSimulator/Modules/Controllers/ControllerUDPDriver.hpp
@@ -57,6 +64,7 @@ class Object():
         self.wheel_angle = DoubleVar(value = 0.0)
         self.throttle = DoubleVar(value = 0.0)
         self.brake = DoubleVar(value = 0.0)
+        self.dead_reckon = IntVar(value = 0)
 
         self.udpSender = UdpSender(ip_address, base_port + id)
 
@@ -68,6 +76,8 @@ class Object():
             self.inputModeText.set('driverInput')
         elif (self.inputMode == input_modes['stateXYH']):
             self.inputModeText.set('stateXYH')
+        elif (self.inputMode == input_modes['stateH']):
+            self.inputModeText.set('stateH')
         elif (self.inputMode == input_modes['stateXYZHPR']):
             self.inputModeText.set('stateXYZHPR')
         elif (self.inputMode == 0):
@@ -79,10 +89,10 @@ class Object():
 
         # print('sending obj {} inputmode {} frame {} on port {}'.format(self.id, self.inputMode, self.frameNumber, self.udpSender.port))
         if (self.inputMode == input_modes['stateXYZHPR']):
-            message = struct.pack('iiiidddddddd', 
-                self.version, 
+            message = struct.pack('iiiiddddddddB',
+                self.version,
                 self.inputMode,
-                self.objectId, 
+                self.objectId,
                 self.frameNumber,
                 self.x.get(),
                 self.y.get(),
@@ -90,46 +100,65 @@ class Object():
                 self.h.get(),
                 self.p.get(),
                 self.r.get(),
-                self.speed.get(),
-                -self.wheel_angle.get())
+                self.speed.get() / 3.6,
+                -self.wheel_angle.get(),
+                self.dead_reckon.get())
         elif (self.inputMode == input_modes['stateXYH']):
-            message = struct.pack('iiiiddddd', 
-                self.version, 
+            message = struct.pack('iiiidddddB',
+                self.version,
                 self.inputMode,
-                self.objectId, 
+                self.objectId,
                 self.frameNumber,
                 self.x.get(),
                 self.y.get(),
                 self.h.get(),
-                self.speed.get(),
-                -self.wheel_angle.get())
-        elif (self.inputMode == input_modes['driverInput']):
-            message = struct.pack('iiiiddd', 
-                self.version, 
+                self.speed.get() / 3.6,
+                -self.wheel_angle.get(),
+                self.dead_reckon.get())
+        elif (self.inputMode == input_modes['stateH']):
+            message = struct.pack('iiiidddB',
+                self.version,
                 self.inputMode,
-                self.objectId, 
+                self.objectId,
+                self.frameNumber,
+                self.h.get(),
+                self.speed.get() / 3.6,
+                -self.wheel_angle.get(),
+                self.dead_reckon.get())
+        elif (self.inputMode == input_modes['driverInput']):
+            message = struct.pack('iiiiddd',
+                self.version,
+                self.inputMode,
+                self.objectId,
                 self.frameNumber,
                 self.throttle.get(),
                 self.brake.get(),
                 -self.wheel_angle.get())
-        
+
         if (message is not None):
             self.udpSender.send(message)
             self.frameNumber += 1
         else:
             print('none')
 
-    def updateStateXYZHPR(self, value):
+    def updateStateXYZHPR(self, value = 0):
         self.setInputMode(input_modes['stateXYZHPR'])
+        self.sendMessage()
 
-    def updateStateXYH(self, value):
+    def updateStateXYH(self, value = 0):
         self.setInputMode(input_modes['stateXYH'])
+        self.sendMessage()
 
-    def updateDriverInput(self, value):
+    def updateStateH(self, value = 0):
+        self.setInputMode(input_modes['stateH'])
+        self.sendMessage()
+
+    def updateDriverInput(self, value = 0):
         self.setInputMode(input_modes['driverInput'])
+        self.sendMessage()
 
     def setInputMode(self, mode):
-        if (mode < 1 or mode > 3):
+        if (mode < 1 or mode > 4):
             print('Unknown mode:', mode)
         else:
             self.inputMode = mode
@@ -168,102 +197,191 @@ class Application(Frame):
             self.ip_address = args.ip
 
         self.fps = 60
+        self.continuous = BooleanVar(value = False)
 
         self.object = []
 
         for id in self.obj_id:
             self.object.append(Object(id, self.ip_address, self.base_port))
-        
+
         self.createGUI()
         self.sendMessages()
 
     def createGUI(self):
         scalewidth = 12
         areasize = 600
-        frame0 = Frame(self.master)
-        frame0.pack(fill= BOTH, expand= True)
-        nb = ttk.Notebook(frame0)
+        notebook = ttk.Notebook(self.master)
+        notebook.pack(fill=BOTH, expand=True)
+        padx = 2
 
         for obj in self.object:
-            tab = Frame(nb)
-            tab.pack()
-            nb.add(tab, text='obj ' + str(obj.id))
+            tab_frame = Frame(notebook)
+            tab_frame.grid(row=0, sticky='EW')
+            tab_frame.grid_columnconfigure(0, weight=1)
+            notebook.add(tab_frame, text='obj ' + str(obj.id))
 
-            frame1 = Frame(tab, borderwidth=2, relief=GROOVE)
-            frame1.pack(fill= BOTH, expand= True, padx= 10, pady=5)
-            Label(frame1, text='StateXYZHPR' + str(obj.id)).pack(side=TOP)
+            frame1 = Frame(tab_frame, borderwidth=2, relief=GROOVE)
+            frame1.grid(row=0,sticky=EW)
+            frame1.grid_rowconfigure(0, weight=1)
+            frame1.grid_columnconfigure(1, weight=1, minsize=200)
 
-            Scale(frame1, label='x', from_=-areasize/2.0, to=areasize/2.0, resolution=0.01, orient=HORIZONTAL, \
-                variable=obj.x, width=scalewidth, command=obj.updateStateXYZHPR).pack(fill=X)
+            row = 0
+            Label(frame1, text='StateXYZHPR' + str(obj.id)).grid(row=row, sticky=N)
 
-            Scale(frame1, label='y', from_=-areasize/2.0, to=areasize/2.0, resolution=0.01, orient=HORIZONTAL, \
-                variable=obj.y, command=obj.updateStateXYZHPR).pack(fill=X)
+            row += 1
+            Label(frame1, text="x").grid(sticky = SE, row = row, column = 0,padx = padx)
+            Scale(frame1, from_=-areasize/2.0, to=areasize/2.0, resolution=0.01, orient=HORIZONTAL, variable=obj.x, width=scalewidth,
+                command=obj.updateStateXYZHPR).grid(sticky = EW, row = row, column = 1, padx = padx)
 
-            Scale(frame1, label='h', from_=-3.14, to=3.14, resolution=0.1, orient=HORIZONTAL, \
-                variable=obj.h, width=scalewidth, command=obj.updateStateXYZHPR).pack(fill=X)
+            row += 1
+            Label(frame1, text="y").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame1, from_=-areasize/2.0, to=areasize/2.0, resolution=0.01, orient=HORIZONTAL, variable=obj.y, width=scalewidth,
+                command=obj.updateStateXYZHPR).grid(sticky = EW, row = row, column = 1, padx = padx)
 
-            Scale(frame1, label='z', from_=-20, to=20, resolution=0.1, orient=HORIZONTAL, \
-                variable=obj.z, width=scalewidth, command=obj.updateStateXYZHPR).pack(fill=X)
+            row += 1
+            Label(frame1, text="h").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame1, from_=-3.14, to=3.14, resolution=0.01, orient=HORIZONTAL, variable=obj.h, width=scalewidth,
+                command=obj.updateStateXYZHPR).grid(sticky = EW, row = row, column = 1, padx = padx)
 
-            Scale(frame1, label='p', from_=-1.5, to=1.5, resolution=0.1, orient=HORIZONTAL, \
-                variable=obj.p, width=scalewidth, command=obj.updateStateXYZHPR).pack(fill=X)
+            row += 1
+            Label(frame1, text="z").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame1, from_=-20, to=20, resolution=0.1, orient=HORIZONTAL, variable=obj.z, width=scalewidth,
+                command=obj.updateStateXYZHPR).grid(sticky = EW, row = row, column = 1, padx = padx)
 
-            Scale(frame1, label='wheel angle', from_=-1.0, to=1.0, resolution=0.01, orient=HORIZONTAL, \
-                variable=obj.wheel_angle, width=scalewidth, command=obj.updateStateXYZHPR).pack(fill=X)
+            row += 1
+            Label(frame1, text="p").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame1, from_=-1.5, to=1.5, resolution=0.01, orient=HORIZONTAL, variable=obj.p, width=scalewidth,
+                command=obj.updateStateXYZHPR).grid(sticky = EW, row = row, column = 1, padx = padx)
 
-            frame2 = Frame(tab, borderwidth=2, relief=GROOVE)
-            frame2.pack(fill= BOTH, expand= True, padx= 10, pady=5)
-            Label(frame2, text='StateXYH').pack(side=TOP)
+            row += 1
+            Label(frame1, text="speed").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame1, from_=-10.0, to=100.0, resolution=1, orient=HORIZONTAL, variable=obj.speed, width=scalewidth,
+                command=obj.updateStateXYZHPR).grid(sticky = EW, row = row, column = 1, padx = padx)
 
-            Scale(frame2, label='x', from_=-areasize/2.0, to=areasize/2.0, resolution=0.01, orient=HORIZONTAL, \
-                variable=obj.x, width=scalewidth, command=obj.updateStateXYH).pack(fill=X)
+            row += 1
+            Label(frame1, text="wheel angle").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame1, from_=-1.0, to=1.0, resolution=0.01, orient=HORIZONTAL, variable=obj.wheel_angle, width=scalewidth,
+                command=obj.updateStateXYZHPR).grid(sticky = EW, row = row, column = 1, padx = padx)
 
-            Scale(frame2, label='y', from_=-areasize/2.0, to=areasize/2.0, resolution=0.01, orient=HORIZONTAL, \
-                variable=obj.y, width=scalewidth, command=obj.updateStateXYH).pack(fill=X)
+            row += 1
+            Checkbutton(frame1, text="dead reckoning", variable=obj.dead_reckon, command=obj.updateStateXYZHPR, onvalue=1, offvalue=0).\
+                grid(sticky = SW, row = row, column = 1, padx = padx, pady=5)
 
-            Scale(frame2, label='h', from_=-3.14, to=3.14, resolution=0.1, orient=HORIZONTAL, \
-                variable=obj.h, width=scalewidth, command=obj.updateStateXYH).pack(fill=X)
+            frame2 = Frame(tab_frame, borderwidth=2, relief=GROOVE)
+            frame2.grid(row=1, sticky='EW')
+            frame2.grid_rowconfigure(1, weight=1)
+            frame2.grid_columnconfigure(1, weight=1, minsize=200)
+            frame2.grid_columnconfigure(0, minsize=2)
 
-            Scale(frame2, label='wheel angle', from_=-1.0, to=1.0, resolution=0.01, orient=HORIZONTAL, \
-                variable=obj.wheel_angle, command=obj.updateStateXYH).pack(fill=X)
+            row = 0
+            Label(frame2, text='StateXYH' + str(obj.id)).grid(row=row, sticky=N)
+
+            row += 1
+            Label(frame2, text="x").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame2, from_=-areasize/2.0, to=areasize/2.0, resolution=0.01, orient=HORIZONTAL, variable=obj.x, width=scalewidth,
+                command=obj.updateStateXYH).grid(sticky = EW, row = row, column = 1, padx = padx)
+
+            row += 1
+            Label(frame2, text="y").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame2, from_=-areasize/2.0, to=areasize/2.0, resolution=0.01, orient=HORIZONTAL, variable=obj.y, width=scalewidth,
+                command=obj.updateStateXYH).grid(sticky = EW, row = row, column = 1, padx = padx)
+
+            row += 1
+            Label(frame2, text="h").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame2, from_=-3.14, to=3.14, resolution=0.01, orient=HORIZONTAL, variable=obj.h, width=scalewidth,
+                command=obj.updateStateXYH).grid(sticky = EW, row = row, column = 1, padx = padx)
+
+            row += 1
+            Label(frame2, text="speed").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame2, from_=-10.0, to=100.0, resolution=1, orient=HORIZONTAL, variable=obj.speed, width=scalewidth,
+                command=obj.updateStateXYH).grid(sticky = EW, row = row, column = 1, padx = padx)
+
+            row += 1
+            Label(frame2, text="wheel angle").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame2, from_=-1.0, to=1.0, resolution=0.01, orient=HORIZONTAL, variable=obj.wheel_angle, width=scalewidth,
+                command=obj.updateStateXYH).grid(sticky = EW, row = row, column = 1, padx = padx)
+
+            row += 1
+            Checkbutton(frame2, text="dead reckoning", variable=obj.dead_reckon, command=obj.updateStateXYH, onvalue=1, offvalue=0).\
+                grid(sticky = SW, row = row, column = 1, padx = padx, pady=5)
+
+            frame3 = Frame(tab_frame, borderwidth=2, relief=GROOVE)
+            frame3.grid(row=2,sticky=EW)
+            frame3.grid_rowconfigure(2, weight=1)
+            frame3.grid_columnconfigure(1, weight=1, minsize=200)
+            frame3.grid_columnconfigure(0, minsize=2)
+
+            row = 0
+            Label(frame3, text='StateH' + str(obj.id)).grid(row=row, sticky=N)
+
+            row += 1
+            Label(frame3, text="h").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame3, from_=-3.14, to=3.14, resolution=0.01, orient=HORIZONTAL, variable=obj.h, width=scalewidth,
+                command=obj.updateStateH).grid(sticky = EW, row = row, column = 1, padx = padx)
+
+            row += 1
+            Label(frame3, text="speed").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame3, from_=-10.0, to=100.0, resolution=1, orient=HORIZONTAL, variable=obj.speed, width=scalewidth,
+                command=obj.updateStateH).grid(sticky = EW, row = row, column = 1, padx = padx)
+
+            row += 1
+            Label(frame3, text="wheel angle").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame3, from_=-1.0, to=1.0, resolution=0.01, orient=HORIZONTAL, variable=obj.wheel_angle, width=scalewidth,
+                command=obj.updateStateH).grid(sticky = EW, row = row, column = 1, padx = padx)
+
+            row += 1
+            Checkbutton(frame3, text="dead reckoning", variable=obj.dead_reckon, command=obj.updateStateH, onvalue=1, offvalue=0).\
+                grid(sticky = SW, row = row, column = 1, padx = padx, pady=5)
+
+            frame4 = Frame(tab_frame, borderwidth=2, relief=GROOVE)
+            frame4.grid(row=3,sticky=EW)
+            frame4.grid_rowconfigure(2, weight=1)
+            frame4.grid_columnconfigure(1, weight=1, minsize=200)
+            frame4.grid_columnconfigure(0, minsize=2)
+            row = 0
+            Label(frame4, text='Driver input' + str(obj.id)).grid(row=row)
+
+            row += 1
+            Label(frame4, text="throttle").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame4, from_=0, to=1, resolution=0.01, orient=HORIZONTAL, variable=obj.throttle, width=scalewidth,
+                command=obj.updateDriverInput).grid(sticky = EW, row = row, column = 1, padx = padx)
+
+            row += 1
+            Label(frame4, text="brake").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame4, from_=0, to=1, resolution=0.01, orient=HORIZONTAL, variable=obj.brake, width=scalewidth,
+                command=obj.updateDriverInput).grid(sticky = EW, row = row, column = 1, padx = padx)
+
+            row += 1
+            Label(frame4, text="wheel angle").grid(sticky = SE, row = row, column = 0, padx = padx)
+            Scale(frame4, from_=-1.0, to=1.0, resolution=0.01, orient=HORIZONTAL, variable=obj.wheel_angle, width=scalewidth,
+                command=obj.updateDriverInput).grid(sticky = EW, row = row, column = 1, padx = padx)
 
 
-            frame3 = Frame(tab, borderwidth=2, relief=GROOVE)
-            frame3.pack(fill= BOTH, expand= True, padx= 10, pady=5)
-            Label(frame3, text='Driver input').pack(side=TOP)
+            bottom_frame = Frame(tab_frame, borderwidth=2, relief=GROOVE)
+            bottom_frame.grid(row=4,sticky=EW)
+            row = 0
+            Label(bottom_frame, text='inputMode: ').grid(sticky = W, row = row, column = 0, padx = padx)
+            Entry(bottom_frame, textvariable=obj.inputModeText, state='disabled').grid(sticky = E, row = row, column = 1, padx = padx)
 
-            Scale(frame3, label='throttle', from_=0, to=1, resolution=0.01, orient=HORIZONTAL, \
-                variable=obj.throttle, width=scalewidth, command=obj.updateDriverInput).pack(fill=X)
+        Button(self.master, text="Quit", width=10, command=self.quit).pack(side=RIGHT)
 
-            Scale(frame3, label='brake', from_=0, to=1, resolution=0.01, orient=HORIZONTAL, \
-                variable=obj.brake, width=scalewidth, command=obj.updateDriverInput).pack(fill=X)
+        Checkbutton(self.master, text='continuous mode', variable=self.continuous, command=self.updateContinuousMode, onvalue=True, offvalue=False).pack(side=LEFT)
 
-            Scale(frame3, label='wheel angle', from_=-1.0, to=1.0, resolution=0.01, orient=HORIZONTAL, \
-                variable=obj.wheel_angle, width=scalewidth, command=obj.updateDriverInput).pack(fill=X)
+        self.master.update()
+        self.master.minsize(self.master.winfo_width(), self.master.winfo_height())
 
-            bottomframe = Frame(tab)
-            bottomframe.pack(fill=BOTH, expand= True, padx= 10, pady=5)
-            
-            label = Label(bottomframe, text='inputMode: ')
-            label.pack(side=LEFT)
-            text = Entry(bottomframe, textvariable=obj.inputModeText, state='disabled')
-            text.pack(side = LEFT)
-        
-        nb.pack(expand = 1, fill ="both")
-
-        bottomframe = Frame(self.master)
-        bottomframe.pack(fill= BOTH, expand= True, padx= 10, pady=5)
-
-        b=Button(bottomframe, text="Quit", width=10, command=self.quit)
-        b.pack(side=RIGHT)
+    def updateContinuousMode(self):
+        if self.continuous.get():
+            self.sendMessages()
 
     def sendMessages(self):
 
         for obj in self.object:
             obj.sendMessage()
 
-        # Sleep for a while according to fps before next send
-        self.after((int)(1000.0/self.fps), self.sendMessages)
+        if self.continuous.get():
+            # Sleep for a while according to fps before next send
+            self.after((int)(1000.0/self.fps), self.sendMessages)
 
 
     def close(self):
@@ -274,9 +392,9 @@ class Application(Frame):
 if __name__ == "__main__":
 
     root = Tk()
-    root.geometry("400x955+60+30")
     root.title(os.path.splitext(os.path.basename(sys.argv[0]))[0] + ' ' + ' '.join(sys.argv[1:]))
     app = Application(master=root)
+
     app.mainloop()
     app.close()
     root.destroy()

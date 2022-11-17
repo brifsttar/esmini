@@ -54,6 +54,9 @@ is_active_(false)
 	{
 		SetJunctionSelectorAngleRandom();
 	}
+
+	front_axle_ = { 0.0, 0.0, 0.0, 0.0, 0.0 };
+	rear_axle_ = { 0.0, 0.0, 0.0, 0.0, 0.0 };
 }
 
 void Object::SetEndOfRoad(bool state, double time)
@@ -98,7 +101,18 @@ Position::ReturnCode Object::MoveAlongS(double ds, bool actualDistance)
 
 	if (pos_.GetRoute() && pos_.GetRoute()->IsValid())
 	{
-		ret_val = pos_.MoveRouteDS(ds, actualDistance);
+		if (pos_.GetRoute()->waypoint_idx_ < 0)
+		{
+			// Not on route (yet?). Move along s using standard method.
+			ret_val = pos_.MoveAlongS(ds, 0.0, GetJunctionSelectorAngle(), actualDistance);
+
+			// Then check if we reached the route
+			pos_.GetRoute()->SetTrackS(pos_.GetTrackId(), pos_.GetS());
+		}
+		else
+		{
+			ret_val = pos_.MoveRouteDS(ds, actualDistance);
+		}
 	}
 	else
 	{
@@ -613,7 +627,7 @@ double Object::FreeSpaceDistancePoint(double x, double y, double* latDist, doubl
 
 		double xProj = 0;
 		double yProj = 0;
-		double tmpDist = DistanceFromPointToLine2D(point[0], point[1], edge[0][0], edge[0][1], edge[1][0], edge[1][1],
+		double tmpDist = DistanceFromPointToEdge2D(point[0], point[1], edge[0][0], edge[0][1], edge[1][0], edge[1][1],
 			&xProj, &yProj);
 
 		if (tmpDist < minDist)
@@ -1222,14 +1236,14 @@ Vehicle::Vehicle(const Vehicle& v) : trailer_hitch_(nullptr), trailer_coupler_(n
 
 	if (v.trailer_coupler_ && v.trailer_coupler_->tow_vehicle_)
 	{
-		trailer_coupler_ = new TrailerCoupler(*v.trailer_coupler_);
+		trailer_coupler_.reset(new TrailerCoupler(*v.trailer_coupler_));
 		trailer_coupler_->tow_vehicle_ = nullptr;
 	}
 
 	if (v.trailer_hitch_ && v.trailer_hitch_->trailer_vehicle_)
 	{
 		// make a unique copy of any trailer
-		trailer_hitch_ = new TrailerHitch(*v.trailer_hitch_);
+		trailer_hitch_.reset(new TrailerHitch(*v.trailer_hitch_));
 		Vehicle* trailer = new Vehicle(*((Vehicle*)(v.trailer_hitch_->trailer_vehicle_)));
 		ConnectTrailer(trailer);
 	}
@@ -1237,8 +1251,6 @@ Vehicle::Vehicle(const Vehicle& v) : trailer_hitch_(nullptr), trailer_coupler_(n
 
 Vehicle::~Vehicle()
 {
-	delete trailer_hitch_;
-	delete trailer_coupler_;
 }
 
 int Vehicle::ConnectTrailer(Vehicle* trailer)

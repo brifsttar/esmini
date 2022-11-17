@@ -36,6 +36,8 @@ resources/xosc/alks-test.xosc \
 resources/xosc/swarm.xosc \
 resources/xosc/lane-change_clothoid_based_trajectory.xosc \
 resources/xosc/trailers.xosc \
+resources/xosc/speed-profile.xosc \
+resources/xosc/alks_r157_cut_in_quick_brake.xosc \
 resources/xosc/Catalogs/Maneuvers/*.* \
 resources/xosc/Catalogs/Routes/*.* \
 resources/xosc/Catalogs/Vehicles/*.* \
@@ -73,7 +75,12 @@ resources/models/mc.osgb \
 resources/models/moose_cc0.osgb \
 resources/models/multi_intersections.osgb \
 resources/models/curves_elevation.osgb \
-resources/models/Swe*.osgb \
+resources/models/de_274-30.osgb \
+resources/models/de_274-50.osgb \
+resources/models/se_c_31-3.osgb \
+resources/models/se_c_31-5.osgb \
+resources/models/de_123.osgb \
+resources/models/se_a_20-1.osgb \
 resources/models/pole.osgb \
 resources/models/asphalt.jpg \
 resources/models/grass.jpg \
@@ -81,6 +88,7 @@ resources/models/railing.osgb \
 resources/models/railing-pole.osgb \
 resources/models/guide-post.osgb \
 resources/models/cone-100.osgb \
+resources/models/box_cc_by.osgb \
 resources/models/car_trailer.osgb \
 resources/models/semi_tractor.osgb \
 resources/models/semi_trailer.osgb \
@@ -90,6 +98,7 @@ resources/models/fence_plank.osgb \
 resources/models/fence_pole.osgb \
 resources/sumo_inputs/e6mini* \
 resources/sumo_inputs/multi_intersections* \
+resources/traffic_signals/* \
 run/esmini/run_follow_ghost.* \
 run/esmini/run_ltap-od_interactive.* \
 run/esmini/run_ltap-od.* \
@@ -137,9 +146,10 @@ bin/esmini \
 bin/odrviewer \
 bin/replayer \
 bin/dat2csv \
+bin/odrplot \
+EnvironmentSimulator/Applications/odrplot/xodr.py \
 esmini-demo
 
-cp bin/esmini esmini-demo/bin/EgoSimulator
 cp -r Hello-World_coding-example esmini-demo
 cp bin/libesminiLib.* esmini-demo/Hello-World_coding-example
 cp EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp esmini-demo/Hello-World_coding-example

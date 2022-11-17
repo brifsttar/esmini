@@ -113,6 +113,7 @@ namespace scenarioengine
 		// Storyboard - Init
 		void parseInit(Init &init);
 		ActivateControllerAction *parseActivateControllerAction(pugi::xml_node actionNode);
+		int parseDynamicConstraints(pugi::xml_node dynamics_node, DynamicConstraints& dc);
 		OSCPrivateAction *parseOSCPrivateAction(pugi::xml_node actionNode, Object *object);
 		OSCGlobalAction *parseOSCGlobalAction(pugi::xml_node actionNode);
 		void parseOSCOrientation(OSCOrientation &orientation, pugi::xml_node orientationNode);
@@ -123,7 +124,7 @@ namespace scenarioengine
 		Trigger* parseTrigger(pugi::xml_node triggerNode, bool defaultValue);
 		//	void parseOSCConditionGroup(OSCConditionGroup *conditionGroup, pugi::xml_node conditionGroupNode);
 		int parseStoryBoard(StoryBoard &storyBoard);
-		void parseOSCManeuver(OSCManeuver *maneuver, pugi::xml_node maneuverNode, ManeuverGroup *mGroup);
+		void parseOSCManeuver(Maneuver *maneuver, pugi::xml_node maneuverNode, ManeuverGroup *mGroup);
 
 		std::string getScenarioFilename() { return oscFilename_; }
 		bool IsLoaded() { return !osc_root_.empty(); }

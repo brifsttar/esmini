@@ -1,6 +1,20 @@
+
+set ( FILE_STORAGE "esmini" ) # "dropbox", "google", "esmini"  (limited GB/Day)
+set ( MODEL_STORAGE "esmini" ) # "dropbox", "google", "esmini"  (limited GB/Day)
+
+set ( VIEWER_BASE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Modules/ViewerBase" )
+set ( PLAYER_BASE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Modules/PlayerBase" )
 set ( ROADMANAGER_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Modules/RoadManager" )
 set ( COMMON_MINI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Modules/CommonMini")
 set( CMAKE_VERBOSE_MAKEFILE true )
+
+if ( ${MODEL_STORAGE} STREQUAL "dropbox" )
+    set ( MODELS_PACKAGE_URL https://dl.dropboxusercontent.com/s/5gk8bvgzqiaaoco/models.7z?dl=0 )
+elseif ( ${MODEL_STORAGE} STREQUAL "google" )
+    set ( MODELS_PACKAGE_URL https://drive.google.com/u/1/uc?id=1c3cqRzwY41gWXbg0rmugQkL5I_5L6DH_&export=download )
+elseif ( ${MODEL_STORAGE} STREQUAL "esmini" )
+    set ( MODELS_PACKAGE_URL https://esmini.asuscomm.com/AICLOUD779364751/models/models.7z )
+endif()
 
 if (APPLE)
   set ( TIME_LIB "" )
@@ -28,8 +42,23 @@ if(APPLE)
   SET(CMAKE_CXX_FLAGS "-std=c++14 -pthread -flto -Wl,-dead_strip")
 elseif(UNIX)
 
-include(CheckCXXCompilerFlag)
-
+  set ( OSG_LIBRARIES
+    osg
+    osgViewer
+    osgDB
+    osgdb_serializers_osgsim
+    osgdb_serializers_osg
+    osgGA
+    osgText
+    osgSim
+    osgdb_osg
+    osgdb_jpeg
+    osgUtil
+    osgAnimation
+    osg
+    OpenThreads
+    jpeg
+  )
   # Check for standard to use
   check_cxx_compiler_flag(-std=c++14 HAVE_FLAG_STD_CXX14)
   if(HAVE_FLAG_STD_CXX14)
@@ -47,6 +76,8 @@ include(CheckCXXCompilerFlag)
 
   if(CMAKE_BUILD_TYPE STREQUAL "Release")
     SET(CMAKE_CXX_FLAGS "${CXX_STD_FLAG} -pthread -fPIC -Wl,-strip-all")
+  elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    SET(CMAKE_CXX_FLAGS "${CXX_STD_FLAG} -march=native -pthread -fPIC")
   elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
     SET(CMAKE_CXX_FLAGS "${CXX_STD_FLAG} -march=native -O0 -pthread -fPIC")
   else()

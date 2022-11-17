@@ -21,11 +21,15 @@
 #include <osg/PolygonOffset>
 #include <osgDB/ReadFile>
 #include <osgUtil/SmoothingVisitor>
+#include <osg/ShapeDrawable>
 
 #include "CommonMini.hpp"
+#include "viewer.hpp"
 
-#define GEOM_TOLERANCE 0.2  // Minimum distance between two vertices along road s-axis
+#define GEOM_TOLERANCE (0.2 - SMALL_NUMBER) // Minimum distance between two vertices along road s-axis
 #define TEXTURE_SCALE 0.5   // Scale factor for asphalt and grass textures 1.0 means whole texture fits in 1 x 1 m square
+#define MAX_GEOM_ERROR 0.1  // maximum distance from the 3D geometry to the OSI lines
+#define MAX_GEOM_LENGTH 50  // maximum length of a road geometry mesh segment
 
 
 osg::ref_ptr<osg::Texture2D> RoadGeom::ReadTexture(std::string filename)
@@ -69,19 +73,11 @@ void RoadGeom::AddRoadMarkGeom(osg::ref_ptr<osg::Vec3Array> vertices, osg::ref_p
 	roadmanager::RoadMarkColor color)
 {
 	osg::ref_ptr<osg::Material> materialRoadmark_ = new osg::Material;
-	osg::ref_ptr<osg::Vec4Array> color_roadmark = new osg::Vec4Array;
+	osg::ref_ptr<osg::Vec4Array> color_array = new osg::Vec4Array;
+	color_array->push_back(viewer::ODR2OSGColor(color));
 
-	if (color == roadmanager::RoadMarkColor::YELLOW)
-	{
-		color_roadmark->push_back(osg::Vec4(0.9f, 0.9f, 0.25f, 1.0f));
-	}
-	else
-	{
-		color_roadmark->push_back(osg::Vec4(0.95f, 0.95f, 0.92f, 1.0f));
-	}
-
-	materialRoadmark_->setDiffuse(osg::Material::FRONT_AND_BACK, color_roadmark->at(0));
-	materialRoadmark_->setAmbient(osg::Material::FRONT_AND_BACK, color_roadmark->at(0));
+	materialRoadmark_->setDiffuse(osg::Material::FRONT_AND_BACK, color_array->at(0));
+	materialRoadmark_->setAmbient(osg::Material::FRONT_AND_BACK, color_array->at(0));
 //	materialRoadmark_->setShininess(osg::Material::FRONT_AND_BACK, 0);
 
 	// Finally create and add geometry
@@ -89,7 +85,7 @@ void RoadGeom::AddRoadMarkGeom(osg::ref_ptr<osg::Vec3Array> vertices, osg::ref_p
 	geom->setUseDisplayList(true);
 	geom->setVertexArray(vertices.get());
 	geom->addPrimitiveSet(indices.get());
-	geom->setColorArray(color_roadmark.get());
+	geom->setColorArray(color_array.get());
 	geom->setColorBinding(osg::Geometry::BIND_OVERALL);
 
 	// Use PolygonOffset feature to avoid z-fighting with road surface
@@ -107,6 +103,12 @@ int RoadGeom::AddRoadMarks(roadmanager::Lane* lane, osg::Group* parent)
 	for (size_t i = 0; i < lane->GetNumberOfRoadMarks(); i++)
 	{
 		roadmanager::LaneRoadMark* lane_roadmark = lane->GetLaneRoadMarkByIdx(i);
+
+		if (lane_roadmark->GetType() == roadmanager::LaneRoadMark::RoadMarkType::NONE_TYPE)
+		{
+			continue;
+		}
+
 		for (int m = 0; m < lane_roadmark->GetNumberOfRoadMarkTypes(); m++)
 		{
 			roadmanager::LaneRoadMarkType* lane_roadmarktype = lane_roadmark->GetLaneRoadMarkTypeByIdx(m);
@@ -158,7 +160,34 @@ int RoadGeom::AddRoadMarks(roadmanager::Lane* lane, osg::Group* parent)
 					}
 				}
 
-				if (lane_roadmark->GetType() == roadmanager::LaneRoadMark::RoadMarkType::BROKEN ||
+				if (lane_roadmark->GetType() == roadmanager::LaneRoadMark::RoadMarkType::BOTTS_DOTS)
+				{
+					for (int q = 0; q < curr_osi_rm->GetPoints().size(); q++)
+					{
+						const double botts_dot_size = 0.15;
+						static osg::ref_ptr<osg::Geode> dot = 0;
+
+						if (dot == 0)
+						{
+							osg::ref_ptr<osg::TessellationHints> th = new osg::TessellationHints();
+							th->setDetailRatio(0.3f);
+							osg::ref_ptr<osg::ShapeDrawable> shape = new osg::ShapeDrawable(
+								new osg::Cylinder(osg::Vec3(0.0, 0.0, 0.0), botts_dot_size, 0.3 * botts_dot_size), th
+							);
+							shape->setColor(viewer::ODR2OSGColor(lane_roadmark->GetColor()));
+							dot = new osg::Geode;
+							dot->addDrawable(shape);
+						}
+
+						roadmanager::PointStruct osi_point0 = curr_osi_rm->GetPoint(q);
+
+						osg::ref_ptr<osg::PositionAttitudeTransform> tx = new osg::PositionAttitudeTransform;
+						tx->setPosition(osg::Vec3(osi_point0.x, osi_point0.y, osi_point0.z));
+						tx->addChild(dot);
+						rm_group_->addChild(tx);
+					}
+				}
+				else if (lane_roadmark->GetType() == roadmanager::LaneRoadMark::RoadMarkType::BROKEN ||
 					lane_roadmark->GetType() == roadmanager::LaneRoadMark::RoadMarkType::BROKEN_BROKEN ||
 					broken)
 				{
@@ -283,7 +312,6 @@ int RoadGeom::AddRoadMarks(roadmanager::Lane* lane, osg::Group* parent)
 
 RoadGeom::RoadGeom(roadmanager::OpenDrive *odr)
 {
-	std::vector<double> s_list;
 	root_ = new osg::Group;
 	rm_group_ = new osg::Group;
 
@@ -334,6 +362,7 @@ RoadGeom::RoadGeom(roadmanager::OpenDrive *odr)
 	for (size_t i = 0; i < odr->GetNumOfRoads(); i++)
 	{
 		roadmanager::Road* road = odr->GetRoadByIdx(i);
+		std::vector<double> s_list;
 
 		for (size_t j = 0; j < road->GetNumberOfLaneSections(); j++)
 		{
@@ -344,7 +373,7 @@ RoadGeom::RoadGeom(roadmanager::OpenDrive *odr)
 				continue;
 			}
 
-			// First find s-values of OSI points of the center lane
+			// First make sure there are OSI points of the center lane
 			roadmanager::Lane* lane = lsec->GetLaneById(0);
 			if (lane->GetOSIPoints() == 0)
 			{
@@ -352,83 +381,136 @@ RoadGeom::RoadGeom(roadmanager::OpenDrive *odr)
 				throw std::runtime_error("Missing OSI points");
 			}
 
-			std::vector<roadmanager::PointStruct> osiPoints = lane->GetOSIPoints()->GetPoints();
+			// create a list to keep track of current s-value for each lane
+			std::vector<int> s_index(lsec->GetNumberOfLanes(), 0);
+
+			// create a 2d list of positions for vertices, nr_of_lanes x nr_of_s-values
+			typedef struct
+			{
+				double x;
+				double y;
+				double z;
+				double h;
+				double slope;
+				double s;
+			} GeomPoint;
+			std::vector<std::vector<GeomPoint>> geom_point_list;
+			std::vector<GeomPoint> geom_point;
+
+			roadmanager::Position pos;
 			s_list.clear();
-			for (size_t l = 0; l < osiPoints.size(); l++)
-			{
-				// Fetch s-value of all osi points
-				s_list.push_back(osiPoints[l].s);
-			}
 
-			// If last point on intermediate lanesection,
-			// add a point sligthly behind in case number of lanes changes
-			if (j < road->GetNumberOfLaneSections() - 1)
+			bool done = false;
+			for(int counter = 1; !done && counter > 0; counter++)
 			{
-				s_list.insert(s_list.begin() + s_list.size() - 1, s_list.back() - SMALL_NUMBER);
-			}
+				double s_min = lsec->GetS() + lsec->GetLength();
+				done = true;
 
-			// Then fill in from other lanes
-			for (size_t k = 0; k < lsec->GetNumberOfLanes(); k++)
-			{
-				lane = lsec->GetLaneByIdx(k);
-				if (lane->GetId() == 0)
+				if (counter == 1)
 				{
-					continue;  // Center lane already done
+					// First add s = start of lane section, to set start of mesh
+					s_list.push_back(lsec->GetS());
+					done = false;
 				}
-
-				if (lane->GetOSIPoints() == 0)
+				else
 				{
-					LOG("Missing OSI points %d, %d, %d", i, j, k);
-					throw std::runtime_error("Missing OSI points");
-				}
-
-				int s_index = 0;
-				osiPoints = lane->GetOSIPoints()->GetPoints();
-
-				for (size_t l=0; l<osiPoints.size(); l++)
-				{
-					// Locate position in list of s-values
-					while (s_index < s_list.size() - 1 && osiPoints[l].s > s_list[s_index+1])
+					// find next s-value based on accumulated error of each lane
+					for (size_t k = 0; k < lsec->GetNumberOfLanes(); k++)
 					{
-						if (s_index < s_list.size() - 1)
+						lane = lsec->GetLaneByIdx(k);
+						std::vector<roadmanager::PointStruct> osiPoints = lane->GetOSIPoints()->GetPoints();
+						int l = s_index[k] + 1;
+
+						// Find next s-value for this lane - go forward until error becomes too large
+						for (; l < osiPoints.size(); l++)
 						{
-							s_index++;
+							// generate point at this s-value
+							pos.SetTrackPos(road->GetId(), osiPoints[l].s, SIGN(lane->GetId())* lsec->GetOuterOffset(osiPoints[l].s, lane->GetId()), true);
+
+							// calculate horizontal error at this s value
+							double error_horizontal = DistanceFromPointToLine2DWithAngle(
+								pos.GetX(), pos.GetY(),
+								geom_point_list.back()[k].x, geom_point_list.back()[k].y, geom_point_list.back()[k].h);
+
+							// calculate vertical error at this s value
+							double error_vertical = abs((pos.GetZ() - geom_point_list.back()[k].z) -
+								geom_point_list.back()[k].slope * (pos.GetS() - geom_point_list.back()[k].s));
+
+							if (error_horizontal > MAX_GEOM_ERROR || error_vertical > MAX_GEOM_ERROR)
+							{
+								done = false;
+								break;
+							}
+						}
+
+						if (l < osiPoints.size())
+						{
+							if (s_index[k] != l - 1)
+							{
+								// make sure previous s-value before error exceeded threshold is included
+								s_index[k] = l - 1;
+							}
+							else
+							{
+								// add s-value exceeding the threshold
+								s_index[k] = l;
+							}
 						}
 						else
 						{
-							break;
+							s_index[k] = osiPoints.size() - 1;  // add last OSI point for end of mesh
+						}
+
+						if (osiPoints[s_index[k]].s < s_min)
+						{
+							s_min = osiPoints[s_index[k]].s;  // register pivot s-value
 						}
 					}
 
-					if (s_index == s_list.size() - 1)
+					s_list.push_back(s_min);
+				}
+
+				double total_segment_length = s_list.back();
+				if (s_list.size() > 1)
+				{
+					total_segment_length -= s_list.rbegin()[1];
+				}
+				else
+				{
+					total_segment_length -= lsec->GetS();
+				}
+
+				// limit segment length - split if needed
+				int n = (int)((total_segment_length - SMALL_NUMBER) / MAX_GEOM_LENGTH) + 1;
+				double segment_length = total_segment_length / n;
+				for (int m = 0; m < n; m++)
+				{
+					geom_point.clear();
+					double s = 0.0;
+
+					if (m == n - 1)
 					{
-						// At end of s-list, append
-						if (osiPoints[l].s - s_list[s_index] > GEOM_TOLERANCE)
-						{
-							s_list.push_back(osiPoints[l].s);
-						}
-					}
-					else if (s_index < s_list.size() - 1)
-					{
-						// Insert
-						if (osiPoints[l].s - s_list[s_index] > GEOM_TOLERANCE &&
-							s_list[s_index+1] - osiPoints[l].s > GEOM_TOLERANCE)
-						{
-							s_list.insert(s_list.begin() + s_index + 1, osiPoints[l].s);
-						}
+						s = s_list.back();
 					}
 					else
 					{
-						LOG("Unexpected s_list index: %d (of %d)", s_index, s_list.size());
-						throw std::runtime_error("Unexpected s_list index");
+						s = s_list.rbegin()[1] + (m + 1) * segment_length;
 					}
+
+					for (size_t k = 0; k < lsec->GetNumberOfLanes(); k++)
+					{
+						lane = lsec->GetLaneByIdx(k);
+						pos.SetTrackPos(road->GetId(), s, SIGN(lane->GetId())* lsec->GetOuterOffset(s, lane->GetId()), true);
+						geom_point.push_back({ pos.GetX(), pos.GetY(), pos.GetZ(), pos.GetH(), pos.GetZRoadPrim(), pos.GetS() });
+					}
+
+					geom_point_list.push_back(geom_point);
 				}
 			}
 
 			// Then create actual vertices and triangle strips for the lane section
-			roadmanager::Position pos;
 			pos.SetAlignMode(roadmanager::Position::ALIGN_MODE::ALIGN_HARD);
-			int nrOfVerticesTotal = s_list.size() * lsec->GetNumberOfLanes();
+			int nrOfVerticesTotal = geom_point_list.size() * lsec->GetNumberOfLanes();
 			osg::ref_ptr<osg::Vec3Array> verticesAll = new osg::Vec3Array(nrOfVerticesTotal);
 			osg::ref_ptr<osg::Vec2Array> texcoordsAll = new osg::Vec2Array;
 			int vidxAll = 0;
@@ -444,29 +526,29 @@ RoadGeom::RoadGeom(roadmanager::OpenDrive *odr)
 
 				if (k > 0)
 				{
-					verticesLocal = new osg::Vec3Array(s_list.size() * 2);
-					indices = new osg::DrawElementsUInt(GL_TRIANGLE_STRIP, s_list.size() * 2);
-					texcoordsLocal = new osg::Vec2Array(s_list.size() * 2);
+					verticesLocal = new osg::Vec3Array(geom_point_list.size() * 2);
+					indices = new osg::DrawElementsUInt(GL_TRIANGLE_STRIP, geom_point_list.size() * 2);
+					texcoordsLocal = new osg::Vec2Array(geom_point_list.size() * 2);
 				}
 
-				for (size_t l = 0; l < s_list.size(); l++)
+				for (size_t l = 0; l < geom_point_list.size(); l++)
 				{
-					pos.SetTrackPos(road->GetId(), s_list[l], SIGN(lane->GetId()) * lsec->GetOuterOffset(s_list[l], lane->GetId()), true);
-					(*verticesAll)[vidxAll++].set(pos.GetX(), pos.GetY(), pos.GetZ());
+					GeomPoint& gp = geom_point_list[l][k];
+					(*verticesAll)[vidxAll++].set(gp.x, gp.y, gp.z);
 					double texscale = TEXTURE_SCALE;
-					texcoordsAll->push_back(osg::Vec2(texscale * pos.GetX(), texscale* pos.GetY()));
+					texcoordsAll->push_back(osg::Vec2(texscale * gp.x, texscale * gp.y));
 
 					// Create indices for the lane strip, referring to the vertex list
 					if (k > 0)
 					{
 						// vertex of left lane border
-						(*verticesLocal)[vidxLocal] = (*verticesAll)[(k - 1) * s_list.size() + l];
-						(*texcoordsLocal)[vidxLocal] = (*texcoordsAll)[(k - 1) * s_list.size() + l];
+						(*verticesLocal)[vidxLocal] = (*verticesAll)[(k - 1) * geom_point_list.size() + l];
+						(*texcoordsLocal)[vidxLocal] = (*texcoordsAll)[(k - 1) * geom_point_list.size() + l];
 						(*indices)[vidxLocal] = vidxLocal;
 						vidxLocal++;
 						// vertex of right
-						(*verticesLocal)[vidxLocal] = (*verticesAll)[k * s_list.size() + l];
-						(*texcoordsLocal)[vidxLocal] = (*texcoordsAll)[k * s_list.size() + l];
+						(*verticesLocal)[vidxLocal] = (*verticesAll)[k * geom_point_list.size() + l];
+						(*texcoordsLocal)[vidxLocal] = (*texcoordsAll)[k * geom_point_list.size() + l];
 						(*indices)[vidxLocal] = vidxLocal;
 						vidxLocal++;
 					}

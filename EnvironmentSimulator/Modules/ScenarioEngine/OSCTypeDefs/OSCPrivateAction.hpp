@@ -21,6 +21,7 @@
 #include <iostream>
 #include <string>
 #include <math.h>
+#include <memory>
 
 namespace scenarioengine
 {
@@ -28,13 +29,34 @@ namespace scenarioengine
 	#define DISTANCE_TOLERANCE (0.5)  // meter
 	#define SYNCH_DISTANCE_TOLERANCE (1.0)  // meter
 	#define IS_ZERO(x) (x < SMALL_NUMBER && x > -SMALL_NUMBER)
+
 	class ScenarioEngine;
+
+	class DynamicConstraints
+	{
+	public:
+		double max_acceleration_;       //  Maximum acceleration the distance controller is allowed to use for keeping the distance
+		double max_acceleration_rate_;  // Maximum acceleration rate the distance controller is allowed to use for keeping the distance
+		double max_deceleration_;       //  Maximum deceleration the distance controller is allowed to use for keeping the distance
+		double max_deceleration_rate_;  // Maximum deceleration rate the distance controller is allowed to use for keeping the distance
+		double max_speed_;              // Maximum speed the distance controller is allowed to use for keeping the distance
+
+		DynamicConstraints() :
+			max_acceleration_(LARGE_NUMBER),
+			max_acceleration_rate_(LARGE_NUMBER),
+			max_deceleration_(LARGE_NUMBER),
+			max_deceleration_rate_(LARGE_NUMBER),
+			max_speed_(LARGE_NUMBER)
+		{}
+	};
+
 	class OSCPrivateAction : public OSCAction
 	{
 	public:
 		enum class ActionType
 		{
 			LONG_SPEED,
+			LONG_SPEED_PROFILE,
 			LONG_DISTANCE,
 			LAT_LANE_CHANGE,
 			LAT_LANE_OFFSET,
@@ -117,6 +139,8 @@ namespace scenarioengine
 		OSCPrivateAction(OSCPrivateAction::ActionType type, ControlDomains domain) :
 			OSCAction(OSCAction::BaseType::PRIVATE), type_(type), domain_(domain), object_(0), scenarioEngine_(0) {}
 
+		virtual ~OSCPrivateAction() = default;
+
 		virtual void print()
 		{
 			LOG("Virtual, should be overridden");
@@ -196,7 +220,7 @@ namespace scenarioengine
 			double object_speed_;
 		};
 
-		Target* target_;
+		std::shared_ptr<Target> target_;
 		bool target_speed_reached_;
 
 		LongSpeedAction() : OSCPrivateAction(OSCPrivateAction::ActionType::LONG_SPEED, ControlDomains::DOMAIN_LONG),
@@ -229,17 +253,108 @@ namespace scenarioengine
 		void ReplaceObjectRefs(Object* obj1, Object* obj2);
 	};
 
-	class LongDistanceAction : public OSCPrivateAction
+	class LongSpeedProfileAction : public OSCPrivateAction
 	{
 	public:
 
-		struct
+		class Entry
 		{
-			bool none_;
-			double max_acceleration_;
-			double max_deceleration_;
-			double max_speed_;
-		} dynamics_;
+		public:
+			double time_;
+			double speed_;
+			Entry() : time_(-1.0), speed_(0.0) {}
+			Entry(double time, double speed) : time_(time), speed_(speed) {}
+		};
+
+		class EntryVertex
+		{
+		public:
+			double t_;
+			double v_;
+			double k_;
+			double m_;
+			void SetK(double k)
+			{
+				k_ = k;
+				m_ = v_ - k_ * t_;
+			}
+			EntryVertex(double t, double v) : t_(t), v_(v), k_(0.0), m_(0.0) {}
+			EntryVertex(double t, double v, double k) : t_(t), v_(v), k_(k) { m_ = v_ - k_ * t_; }
+		};
+
+		typedef struct {
+			double t;
+			double v;
+			double k;
+			double j;
+		} SpeedSegment;
+
+		std::vector<Entry> entry_;
+		FollowingMode following_mode_;
+		DynamicConstraints dynamics_;
+		Object* entity_ref_;
+		std::vector<SpeedSegment> segment_;
+		int cur_index_;
+
+		LongSpeedProfileAction() : OSCPrivateAction(OSCPrivateAction::ActionType::LONG_SPEED_PROFILE, ControlDomains::DOMAIN_LONG),
+			following_mode_(FollowingMode::POSITION), entity_ref_(nullptr), cur_index_(0), speed_(0.0), acc_(0.0) {}
+
+		LongSpeedProfileAction(FollowingMode follow_mode) : OSCPrivateAction(OSCPrivateAction::ActionType::LONG_SPEED_PROFILE, ControlDomains::DOMAIN_LONG),
+			following_mode_(follow_mode), entity_ref_(nullptr), cur_index_(0), speed_(0.0), acc_(0.0) {}
+
+		LongSpeedProfileAction(const LongSpeedProfileAction& action) :
+			OSCPrivateAction(OSCPrivateAction::ActionType::LONG_SPEED_PROFILE, ControlDomains::DOMAIN_LONG)
+		{
+			name_ = action.name_;
+			following_mode_ = action.following_mode_;
+			entry_ = action.entry_;
+			entity_ref_ = action.entity_ref_;
+			speed_ = action.speed_;
+			acc_ = action.acc_;
+			cur_index_ = action.cur_index_;
+		}
+
+		OSCPrivateAction* Copy()
+		{
+			LongSpeedProfileAction* new_action = new LongSpeedProfileAction(*this);
+			return new_action;
+		}
+
+		std::string Type2Str()
+		{
+			return "SpeedProfileAction";
+		};
+
+		void Start(double simTime, double dt = 0.0);
+		void Step(double simTime, double dt = 0.0);
+
+		void print()
+		{
+			LOG("");
+		}
+
+		void ReplaceObjectRefs(Object* obj1, Object* obj2) {}
+
+		void AddEntry(LongSpeedProfileAction::Entry entry) {entry_.push_back(entry); }
+		double GetStartTime() { return start_time_; }
+		double GetElapsedTime() { return elapsed_; }
+		double GetSpeed() { return speed_; }
+		void CheckAcceleration(double acc);
+		void CheckAccelerationRate(double acc_rate);
+		void CheckSpeed(double speed);
+		void AddSpeedSegment(double t, double v, double k, double j);
+
+	private:
+		double start_time_;
+		double elapsed_;
+		double speed_;
+		double acc_;
+		double init_acc_;  // initial acceleration at start of the action
+	};
+
+	class LongDistanceAction : public OSCPrivateAction
+	{
+	public:
 
 		typedef enum
 		{
@@ -262,16 +377,11 @@ namespace scenarioengine
 		bool continuous_;
 		double sim_time_;
 		DisplacementType displacement_;
+		DynamicConstraints dynamics_;
 
 		LongDistanceAction() : OSCPrivateAction(OSCPrivateAction::ActionType::LONG_DISTANCE, ControlDomains::DOMAIN_LONG),
 			target_object_(0), distance_(0), dist_type_(DistType::DISTANCE), freespace_(0), acceleration_(0), sim_time_(0),
-			displacement_(DisplacementType::NONE)
-		{
-            dynamics_.max_acceleration_ = 0;
-            dynamics_.max_deceleration_ = 0;
-            dynamics_.max_speed_ = 0;
-            dynamics_.none_ = true;
-		}
+			displacement_(DisplacementType::NONE) {}
 
 		LongDistanceAction(const LongDistanceAction &action) : OSCPrivateAction(OSCPrivateAction::ActionType::LONG_DISTANCE, ControlDomains::DOMAIN_LONG)
 		{
@@ -325,6 +435,7 @@ namespace scenarioengine
 			int value_;
 
 			Target(Type type) : type_(type) {}
+			virtual ~Target() = default;
 		};
 
 		class TargetAbsolute : public Target
@@ -341,12 +452,12 @@ namespace scenarioengine
 			TargetRelative() : Target(Target::Type::RELATIVE_LANE), object_(0) {}
 		};
 
-		Target* target_;
+		std::shared_ptr<Target> target_;
 		TransitionDynamics transition_;
 		double target_lane_offset_;
 
 		LatLaneChangeAction(LatLaneChangeAction::DynamicsDimension timing_type = DynamicsDimension::TIME) :
-			start_offset_(0.0), target_lane_offset_(0.0),
+			start_offset_(0.0), target_lane_offset_(0.0), target_(0),
 			OSCPrivateAction(OSCPrivateAction::ActionType::LAT_LANE_CHANGE, ControlDomains::DOMAIN_LAT)
 		{
 			transition_.dimension_ = timing_type;
@@ -397,6 +508,7 @@ namespace scenarioengine
 			double value_;
 
 			Target(Type type) : type_(type) {}
+			virtual ~Target() = default;
 		};
 
 		class TargetAbsolute : public Target
@@ -413,7 +525,7 @@ namespace scenarioengine
 			TargetRelative() : Target(Target::Type::RELATIVE_OFFSET) {}
 		};
 
-		Target *target_;
+		std::shared_ptr<Target> target_;
 		TransitionDynamics transition_;
 		double max_lateral_acc_;
 
@@ -474,7 +586,8 @@ namespace scenarioengine
 			SUBMODE_CONVEX,
 			SUBMODE_CONCAVE
 		} SynchSubmode;
-
+		
+		std::shared_ptr<OSCPosition> steadyState_OSCPosition_;
 		struct
 		{
 			SteadyStateType type_;
@@ -489,13 +602,15 @@ namespace scenarioengine
 		SynchMode mode_;
 		SynchSubmode submode_;
 
+
+		std::shared_ptr<OSCPosition> target_position_master_OSCPosition_;
+		std::shared_ptr<OSCPosition> target_position_OSCPosition_;
 		roadmanager::Position *target_position_master_;
 		roadmanager::Position *target_position_;
 		Object *master_object_;
-		LongSpeedAction::Target *final_speed_;
+		std::shared_ptr<LongSpeedAction::Target> final_speed_;
 		double tolerance_;
 		double tolerance_master_;
-		double sim_time_;
 
 		// Store calculated distances to use for comparison
 		double lastDist_;
@@ -503,6 +618,7 @@ namespace scenarioengine
 
 		SynchronizeAction() : OSCPrivateAction(OSCPrivateAction::ActionType::SYNCHRONIZE, ControlDomains::DOMAIN_LONG)
 		{
+			steadyState_OSCPosition_ = nullptr;
 			master_object_ = 0;
 			final_speed_ = 0;
 			target_position_master_ = 0;
@@ -519,6 +635,9 @@ namespace scenarioengine
 		SynchronizeAction(const SynchronizeAction &action) : OSCPrivateAction(OSCPrivateAction::ActionType::SYNCHRONIZE, ControlDomains::DOMAIN_LONG)
 		{
 			name_ = action.name_;
+			steadyState_OSCPosition_ = action.steadyState_OSCPosition_;
+			target_position_master_OSCPosition_ = action.target_position_master_OSCPosition_;
+			target_position_OSCPosition_ = action.target_position_OSCPosition_;
 			master_object_ = action.master_object_;
 			final_speed_ = action.final_speed_;
 			target_position_master_ = action.target_position_master_;
@@ -542,15 +661,6 @@ namespace scenarioengine
 		{
 			return "SynchronizeAction";
 		};
-
-		~SynchronizeAction()
-		{
-			if (steadyState_.pos_ != 0)
-			{
-				delete steadyState_.pos_;
-			}
-			steadyState_.pos_ = 0;
-		}
 
 		void Step(double simTime, double dt);
 		void Start(double simTime, double dt);
@@ -582,6 +692,7 @@ namespace scenarioengine
 	class TeleportAction : public OSCPrivateAction
 	{
 	public:
+		std::shared_ptr<OSCPosition> position_OSCPosition_;
 		roadmanager::Position *position_;
 
 		TeleportAction() : OSCPrivateAction(OSCPrivateAction::ActionType::TELEPORT, ControlDomains::DOMAIN_BOTH) {}
@@ -589,7 +700,15 @@ namespace scenarioengine
 		TeleportAction(const TeleportAction &action) : OSCPrivateAction(OSCPrivateAction::ActionType::TELEPORT, ControlDomains::DOMAIN_BOTH)
 		{
 			name_ = action.name_;
+			position_OSCPosition_ = action.position_OSCPosition_;
 			position_ = action.position_;
+		}
+
+		~TeleportAction() {
+			if (!position_OSCPosition_ && position_ != nullptr)
+			{
+				delete position_;
+			}
 		}
 
 		OSCPrivateAction* Copy()
@@ -624,11 +743,7 @@ namespace scenarioengine
 
 		~AssignRouteAction()
 		{
-			if (route_ != nullptr)
-			{
-				delete route_;
-				route_ = nullptr;
-			}
+			delete route_;
 		}
 
 		OSCPrivateAction* Copy()
@@ -658,14 +773,15 @@ namespace scenarioengine
 			TIMING_ABSOLUTE
 		};
 
-		roadmanager::RMTrajectory* traj_;
+		std::shared_ptr<roadmanager::RMTrajectory> traj_;
 		TimingDomain timing_domain_;
+		FollowingMode following_mode_;
 		double timing_scale_;
 		double timing_offset_;
 		double time_;
 		double initialDistanceOffset_;
 
-		FollowTrajectoryAction() : traj_(0), timing_domain_(TimingDomain::NONE), timing_scale_(1),
+		FollowTrajectoryAction() : traj_(0), timing_domain_(TimingDomain::NONE), timing_scale_(1), following_mode_(FollowingMode::FOLLOW),
 			timing_offset_(0), time_(0), initialDistanceOffset_(0), OSCPrivateAction(OSCPrivateAction::ActionType::FOLLOW_TRAJECTORY, ControlDomains::DOMAIN_BOTH) {}
 
 		FollowTrajectoryAction(const FollowTrajectoryAction& action) : OSCPrivateAction(OSCPrivateAction::ActionType::FOLLOW_TRAJECTORY, ControlDomains::DOMAIN_BOTH)
@@ -676,6 +792,7 @@ namespace scenarioengine
 			timing_scale_ = action.timing_scale_;
 			timing_offset_ = action.timing_offset_;
 			initialDistanceOffset_ = action.timing_offset_;
+			following_mode_ = action.following_mode_;
 			time_ = 0;
 		}
 
@@ -700,14 +817,16 @@ namespace scenarioengine
 	class AcquirePositionAction : public OSCPrivateAction
 	{
 	public:
+		std::shared_ptr<OSCPosition> target_position_OSCPosition_;
 		roadmanager::Position* target_position_;
-		roadmanager::Route* route_;
+		std::shared_ptr<roadmanager::Route> route_;
 
 		AcquirePositionAction() : route_(0), target_position_(0), OSCPrivateAction(OSCPrivateAction::ActionType::Acquire_POSITION, ControlDomains::DOMAIN_LONG) {}
 
 		AcquirePositionAction(const AcquirePositionAction& action) : OSCPrivateAction(OSCPrivateAction::ActionType::Acquire_POSITION, ControlDomains::DOMAIN_LONG)
 		{
 			name_ = action.name_;
+			target_position_OSCPosition_ = action.target_position_OSCPosition_;
 			target_position_ = action.target_position_;
 			route_ = action.route_;
 		}

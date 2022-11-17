@@ -18,7 +18,7 @@
 using namespace scenarioengine;
 
 
-Replay::Replay(std::string filename) : time_(0.0), index_(0), repeat_(false)
+Replay::Replay(std::string filename, bool clean) : time_(0.0), index_(0), repeat_(false), clean_(clean)
 {
 	file_.open(filename, std::ofstream::binary);
 	if (file_.fail())
@@ -55,7 +55,10 @@ Replay::Replay(std::string filename) : time_(0.0), index_(0), repeat_(false)
 		}
 	}
 
-	CleanEntries(data_);
+	if (clean_)
+	{
+		CleanEntries(data_);
+	}
 
 	if (data_.size() > 0)
 	{
@@ -70,7 +73,7 @@ Replay::Replay(std::string filename) : time_(0.0), index_(0), repeat_(false)
 	}
 }
 
-Replay::Replay(const std::string directory, const std::string scenario) : time_(0.0), index_(0), repeat_(false)
+Replay::Replay(const std::string directory, const std::string scenario, std::string create_datfile) : time_(0.0), index_(0), repeat_(false), create_datfile_(create_datfile)
 {
 	GetReplaysFromDirectory(directory, scenario);
 	std::vector<std::pair<std::string, std::vector<ReplayEntry>>> scenarioData;
@@ -114,10 +117,10 @@ Replay::Replay(const std::string directory, const std::string scenario) : time_(
 		LOG_AND_QUIT("Too few scenarios loaded, use single replay feature instead\n");
 	}
 
-	// Longest scenario first
+	// Scenario with smallest start time first
 	std::sort(scenarioData.begin(), scenarioData.end(), [](const auto& sce1, const auto& sce2)
 	{
-		return sce1.second.size() > sce2.second.size();
+		return sce1.second[0].state.info.timeStamp < sce2.second[0].state.info.timeStamp;
 	});
 
 	// Log which scenario belongs to what ID-group (0, 100, 200 etc.)
@@ -147,6 +150,11 @@ Replay::Replay(const std::string directory, const std::string scenario) : time_(
 		// Register last entry timestamp as stop time
 		stopTime_ = data_.back().state.info.timeStamp;
 		stopIndex_ = FindIndexAtTimestamp(stopTime_);
+	}
+
+	if (!create_datfile_.empty())
+	{
+		CreateMergedDatfile(create_datfile_);
 	}
 }
 
@@ -193,6 +201,9 @@ void Replay::GetReplaysFromDirectory(const std::string dir, const std::string sc
 		}
 	}
 	closedir(directory);
+
+	// Sort list of filenames
+	std::sort(scenarios_.begin(), scenarios_.end(), [](std::string const& a, std::string const& b) { return a < b; });
 
 	if (scenarios_.empty())
 	{
@@ -255,7 +266,7 @@ void Replay::GoToTime(double time, bool stop_at_next_frame)
 		if (time > time_)
 		{
 			next_index = FindNextTimestamp();
-			if (next_index > (int)index_ && time > data_[next_index].state.info.timeStamp)
+			if (next_index > (int)index_ && time > data_[next_index].state.info.timeStamp && data_[next_index].state.info.timeStamp <= GetStopTime())
 			{
 				index_ = next_index;
 				time_ = data_[index_].state.info.timeStamp;
@@ -486,32 +497,92 @@ void Replay::BuildData(std::vector<std::pair<std::string, std::vector<ReplayEntr
 {
 	// Keep track of current index of each scenario
 	std::vector<int> cur_idx;
+	std::vector<int> next_idx;
+
 	for (size_t j = 0; j < scenarios.size(); j++)
 	{
 		cur_idx.push_back(0);
+		next_idx.push_back(0);
 	}
 
-	// Populate data_ based on first (longest) scenario
-	for (size_t i = 0; i < scenarios[0].second.size() - 1; i++)
+	// Set scenario ID-group (0, 100, 200 etc.)
+	for (size_t j = 0; j < scenarios.size(); j++)
 	{
-		// push entry from pivot scenario
-		data_.push_back(scenarios[0].second[i]);
-
-		// populate entries from other scenarios within the same time frame
-		for (size_t j = 1; j < scenarios.size(); j++)
+		for (size_t k = 0; k < scenarios[j].second.size(); k++)
 		{
-			// pick entries until timestamp reach next frame
-			while(cur_idx[j] < scenarios[j].second.size() && scenarios[j].second[cur_idx[j]].state.info.timeStamp < scenarios[0].second[i + 1].state.info.timeStamp)
+			// Set scenario ID-group (0, 100, 200 etc.)
+			scenarios[j].second[k].state.info.id += static_cast<int>(j) * 100;
+		}
+	}
+
+	// Populate data_ based on first (with lowest timestamp) scenario
+	float cur_timestamp = scenarios[0].second[0].state.info.timeStamp;
+	while (cur_timestamp < LARGE_NUMBER - SMALL_NUMBER)
+	{
+		// populate entries if all scenarios at current time step
+		float min_time_stamp = LARGE_NUMBER;
+		for (size_t j = 0; j < scenarios.size(); j++)
+		{
+			if (next_idx[j] != -1)
 			{
-				// Set scenario ID-group (0, 100, 200 etc.)
-				scenarios[j].second[cur_idx[j]].state.info.id += static_cast<int>(j) * 100;
+				int k = cur_idx[j];
+				for (; k < scenarios[j].second.size() &&
+					scenarios[j].second[k].state.info.timeStamp < cur_timestamp + SMALL_NUMBER; k++)
+				{
+					// push entry with modified timestamp
+					scenarios[j].second[k].state.info.timeStamp = cur_timestamp;
+					data_.push_back(scenarios[j].second[k]);
+				}
 
-				// push entry
-				data_.push_back(scenarios[j].second[cur_idx[j]]);
-
-				// Fast forward j:th scenario passed current time frame
-				cur_idx[j]++;
+				if (k < scenarios[j].second.size())
+				{
+					next_idx[j] = k;
+					if (scenarios[j].second[k].state.info.timeStamp < min_time_stamp)
+					{
+						min_time_stamp = scenarios[j].second[k].state.info.timeStamp;
+					}
+				}
+				else
+				{
+					next_idx[j] = -1;
+				}
 			}
+		}
+
+		if (min_time_stamp < LARGE_NUMBER - SMALL_NUMBER)
+		{
+			for (size_t j = 0; j < scenarios.size(); j++)
+			{
+				if (next_idx[j] > 0 && scenarios[j].second[next_idx[j]].state.info.timeStamp < min_time_stamp + SMALL_NUMBER)
+				{
+					// time has reached next entry, step this scenario
+					cur_idx[j] = next_idx[j];
+				}
+			}
+		}
+
+		cur_timestamp = min_time_stamp;
+	}
+}
+
+void Replay::CreateMergedDatfile(const std::string filename)
+{
+	std::ofstream data_file_;
+	data_file_.open(filename, std::ofstream::binary);
+	if (data_file_.fail())
+	{
+		LOG("Cannot open file: %s", filename.c_str());
+		exit(-1);
+	}
+
+	data_file_.write((char*)&header_, sizeof(header_));
+
+	if (data_file_.is_open())
+	{
+		// Write status to file - for later replay
+		for (size_t i = 0; i < data_.size(); i++)
+		{
+			data_file_.write((char*)(&data_[i].state), sizeof(data_[i].state));
 		}
 	}
 }

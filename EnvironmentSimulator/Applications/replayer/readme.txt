@@ -5,23 +5,33 @@ Application is launched from command line (or batch file).
 Usage:  [options]
 Options:
   --file <filename>
-      Simulation recording data file
+      Simulation recording data file (.dat)
   --camera_mode <mode>
       Initial camera mode ("orbit" (default), "fixed", "flex", "flex-orbit", "top", "driver") (toggle during simulation by press 'k')
   --capture_screen
       Continuous screen capture. Warning: Many jpeg files will be created
   --collision
       Pauses the replay if the ego collides with another entity
+  --custom_camera <position>
+      Additional custom fixed camera position <x,y,z,h,p> (multiple occurrences supported)
+  --custom_fixed_camera <position and optional orientation>
+      Additional custom camera position <x,y,z>[,h,p] (multiple occurrences supported)
+  --custom_fixed_top_camera <position and rotation>
+      Additional custom top camera <x,y,z,rot> (multiple occurrences supported)
   --dir <path>
       Directory containing replays to overlay, pair with "file" argument, where "file" is .dat filename match substring
   --disable_off_screen
-      Disable off-screen rendering, potentially gaining performance
+      Disable esmini off-screen rendering, revert to OSG viewer default handling
   --hide_trajectories
       Hide trajectories from start (toggle with key 'n')
+  --info_text <mode>
+      Show on-screen info text (toggle key 'i') mode 0=None 1=current (default) 2=per_object 3=both
   --no_ghost
       Remove ghost entities
   --no_ghost_model
       Remove only ghost model, show trajectory (toggle with key 'g')
+  --path <path>
+      Search path prefix for assets, e.g. model_ids.txt file (multiple occurrences supported)
   --quit_at_end
       Quit application when reaching end of scenario
   --remove_object <id>
@@ -32,6 +42,8 @@ Options:
       Path to resources root folder - relative or absolut
   --road_features
       Show OpenDRIVE road features
+  --save_merged <filename>
+      Save merged data into one dat file, instead of viewing
   --start_time <ms>
       Start playing at timestamp
   --stop_time <ms>
@@ -50,19 +62,20 @@ Additional OSG graphics options:
 
 Key shortcuts
 
-    H (shift h): This help text
-    TAB:         Move camera to next vehicle
-    Shift - TAB: Move camera to previoius vehicle
-    Space:       Toggle pause / play
-    g:           Toggle show / hide ghost models
-    o:           Toggle show / hide OpenDRIVE road feature lines
-    u:           Toggle show / hide OSI road lines
-    y:           Toggle show / hide OSI road points
-    p:           Toggle show / hide environment 3D model
-    i:           Toggle info text showing time and speed
-    n:           Toggle show active trajectories
-    , (comma):   Switch entity view : Model only / Bounding box / Model + Bounding box / None
-    ESC:         quit
+    H (shift + h): This help text
+    TAB:           Move camera to next vehicle
+    Shift + TAB:   Move camera to previoius vehicle
+    Delete:        Same as above (Shift + TAB)
+    Space:         Toggle pause / play
+    g:             Toggle show / hide ghost models
+    o:             Toggle show / hide OpenDRIVE road feature lines
+    u:             Toggle show / hide OSI road lines
+    y:             Toggle show / hide OSI road points
+    p:             Toggle show / hide environment 3D model
+    i:             Toggle on-screen info text modes
+    n:             Toggle show active trajectories
+    , (comma):     Switch entity view : Model only / Bounding box / Model + Bounding box / None
+    ESC:           quit
 
     Arrow keys
         Left:          Pause and move to previous frame(+Shift to skip 10 frames)

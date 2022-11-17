@@ -46,6 +46,26 @@ ManeuverGroup* Story::FindManeuverGroupByName(std::string name)
 	return nullptr;
 }
 
+Maneuver* Story::FindManeuverByName(std::string name)
+{
+	for (size_t i = 0; i < act_.size(); i++)
+	{
+		for (size_t j = 0; j < act_[i]->maneuverGroup_.size(); j++)
+		{
+			for (size_t k = 0; k < act_[i]->maneuverGroup_[j]->maneuver_.size(); k++)
+			{
+				Maneuver* maneuver = act_[i]->maneuverGroup_[j]->maneuver_[k];
+				if (maneuver->name_ == name)
+				{
+					return maneuver;
+				}
+			}
+		}
+	}
+
+	return nullptr;
+}
+
 Event* Story::FindEventByName(std::string name)
 {
 	for (size_t i = 0; i < act_.size(); i++)
@@ -128,6 +148,20 @@ ManeuverGroup* StoryBoard::FindManeuverGroupByName(std::string name)
 	return 0;
 }
 
+Maneuver* StoryBoard::FindManeuverByName(std::string name)
+{
+	Maneuver* m = 0;
+	for (size_t i = 0; i < story_.size(); i++)
+	{
+		if ((m = story_[i]->FindManeuverByName(name)) != 0)
+		{
+			return m;
+		}
+	}
+
+	return 0;
+}
+
 Event* StoryBoard::FindEventByName(std::string name)
 {
 	Event *event = 0;
@@ -197,4 +231,36 @@ void ManeuverGroup::UpdateState()
 	}
 
 	StoryBoardElement::UpdateState();
+}
+
+void ManeuverGroup::Start(double simTime, double dt)
+{
+	// Reset all child manuevers, getting them ready for (re)start
+	for (size_t k = 0; k < maneuver_.size(); k++)
+	{
+		maneuver_[k]->Reset();
+		maneuver_[k]->Start(simTime, dt);
+	}
+
+	// Make sure to call base class Start method
+	StoryBoardElement::Start(simTime, dt);
+}
+
+void ManeuverGroup::End(double simTime)
+{
+	for (size_t k = 0; k < maneuver_.size(); k++)
+	{
+		maneuver_[k]->End(simTime);
+	}
+
+	StoryBoardElement::End(simTime);
+}
+
+void ManeuverGroup::Stop()
+{
+	for (size_t k = 0; k < maneuver_.size(); k++)
+	{
+		maneuver_[k]->Stop();
+	}
+	StoryBoardElement::Stop();
 }
