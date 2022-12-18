@@ -661,14 +661,14 @@ namespace roadmanager
 		void AddLane(Lane *lane);
 		double GetS() { return s_; }
 		Lane *GetLaneByIdx(int idx);
-		Lane *GetLaneById(int id);
+		Lane *GetLaneById(int id) const;
 		int GetLaneIdByIdx(int idx);
 		int GetLaneIdxById(int id);
 		bool IsOSILaneById(int id);
 		int GetLaneGlobalIdByIdx(int idx);
 		int GetLaneGlobalIdById(int id);
 		double GetOuterOffset(double s, int lane_id);
-		double GetWidth(double s, int lane_id);
+		double GetWidth(double s, int lane_id) const;
 
 		/**
 		Get index of closest lane wrt given constraints
@@ -688,7 +688,7 @@ namespace roadmanager
 		double GetCenterOffset(double s, int lane_id);
 		double GetOuterOffsetHeading(double s, int lane_id);
 		double GetCenterOffsetHeading(double s, int lane_id);
-		double GetLength() { return length_; }
+		double GetLength() const { return length_; }
 		int GetNumberOfLanes() { return (int)lane_.size(); }
 		int GetNumberOfDrivingLanes();
 		int GetNumberOfDrivingLanesSide(int side);
@@ -1364,19 +1364,19 @@ namespace roadmanager
 		...
 		@param idx index into the vector of lane sections
 		*/
-		LaneSection *GetLaneSectionByIdx(int idx);
+		LaneSection *GetLaneSectionByIdx(int idx) const;
 
 		/**
 		Retrieve the lanesection index at specified s-value
 		@param s distance along the road segment
 		*/
-		int GetLaneSectionIdxByS(double s, int start_at = 0);
+		int GetLaneSectionIdxByS(double s, int start_at = 0) const;
 
 		/**
 		Retrieve the lanesection at specified s-value
 		@param s distance along the road segment
 		*/
-		LaneSection *GetLaneSectionByS(double s, int start_at = 0) { return GetLaneSectionByIdx(GetLaneSectionIdxByS(s, start_at)); }
+		LaneSection *GetLaneSectionByS(double s, int start_at = 0) const { return GetLaneSectionByIdx(GetLaneSectionIdxByS(s, start_at)); }
 
 		/**
 		Get lateral position of lane center, from road reference lane (lane id=0)
@@ -1394,7 +1394,7 @@ namespace roadmanager
 		double GetSpeedByS(double s);
 		bool GetZAndPitchByS(double s, double *z, double *z_prim, double *z_primPrim, double *pitch, int *index);
 		bool UpdateZAndRollBySAndT(double s, double t, double *z, double *roadSuperElevationPrim, double *roll, int *index);
-		int GetNumberOfLaneSections() { return (int)lane_section_.size(); }
+		int GetNumberOfLaneSections() const { return (int)lane_section_.size(); }
 		std::string GetName() { return name_; }
 		void SetLength(double length) { length_ = length; }
 		double GetLength() const { return length_; }

@@ -1280,7 +1280,7 @@ bool Lane::IsDriving()
 	return bool(type_ & Lane::LaneType::LANE_TYPE_ANY_DRIVING);
 }
 
-LaneSection* Road::GetLaneSectionByIdx(int idx)
+LaneSection* Road::GetLaneSectionByIdx(int idx) const
 {
 	if (idx >= 0 && idx < lane_section_.size())
 	{
@@ -1292,7 +1292,7 @@ LaneSection* Road::GetLaneSectionByIdx(int idx)
 	}
 }
 
-int Road::GetLaneSectionIdxByS(double s, int start_at)
+int Road::GetLaneSectionIdxByS(double s, int start_at) const
 {
 	if (start_at < 0 || start_at > lane_section_.size() - 1)
 	{
@@ -1568,7 +1568,7 @@ bool LaneSection::IsOSILaneById(int id)
 
 }
 
-Lane* LaneSection::GetLaneById(int id)
+Lane* LaneSection::GetLaneById(int id) const
 {
 	for (size_t i=0; i<lane_.size(); i++)
 	{
@@ -1685,7 +1685,7 @@ int LaneSection::GetNUmberOfLanesLeft()
 	return counter;
 }
 
-double LaneSection::GetWidth(double s, int lane_id)
+double LaneSection::GetWidth(double s, int lane_id) const
 {
 	if (lane_id == 0)
 	{
