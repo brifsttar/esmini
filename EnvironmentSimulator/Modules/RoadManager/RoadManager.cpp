@@ -11231,8 +11231,7 @@ int Position::Side() const {
 }
 
 int Position::DrivingSide() const {
-	int isDrivingRightWay = IsAngleForward(GetHRelative()) ? -1 : 1;
-	return Side() * isDrivingRightWay;
+	return IsAngleForward(GetHRelative()) ? 1 : -1;
 }
 
 void RMTrajectory::Freeze(FollowingMode following_mode)
