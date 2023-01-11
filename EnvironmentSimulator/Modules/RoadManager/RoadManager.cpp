@@ -8747,7 +8747,7 @@ double Position::getRelativeDistance(double targetX, double targetY, double &x, 
 
 double roadmanager::Position::GetDistanceLeftOnRoad() const
 {
-	if(SIGN(GetLaneId()) < 0) {
+	if(DrivingSide() == 1) {
 		return GetRoad()->GetLength() - GetS();
 	} else {
 		return GetS();
@@ -8758,7 +8758,7 @@ roadmanager::Position::NextJunction roadmanager::Position::GetNextJunction() con
 {
 	roadmanager::Position::NextJunction next;
 	next.distance = GetDistanceLeftOnRoad();
-	LinkType lt = SIGN(GetLaneId()) < 0 ? SUCCESSOR : PREDECESSOR;
+	LinkType lt = DrivingSide() == 1 ? SUCCESSOR : PREDECESSOR;
 	ContactPointType cpt;
 	Road* r = GetRoad();
 	if (r == nullptr) return next;
