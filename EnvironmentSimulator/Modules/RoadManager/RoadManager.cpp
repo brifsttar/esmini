@@ -11230,6 +11230,11 @@ int Position::Side() const {
 	return (lane_id_ < 0) - (lane_id_ > 0);
 }
 
+int Position::DrivingSide() const {
+	int isDrivingRightWay = IsAngleForward(GetHRelative()) ? -1 : 1;
+	return Side() * isDrivingRightWay;
+}
+
 void RMTrajectory::Freeze(FollowingMode following_mode)
 {
 	if (shape_->type_ == Shape::ShapeType::POLYLINE)

@@ -2379,6 +2379,8 @@ namespace roadmanager
 
 		int Side() const;
 
+		int DrivingSide() const;
+
 		PositionType GetType() { return type_; }
 
 		void SetTrackId(int trackId) { track_id_ = trackId; }
