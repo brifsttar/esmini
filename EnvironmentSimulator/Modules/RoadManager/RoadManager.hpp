@@ -2330,7 +2330,7 @@ namespace roadmanager
 		/**
 		Retrieve the world coordinate pitch angle (radians)
 		*/
-		double GetP();
+		double GetP() const;
 
 		/**
 		Retrieve the road pitch value
@@ -2340,12 +2340,12 @@ namespace roadmanager
 		/**
 		Retrieve the relative pitch angle (radians)
 		*/
-		double GetPRelative();
+		double GetPRelative() const;
 
 		/**
 		Retrieve the world coordinate roll angle (radians)
 		*/
-		double GetR();
+		double GetR() const;
 
 		/**
 		Retrieve the road roll value
@@ -2355,12 +2355,12 @@ namespace roadmanager
 		/**
 		Retrieve the relative roll angle (radians)
 		*/
-		double GetRRelative();
+		double GetRRelative() const;
 
 		/**
 		Retrieve the road pitch value, driving direction considered
 		*/
-		double GetPRoadInDrivingDirection();
+		double GetPRoadInDrivingDirection() const;
 
 		/**
 		Retrieve the road curvature at current position

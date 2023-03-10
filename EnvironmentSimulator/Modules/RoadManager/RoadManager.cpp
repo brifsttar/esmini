@@ -8481,7 +8481,7 @@ double Position::GetHRoadInDrivingDirection() const
 	return GetAngleSum(GetHRoad(), GetDrivingDirectionRelativeRoad() < 0 ? M_PI : 0.0);
 }
 
-double Position::GetPRoadInDrivingDirection()
+double Position::GetPRoadInDrivingDirection() const
 {
 	return GetPRoad() * GetDrivingDirectionRelativeRoad();
 }
@@ -9508,7 +9508,7 @@ double Position::GetHRelative() const
 	return h_relative_;
 }
 
-double Position::GetP()
+double Position::GetP() const
 {
 	if (!rel_pos_ || rel_pos_ == this)
 	{
@@ -9544,7 +9544,7 @@ double Position::GetP()
 	return p_;
 }
 
-double Position::GetPRelative()
+double Position::GetPRelative() const
 {
 	if (!rel_pos_ || rel_pos_ == this)
 	{
@@ -9580,7 +9580,7 @@ double Position::GetPRelative()
 	return p_relative_;
 }
 
-double Position::GetR()
+double Position::GetR() const
 {
 	if (!rel_pos_ || rel_pos_ == this)
 	{
@@ -9616,7 +9616,7 @@ double Position::GetR()
 	return r_;
 }
 
-double Position::GetRRelative()
+double Position::GetRRelative() const
 {
 	if (!rel_pos_ || rel_pos_ == this)
 	{
