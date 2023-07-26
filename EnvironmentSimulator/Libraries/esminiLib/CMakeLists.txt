@@ -1,57 +1,109 @@
+# ############################### Setting targets ###################################################################################################
 
-include_directories (
-  ${SCENARIOENGINE_INCLUDE_DIRS}
-  ${ROADMANAGER_INCLUDE_DIR}
-  ${VIEWER_BASE_INCLUDE_DIR}
-  ${PLAYER_BASE_INCLUDE_DIR}
-  ${OSG_INCLUDE_DIR}
-  ${COMMON_MINI_INCLUDE_DIR}
-  ${OSI_INCLUDE_DIR}
-  ${CONTROLLERS_INCLUDE_DIR}
-)
+set(TARGET_SHARED
+    esminiLib)
 
-set(TARGET esminiLib)
+set(TARGET_STATIC
+    esminiLib_static)
 
-set ( SOURCES esminiLib.cpp ../../Modules/Controllers/vehicle.cpp )
-set ( INCLUDES esminiLib.hpp ../../Modules/Controllers/vehicle.hpp )
+# ############################### Loading desired rules ##############################################################################################
 
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_static_analysis.cmake)
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_iwyu.cmake)
 
-add_library ( ${TARGET} SHARED ${SOURCES} ${INCLUDES} )
+# ############################### Setting target files ###############################################################################################
 
-add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+set(SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/esminiLib.cpp
+    ${CONTROLLERS_PATH}/vehicle.cpp)
 
-target_link_libraries(${TARGET} PRIVATE project_options)
+set(INCLUDES
+    ${CMAKE_CURRENT_SOURCE_DIR}/esminiLib.hpp
+    ${CONTROLLERS_PATH}/vehicle.hpp)
 
-if (USE_OSG)
-  add_definitions(-DOSG_LIBRARY_STATIC)
-  set (viewer_libs 	PRIVATE ViewerBase PRIVATE ${OSG_LIBRARIES})
-endif (USE_OSG)
+# ############################### Creating library ##################################################################################################
 
-if (USE_SUMO)
-  set (sumo_libs ${SUMO_LIBRARIES})
-endif (USE_SUMO)
+add_library(
+    ${TARGET_SHARED}
+    SHARED
+    ${SOURCES}
+    ${INCLUDES})
 
-if (USE_OSI)
-  set (osi_libs ${OSI_LIBRARIES})
-endif (USE_OSI)
+add_library(
+    ${TARGET_STATIC}
+    STATIC
+    ${SOURCES}
+    ${INCLUDES})
 
-target_link_libraries (
-  ${TARGET}
-  PRIVATE PlayerBase
-  PRIVATE ScenarioEngine
-  PRIVATE CommonMini
-  PRIVATE Controllers
-  PRIVATE RoadManager
-  PRIVATE ${osi_libs}
-  PRIVATE ${sumo_libs}
-  PRIVATE ${TIME_LIB}
-  PRIVATE ${SOCK_LIB}
-  ${viewer_libs}
-)
+foreach(
+    TARGET
+    IN
+    ITEMS ${TARGET_SHARED}
+          ${TARGET_STATIC})
 
-install ( TARGETS ${TARGET} DESTINATION "${INSTALL_DIRECTORY}")
-if (WIN32)
-  install ( TARGETS ${TARGET} RUNTIME DESTINATION "${INSTALL_DIRECTORY_CODE_EXAMPLES}")
-else ()
-  install ( TARGETS ${TARGET} LIBRARY DESTINATION "${INSTALL_DIRECTORY_CODE_EXAMPLES}")
-endif ()
+    target_link_libraries(
+        ${TARGET}
+        PRIVATE project_options)
+
+    target_include_directories(
+        ${TARGET}
+        PRIVATE ${SCENARIO_ENGINE_PATH}/SourceFiles
+                ${SCENARIO_ENGINE_PATH}/OSCTypeDefs
+                ${VIEWER_BASE_PATH}
+                ${PLAYER_BASE_PATH}
+                ${COMMON_MINI_PATH}
+                ${CONTROLLERS_PATH})
+
+    target_include_directories(
+        ${TARGET}
+        SYSTEM
+        PUBLIC ${ROAD_MANAGER_PATH}
+               ${EXTERNALS_OSI_INCLUDES}
+               ${EXTERNALS_OSG_INCLUDES}
+               ${EXTERNALS_PUGIXML_PATH})
+
+    target_link_libraries(
+        ${TARGET}
+        PRIVATE PlayerBase
+                ScenarioEngine
+                CommonMini
+                Controllers
+                RoadManager
+                ${TIME_LIB}
+                ${SOCK_LIB})
+
+    if(USE_OSG)
+        target_link_libraries(
+            ${TARGET}
+            PRIVATE ViewerBase
+                    ${OSG_LIBRARIES})
+    endif()
+
+    if(USE_SUMO)
+        target_link_libraries(
+            ${TARGET}
+            PRIVATE ${SUMO_LIBRARIES})
+    endif()
+
+    if(USE_OSI)
+        target_link_libraries(
+            ${TARGET}
+            PRIVATE ${OSI_LIBRARIES})
+    endif()
+
+    disable_static_analysis(${TARGET_SHARED})
+    disable_iwyu(${TARGET_SHARED})
+
+endforeach()
+
+# ############################### Install############################################################################################################
+
+install(
+    TARGETS ${TARGET_SHARED}
+            ${TARGET_STATIC}
+    DESTINATION "${INSTALL_PATH}")
+
+install(
+    TARGETS ${TARGET_SHARED}
+            ${TARGET_STATIC}
+    DESTINATION "${CODE_EXAMPLES_BIN_PATH}")

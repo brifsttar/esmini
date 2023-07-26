@@ -1,5 +1,414 @@
 ## esmini release notes
 
+### 2023-07-04 Version 2.31.9
+
+New behaviours:
+- Calculate omitted WorldPosition headings also when trajectory following mode is "position"
+  - previously omitted heading was set to "0.0" (default according to standard)
+  
+Improvements and fixes:
+- Expose functions to control snappable lanes ([issue #448](https://github.com/esmini/esmini/issues/448))
+  - both in [esminiLib](https://github.com/esmini/esmini/blob/d2f00135a2c43bd6a4430d07caa3d841d9100721/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp#L841) and [esminiRMLib](https://github.com/esmini/esmini/blob/d2f00135a2c43bd6a4430d07caa3d841d9100721/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMLib.hpp#L229)
+- Fix camera lost track of bounding boxes bug
+
+### 2023-06-26 Version 2.31.8
+
+New behaviours:
+- Set camera focus on model center instead of referece point ([issue #442](https://github.com/esmini/esmini/issues/442))
+- Relative lane id/offset based on entity x-axis instead of road ref system ([issue #444](https://github.com/esmini/esmini/issues/444))
+- Align any missing z (elev), r (roll), and p (pitch) to road surface, skipping default value (0)
+  - Note: This is a deviation from the OpenSCENARIO standard motivated by common sense
+  - Values can still be set to 0 explicitly
+
+Improvements:
+- Update prerequisite info on [formatting](https://esmini.github.io/#_formatting)
+
+### 2023-06-09 Version 2.31.7
+
+- Fix left hand traffic going reverse ([issue #441](https://github.com/esmini/esmini/issues/441))
+- Fix wrong type in GeoReference.axis_ ([issue #442](https://github.com/esmini/esmini/issues/442))
+- Add info on how to install OSI for use with Python on Windows
+  - see [User guide - OSI for Python on Windows](https://esmini.github.io/#_osi_for_python_on_windows)
+- Add Python example script manipulating the speed of a vehicle
+  - see [code-examples/hello_world/change_speed.py](https://github.com/esmini/esmini/blob/master/EnvironmentSimulator/code-examples/hello_world/change_speed.py)
+
+
+### 2023-05-29 Version 2.31.6
+
+New content:
+- Add 2+1 road
+  - xodr ([resources/xodr/two_plus_one.xodr](https://github.com/esmini/esmini/blob/master/resources/xodr/two_plus_one.xodr))
+  - parameterized script: ([scripts/scenario_scripts/create_two_plus_one_road.py](https://github.com/esmini/esmini/blob/master/scripts/scenario_scripts/create_two_plus_one_road.py))
+  - scenario ([resources/xosc/two_plus_one_road.xosc](https://github.com/esmini/esmini/blob/master/resources/xosc/two_plus_one_road.xosc))
+  - run-script, with suitable camera pos ([run/esmini/run_two-plus-one-road.bat](https://github.com/esmini/esmini/blob/master/run/esmini/run_two-plus-one-road.bat))
+  - video clip: https://youtu.be/aT7I2iBDeR0
+
+Improvements and fixes:
+
+- Clarify esmini lane offset handling deviating from OpenDRIVE
+  - see [User guide - Reference line and center lane while using laneOffset](https://esmini.github.io/#_reference_line_and_center_lane_while_using_laneoffset)
+- Make sure lane offset definitions starts from s=0
+  - if first entry does not start at s=0, add a copy for s=0
+- Fix bug in heading calculation wrt lane width and offset
+- Fix wrong SE_GetDistanceToObject() return code for case route not found
+- Demonstrate position type conversion ([issue #437](https://github.com/esmini/esmini/issues/437))
+
+
+### 2023-05-25 Version 2.31.5
+
+Improvements and fixes:
+
+- Add some additional object info to csv_logger ([issue #434](https://github.com/esmini/esmini/issues/434))
+  - bounding box position (relative obj ref point)
+  - bounding box dimensions
+  - lane id
+  - lane offset
+- Add API function [`SE_GetDistanceToObject()`](https://github.com/esmini/esmini/blob/4e45f132f13963a89e4b473c1bb16d9940d5c7cf/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp#L989) to get delta between objects
+  - distance (ds, dt, dx, dy)
+  - delta lane id
+  - opposite lane flag
+  - Note: ds will accumulate over multiple road segments
+- Add motorway type to relevant road segments in [Unittest/xodr/highway_exit.xodr](https://github.com/esmini/esmini/blob/master/EnvironmentSimulator/Unittest/xodr/highway_exit.xodr)
+  - affects OSI handling of the junction
+- Reduce grid intensity in plot scripts
+
+
+### 2023-05-15 Version 2.31.4
+
+Project updates:
+- Update to macos-11 on github actions
+
+Improvements and fixes:
+- Add custom camera option to look at current entity
+  - simply specify `--custom_camera <x,y,z>` (skip heading and pitch)
+- Fix orientation alignment bug
+  - respect individual rotational dimension (h,p,r) alignment setting correctly
+- Add parameter to control accepted lateral distance in ACC Controller ([issue #427](https://github.com/esmini/esmini/issues/427))
+- Ignore road sign subtypes "none" and "-1" ([issue #430](https://github.com/esmini/esmini/issues/430))
+- Fix custom camera position behavior
+  - camera position affected only by entity position and heading, not roll and pitch
+- Add missing includes to esminiJS CMakeLists.txt
+
+### 2023-05-03 Version 2.31.3
+
+Improvements and fixes:
+- Support `freespace` attribute in RelativeClearanceCondition
+  - typo in standard, should have been `freeSpace`
+  - esmini now supports both `freespace` and `freeSpace`
+- Improve RelativeClearanceCondition
+  - consider also empty lane of triggering entity
+  - consider opposite lane flag for empty lanes as well
+- Added OpenMSL to [related work](https://github.com/esmini/esmini#related-work)
+
+### 2023-04-28 Version 2.31.2
+
+Improvements and fixes:
+- Fix RelativeClearanceCondition missed case of empty lanes within range
+- Support OpenSCENARIO v1.2 `override` priority, renamed from `overwrite`
+- Improve LongitudinalDistanceAction
+  - make use of any dynamics constraints provided for the action
+  - disable dynamics only when all constraints are missing
+  - respect vehicle performance settings (limit constraints)
+- exclude odr and model refs from csv file converted from .dat
+  - fixes plot_csv.py failing to plot csv files created from dat2csv.py
+- Add some ghost trigger info to User guide, see [The ghost concept / Actions and triggers](https://esmini.github.io/#_actions_and_triggers)
+
+### 2023-04-19 Version 2.31.1
+
+New features and behaviors:
+- Add custom fixed top camera option to odrviewer as well
+  - for usage info, see similar last example in [User guide - Camera control](https://esmini.github.io/#_camera_control)
+
+Improvements and fixes:
+- Add C# coding example showing how to get and print OSI ground truth
+  - see [code-examples/osi-groundtruth-cs](https://github.com/esmini/esmini/tree/master/EnvironmentSimulator/code-examples/osi-groundtruth-cs)
+  - or [User guide - Hello World - C# binding](https://esmini.github.io/#_c_binding)
+- Fix bug causing camera to be stuck in orthographic mode after switching from custom top view
+- Run nightly sanitizer checks on dev branch instead of master
+
+### 2023-04-18 Version 2.31.0
+
+New features and behaviors:
+- Add esmini OSMP FMU ([PR #409](https://github.com/esmini/esmini/pull/409) and [issue #341](https://github.com/esmini/esmini/issues/341))
+  - based on the [OSMPDummySource](https://github.com/OpenSimulationInterface/osi-sensor-model-packaging/tree/master/examples/OSMPDummySource) example
+  - more info here: https://github.com/esmini/esmini/tree/master/OSMP_FMU
+- Add support for [OSC 1.2 RelativeClearanceCondition](https://www.asam.net/static_downloads/ASAM_OpenSCENARIO_V1.2.0_Model_Documentation/modelDocumentation/content/RelativeClearanceCondition.html)
+- Add `--ground_plane` option to replayer
+- Add static variant of esminiLib
+  - also add code example [hello_world_static](https://github.com/esmini/esmini/tree/master/EnvironmentSimulator/code-examples/hello_world_static)
+- Expose subset of OSI API in C# wrapper ([ESMiniWrapper.cs](https://github.com/esmini/esmini/blob/master/EnvironmentSimulator/Libraries/esminiLib/ESMiniWrapper.cs))
+
+Improvements and fixes:
+- Add info on blocked files on Windows (see [here](https://esmini.github.io/#_blocked_by_windows_defender_smartscreen))
+- Add some COLLADA info related to osgconv (see [here](https://esmini.github.io/#_get_osgconv))
+- Fix issue with stand still phases on trajectories
+  - e.g. allow for rotate heading while stationary
+- Fix curvature direction dependence in esminiRM Unity Util GetLaneInfo()
+- Add info on failed package download to [User guide - Various issues](https://esmini.github.io/#_failed_to_download_3rd_party_assets)
+- Fix/update esmini [C# wrapper API](https://github.com/esmini/esmini/blob/master/EnvironmentSimulator/Libraries/esminiLib/ESMiniWrapper.cs) documentation (header comments/tooltip))
+  - AddObject() returns created object ID (not always 0) on success
+  - object_id replacing object index as argument in many functions (use GetId(index) to find out)
+- Improve delta lane ID calculation in Roadmanager::Position::Delta() method
+  - based on connected lane id at target position (compare at same road and s-value)
+  - remove reference lane from delta (e.g. difference between lanes -2 and +3 is 4, not 5)
+  - include flag for vehicle found in opposite lane or not
+- Add another looming controller demo scenario [loomingHW.xosc](https://github.com/esmini/esmini/blob/master/EnvironmentSimulator/Unittest/xosc/loomingHW.xosc) ([videoclip](https://youtu.be/X1D4b2xZiJc))
+
+
+### 2023-03-22 Version 2.30.1
+
+Project updates:
+- Add brief info for developers and contributors:
+  - Code formatting
+  - How to run tests
+  - Branch strategy
+  - see [User guide - For esmini developers and contributors](https://esmini.github.io/#_for_esmini_developers_and_contributors)
+- Add [CONTRIBUTING.md](https://github.com/esmini/esmini/blob/master/CONTRIBUTING.md) with brief guidelines for contributions
+  - e.g. checklist for reporting issue
+
+New features and behaviors:
+- Support OpenSCENARIO 1.2 and OSI 3.5.0 vehicle role attribute
+- Add simple police car 3D model ([model pack](https://dl.dropboxusercontent.com/s/5gk8bvgzqiaaoco/models.7z?dl=1) updated)
+  - easy way to update: Delete resources/models folder and run `cmake ..` again from build folder
+- Add odrviewer option (`--stop_at_end_of_road`) to stop instead of respawn at end of road ([issue #407](https://github.com/esmini/esmini/issues/407))
+- Expose SimpleVehicle class (kinematic "bicycle" model) in C# API
+  - example code: [simpleVehicleExample.cs](https://github.com/esmini/esmini/blob/master/EnvironmentSimulator/Libraries/esminiLib/simpleVehicleExample.cs)
+
+Improvements and fixes:
+- Set exit code according to esmini success (0) or failure (-1) ([issue #413](https://github.com/esmini/esmini/issues/413))
+- Update [odrviewer command reference](https://esmini.github.io/#_odrviewer), add missing Space and Return key commands
+- Expose GetId() to C# API and add helloWorld example ([helloWorld.cs](https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Libraries/esminiLib/helloWorld.cs))
+
+
+### 2023-03-16 Version 2.30.0
+
+Project updates:
+- Bump C++ version from 14 to 17
+- Migrate CI to GitHub actions
+  - introducing further checks, e.g. formatting check, build and test more variants
+- Introducing "dev" as main development branch while master will be reserved mainly for releases
+
+New features and behaviors:
+- Add pause and step feature to odrviewer ([issue #407](https://github.com/esmini/esmini/issues/407))
+  - For complete command list, see Key shortcuts in [User guide - odrviewer](https://esmini.github.io/#_odrviewer)
+- Add some viewer options to replayer and odrviewer
+  - odrviewer: --aa_mode, --headless, --custom_fixed_camera
+  - replayer: --aa_mode, --headless
+  - For complete and updated launch arguments, see [User guide - Command reference](https://esmini.github.io/#_command_reference)
+- Add "Looming" driver model controller
+  - experimental implementation, see more info in [ControllerLooming.hpp#L14](https://github.com/esmini/esmini/blob/master/EnvironmentSimulator/Modules/Controllers/ControllerLooming.hpp#L14)
+
+Improvements and fixes:
+- Support pause and quit during ghost head start
+- Add driver input reverse example ([issue #400](https://github.com/esmini/esmini/issues/400))
+- Add scenario, [one_car_on_hilly_road.xosc](https://github.com/esmini/esmini/blob/master/scripts/udp_driver/one_car_on_hilly_road.xosc), to demonstrate road alignment in UDP driver controller
+  - See [testUDPDriver.py](https://github.com/esmini/esmini/blob/master/scripts/udp_driver/testUDPDriver.py) how to run
+
+### 2023-02-20 Version 2.29.3
+
+New features and behaviors:
+- Add lookahead options to followGhost controller
+  - set separate lookahead time/distance for speed and steering targets
+  - see more info [User guide - FollowGhost](https://esmini.github.io/#_followghost)
+- Add cmake option (-D OSI_VERSION_3_3_1) to enforce OSI v3.3.1 instead of v3.5.0 (default)
+
+Improvements and fixes:
+- Fix incorrect use of timeout parameter in unix ([PR #393](https://github.com/esmini/esmini/pull/393))
+- Ghost improvements
+  - Support reverse trajectory following ([issue #389](https://github.com/esmini/esmini/issues/389))
+  - Bugfix: Skip ghost time offset for relative timing mode causing an initial jump
+- Fix distance check messing up route ([issue #395](https://github.com/esmini/esmini/issues/395))
+- Fix missing maneuverGroup reset for multiple executions
+
+
+### 2023-02-13 Version 2.29.2
+
+New features and behaviors:
+- Fix wrong ParameterValueSet handling ([issue #390](https://github.com/esmini/esmini/issues/390))
+  - For each scenario run one individual parameter value set is now applied
+  - Previous behavior was to apply all value sets at once
+
+Improvements and fixes:
+- ghost fixes:
+  - fix wrong sim time in actions at ghost restart, causing corrupt SpeedProfile
+  - add default head-start time in ghost controllers
+  - Fix issue with ordinary teleport actions by ghost (no restart)
+  - restore ghost bounding box visibility
+
+### 2023-02-09 Version 2.29.1
+
+New features and behaviors:
+- Identify road edges and populate OSI accordingly
+  - Road edge is currently defined as boundary of outermost lane considered part of the road pavement
+  - Lane types currently considered part of the road pavement:
+    - DRIVING
+    - ENTRY
+    - EXIT
+    - OFF_RAMP
+    - ON_RAMP
+    - ANY_DRIVING
+    - RESTRICTED
+    - STOP
+- Count total displacement in SpeedAction dynamics ([issue #384](https://github.com/esmini/esmini/issues/384))
+  - for transition dimension = distance (fulfil speed change over specified distance), consider total sum of displacement including motion in opposite directions when speed is changing sign, e.g. from 10 to -5 m/s.
+
+Improvements and fixes:
+- Update OSI to v3.5.0 for scripts as well (forgotten about in v2.29.0)
+- Add player reference in controllers
+  - enables more control of visualization from controllers
+  - implemented example: Visualize sensor target point in acc controller (key 'o' / `--road_features on`)
+- Fix coloring of stand-in bounding boxes
+- Fix issues in ad-hoc traffic example
+- Some additional bug fixes
+
+### 2023-02-02 Version 2.29.0
+
+New features and behaviors:
+
+- Support for [DirectionDimension](https://www.asam.net/static_downloads/ASAM_OpenSCENARIO_V1.2.0_Model_Documentation/modelDocumentation/content/DirectionalDimension.html) in relevant conditions (introduced in OSC v1.2)
+- Make AccelerationCondition aware of deceleration
+  - Previously only considering absolute value of acceleration. Now signed.
+- Add cmake config presets also for Visual Studio (Windows)
+
+Improvements and fixes:
+- Update to OSI v3.5.0 (from v3.3.1)
+- Major refactorization cleaning up memory leaks and compiler warnings
+- Increase compiler warning sensitivity, add multiple useful warnings
+- For CI builds, treat warnings as errors - zero tolerance
+- Improve [OSI build script](https://github.com/esmini/esmini/blob/master/scripts/generate_osi_libs.sh)
+- Restore OSI demo in esmini-dyn
+
+### 2023-01-24 Version 2.28.0
+
+New features and behaviors:
+
+- Update OverrideControllerValueAction for OpenSCENARIO v1.2
+  - support new attributes like rate, force and automatic gear
+  - API (data structs) updated, *not backward compatible*, see [esminiLib.hpp](https://github.com/esmini/esmini/blob/732fd19070c865901cd0c662cfeee7643657ea7c/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp#L125)
+
+- Respect elevation alignment setting
+  - enable use cases with external objects not bound to road surface
+  - harmonize function prefix, change RM_SetAlignMode\* to SE_SetAlignMode\*
+  - see example in [User guide - External control of Ego](https://esmini.github.io/index.html#_external_control_of_ego)
+
+### 2023-01-23 Version 2.27.5
+
+New features and behaviors:
+- support OpenSCENARIO variables (introduced in OSC v1.2)
+  - Scenario example: [Unittest/xosc/lane_change_trig_by_variable.xosc](https://github.com/esmini/esmini/blob/master/EnvironmentSimulator/Unittest/xosc/lane_change_trig_by_variable.xosc)
+  - limitation: Only SetAction supported, not ModifyAction yet
+  - external API for setting and reading variables see [esminiLib.hpp](https://github.com/esmini/esmini/blob/37efb091396a522d1eb1b7daf919bca4e1a03bdc/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp#L540)
+  - deprecated ParameterSetAction still supported
+  - API for setting and reading parameters still available as well
+- Adjust speed along s to maintain absolute speed
+  - In other words: Do not increase total speed during lateral actions
+  - Note: This can affect how far an object travels along s for a given duration.
+- Update reference driver in ALKS_R157SM controller, e.g:
+  - fulfill reference driver action even if critical situation dissolves
+  - add overlap tolerance param to avoid edge cases, e.g. equal sized objects
+- Embryo solution for esmini.js (esmini lib for web usage), see [Libraries/esminiJS](https://github.com/esmini/esmini/tree/master/EnvironmentSimulator/Libraries/esminiJS) ([PR #356](https://github.com/esmini/esmini/pull/356))
+- Add Python OSI example ([issue #367](https://github.com/esmini/esmini/issues/367))
+  - see [User guide - OSI groundtruth](https://esmini.github.io/#_osi_groundtruth)
+- Add collision detection example to Hello World ([issue #368](https://github.com/esmini/esmini/issues/368))
+  - see more info in [User guide - Collision detection](https://esmini.github.io/#_collision_detection)
+
+Improvements and fixes:
+- Fix SE_InitWithArgs whitespace bug ([issue #370](https://github.com/esmini/esmini/issues/370))
+- Add missing plot.py to demo pack
+- Fix scenario initialization return code ([issue #363](https://github.com/esmini/esmini/issues/363))
+  - return 0 only on success, else -1
+- Fix relative position beyond current road bug ([issue #372](https://github.com/esmini/esmini/issues/372))
+- Fix typos in User guide ([PR #375](https://github.com/esmini/esmini/pull/375))
+- Some additional minor bug fixes
+
+### 2022-12-17 Version 2.27.4
+
+New features and behaviors:
+- Step fwd/back by delta time in replayer instead of fixed nr steps
+  - shift => 0.1s
+  - ctrl-shift => 1.0s
+  - full description see [replayer Command reference](https://esmini.github.io/#_replayer)
+
+Improvements and fixes:
+- Fix chopped exe filenames in demo pack for Windows
+- Fix orientation alignment bug ([issue #364](https://github.com/esmini/esmini/issues/364))
+- Fix visibility mask bug in replayer
+
+### 2022-12-16 Version 2.27.3
+
+New features and behaviors:
+- Extend plot_dat and add plot_csv script
+  - plot_dat.py support all plottable values
+  - added plot_csv.py for plotting any csv file
+  - this means that osi tracefiles can be plotted (via osi2csv.py and plot_csv.py)
+- Support continuous polyline speed and constant acceleration on segments
+  - apply continuous speed / constant acc in FollowMode = follow
+  - keep constant speed (zero acc) per segment in FollowMode = position
+- Add grid on plots
+- Update ALKS Reference Driver controller implementation
+  - add support for cut-out and deceleration
+  - add experimental support for pedestrians
+  - add a few scenario examples (alks_*.xosc)
+  - adjusted lateral trigger rule for cutting-in motorbikes
+  - add overlap check function and apply for ALKS AEB trigger
+  - add a few experimental properties, see `ALKS_R157SM_Controller` in [ControllerCatalog.xosc](https://github.com/esmini/esmini/blob/master/resources/xosc/Catalogs/Controllers/ControllerCatalog.xosc)
+
+Improvements and fixes:
+
+- Update equation link in odr elevation example in [straight_500_superelevation_elevation.xodr](https://github.com/esmini/esmini/blob/master/EnvironmentSimulator/Unittest/xodr/straight_500_superelevation_elevation.xodr)
+- Hello World updated to make use of existing library and header file (avoid keeping copies)
+- Add info on how to use Visual Studio (and VSCode) with Hello World tutorial
+  - see [User guide - How to build, run and debug "Hello World"](https://esmini.github.io/#_how_to_build_run_and_debug_hello_world)
+- Fix shaky heading at end of small segment trajectories
+- Fix failed quit on close window event ([issue #363](https://github.com/esmini/esmini/issues/363))
+- Fix wrong OSI `bbcenter_to_rear` values ([issue #353](https://github.com/esmini/esmini/issues/353))
+  - change sign (measure from bb center to read axle)
+  - rear axle z relates to actual position, not projected on ground
+- Add correct moving obj z coordinate ([issue #355](https://github.com/esmini/esmini/issues/355))
+- Fix some additional memory leaks
+- Restore lost OSI files in demo pack
+
+### 2022-11-25 Version 2.27.2
+
+- Add script for parallel execution of parameter distributions
+  - see more info in [User guide - Parallel execution](https://esmini.github.io/#_parallel_execution)
+- Add esmini option to just return nr permutations (also as exit code)
+  - see [User guide - Finding out number of permutations](https://esmini.github.io/#_finding_out_number_of_permutations)
+- Add acc and orientation vel/acc to [scripts/osi2csv.py](https://github.com/esmini/esmini/blob/master/scripts/osi2csv.py) script
+- Fix maxDeceleration parse error ([PR #354](https://github.com/esmini/esmini/pull/354))
+- Fix scripts path issues
+  - move osi3 folder up one folder for easier reuse
+  - add search path to make scrips executable from anywhere
+- Move binary demo generator scripts to scripts folder
+
+### 2022-11-18 Version 2.27.1
+
+- Add missing parameter distribution file [cut-in_parameter_set.xosc](https://github.com/esmini/esmini/blob/master/resources/xosc/cut-in_parameter_set.xosc) to demo pack
+- Fix sensor line elevation bug taking vehicle pitch angle into consideration
+- Patch to avoid known VS2019 std::vector issue ([issue #335](https://github.com/esmini/esmini/issues/335))
+
+### 2022-11-18 Version 2.27.0
+New feature:
+- Add parameter distribution support
+  - see info in [User guide - Parameter distributions](https://esmini.github.io/#_parameter_distributions)
+  - Note: currently limited to deterministic distributions
+
+Improvements:
+- Fix some memory leaks
+  - code refactorization for improved memory handling and enabling sanitizer checks
+- Unified [test runner script](https://github.com/esmini/esmini/blob/master/scripts/run_tests.sh) (works on all systems)
+- Some osi optimization and less print outs
+- Extend [testUDPDriver-print-osi-info.py](https://github.com/esmini/esmini/blob/master/scripts/udp_driver/testUDPDriver-print-osi-info.py) example to extract also stationary objects ([issue #350](https://github.com/esmini/esmini/issues/350))
+- Add Python example [add_sensor.py](https://github.com/esmini/esmini/blob/master/EnvironmentSimulator/code-examples/hello_world/add_sensor.py) showing how to add cull sensors from Python ([issue #351](https://github.com/esmini/esmini/issues/351))
+
+Bug fixes:
+- Fix bug messing up auto-calculation of polyline trajectory heading
+- Some additional minor fixes
+
+Additional info:
+- Move some scripts from root to [scripts](https://github.com/esmini/esmini/blob/master/scripts) folder
+- Clarify limited Win32 (16 bit) support in [User guide - Build configurations](https://esmini.github.io/#_build_configurations)
+
 ### 2022-11-09 Version 2.26.9
 - Make pedestrians snap to sidewalks ([issue #343](https://github.com/esmini/esmini/issues/343))
 - Enable visualization of road and lane sensors for pedestrians

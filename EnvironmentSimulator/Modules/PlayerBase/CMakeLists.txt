@@ -1,26 +1,55 @@
+# ############################### Setting targets ####################################################################
 
-include_directories (
-  ${SCENARIOENGINE_INCLUDE_DIRS}
-  ${COMMON_MINI_INCLUDE_DIR}
-  ${ROADMANAGER_INCLUDE_DIR}
-  ${OSG_INCLUDE_DIR}
-  ${VIEWER_BASE_INCLUDE_DIR}
-  ${CONTROLLERS_INCLUDE_DIR}
-  ${OSI_INCLUDE_DIR}
-)
+set(TARGET
+    PlayerBase)
 
-set ( SOURCES
-  playerbase.cpp
-)
+# ############################### Loading desired rules ##############################################################
 
-set ( INCLUDES
-  playerbase.hpp
-  helpText.hpp
-)
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_static_analysis.cmake)
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_iwyu.cmake)
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/enable_fpic.cmake)
 
-if (USE_OSG)
-  add_definitions(-DOSG_LIBRARY_STATIC)
-endif (USE_OSG)
+if(USE_OSG)
+    add_definitions(-DOSG_LIBRARY_STATIC)
+endif(USE_OSG)
 
-add_library ( PlayerBase STATIC ${SOURCES} ${INCLUDES} )
-target_link_libraries(PlayerBase PRIVATE project_options)
+# ############################### Setting target files ###############################################################
+
+set(SOURCES
+    playerbase.cpp)
+
+set(INCLUDES
+    playerbase.hpp
+    helpText.hpp)
+
+# ############################### Creating library ###################################################################
+
+add_library(
+    ${TARGET}
+    STATIC
+    ${SOURCES}
+    ${INCLUDES})
+
+target_include_directories(
+    ${TARGET}
+    PRIVATE ${SCENARIO_ENGINE_PATH}/SourceFiles
+            ${SCENARIO_ENGINE_PATH}/OSCTypeDefs
+            ${COMMON_MINI_PATH}
+            ${VIEWER_BASE_PATH}
+            ${CONTROLLERS_PATH})
+
+target_include_directories(
+    ${TARGET}
+    SYSTEM
+    PUBLIC ${ROAD_MANAGER_PATH}
+           ${EXTERNALS_OSG_INCLUDES}
+           ${EXTERNALS_OSI_INCLUDES}
+           ${EXTERNALS_PUGIXML_PATH})
+
+target_link_libraries(
+    ${TARGET}
+    PRIVATE project_options)
+
+disable_static_analysis(${TARGET})
+disable_iwyu(${TARGET})
+enable_fpic(${TARGET})

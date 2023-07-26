@@ -15,9 +15,9 @@ Options:
   --collision
       Enable global collision detection, potentially reducing performance
   --custom_camera <position>
-      Additional custom fixed camera position <x,y,z,h,p> (multiple occurrences supported)
-  --custom_fixed_camera <position and optional orientation>
       Additional custom camera position <x,y,z>[,h,p] (multiple occurrences supported)
+  --custom_fixed_camera <position and optional orientation>
+      Additional custom fixed camera position <x,y,z>[,h,p] (multiple occurrences supported)
   --custom_fixed_top_camera <position and rotation>
       Additional custom top camera <x,y,z,rot> (multiple occurrences supported)
   --custom_light <position and intensity>
@@ -62,14 +62,22 @@ Options:
       Show OSI road pointss (toggle during simulation by press 'y')
   --osi_receiver_ip <IP address>
       IP address where to send OSI UDP packages
+  --param_dist <filename>
+      Run variations of the scenario according to specified parameter distribution file
+  --param_permutation <index (0 .. NumberOfPermutations-1)>
+      Run specific permutation of parameter distribution
   --path <path>
       Search path prefix for assets, e.g. OpenDRIVE files (multiple occurrences supported)
   --record <filename>
       Record position data into a file for later replay
   --road_features <mode>
       Show OpenDRIVE road features ("on", "off"  (default)) (toggle during simulation by press 'o')
+  --return_nr_permutations
+      Return number of permutations without executing the scenario (-1 = error)
   --save_generated_model
       Save generated 3D model (n/a when a scenegraph is loaded)
+  --save_xosc
+      Save OpenSCENARIO file with any populated parameter values (from distribution)
   --seed <number>
       Specify seed number for random generator
   --sensors
@@ -89,7 +97,7 @@ Additional OSG graphics options:
   --window <x y w h>                         Set the position x, y and size w, h of the viewer window. -1 -1 -1 -1 for fullscreen.
   --borderless-window <x y w h>              Set the position x, y and size w, h of a borderless viewer window. -1 -1 -1 -1 for fullscreen.
   --SingleThreaded                           Run application and all graphics tasks in one single thread.
-  --lodScale <LOD scalefactor>               Adjust Level Of Detail 1=default >1 decrease fidelity <1 increase fidelity  
+  --lodScale <LOD scalefactor>               Adjust Level Of Detail 1=default >1 decrease fidelity <1 increase fidelity
   
 For a complete list of OSG options and environment variables, see here:
 https://github.com/esmini/esmini/blob/master/docs/osg_options_and_env_variables.txt

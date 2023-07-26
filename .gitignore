@@ -18,9 +18,9 @@ version.cpp
 version.txt
 log.txt
 esmini-dyn.log
-externals/OpenSceneGraph
-externals/OSI
-externals/SUMO
+externals/osg
+externals/osi
+externals/sumo
 externals/googletest
 resources/models
 Hello-World_coding-example/build
@@ -32,3 +32,9 @@ __pycache__
 compile_commands.json
 .cache/
 out/build/**
+EnvironmentSimulator/Libraries/esminiJS/build*/*
+support/generated
+pylint_report.txt
+CMakeUserPresets.json
+.DS_Store
+EnvironmentSimulator/Libraries/esminiJS/example/esmini.js

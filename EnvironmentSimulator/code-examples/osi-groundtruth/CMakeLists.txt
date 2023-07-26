@@ -1,31 +1,49 @@
+# ############################### Setting targets ####################################################################
 
-include_directories (
-  ${SCENARIOENGINE_DLL_INCLUDE_DIR}
-  ${COMMON_MINI_INCLUDE_DIR}
-  ${OSI_INCLUDE_DIR}
-)
+set(TARGET
+    osi-groundtruth)
 
-set (TARGET osi-groundtruth)
+# ############################### Loading desired rules ##############################################################
 
-set ( SOURCES
-  osi-groundtruth.cpp
-)
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_static_analysis.cmake)
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_iwyu.cmake)
 
-set ( INCLUDES
-)
+# ############################### Setting target files ###############################################################
 
-link_directories( ${OSI_DIR}/lib )
+set(SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/osi-groundtruth.cpp)
 
-add_executable ( ${TARGET} ${SOURCES} ${INCLUDES} )
+# ############################### Creating executable ################################################################
 
-target_link_libraries (
-	${TARGET}
-	esminiLib
-	CommonMini
-    RoadManager
-	${TIME_LIB}
-    ${OSI_LIBRARIES}
-    project_options
-)
+add_executable(
+    ${TARGET}
+    ${SOURCES})
 
-install ( TARGETS ${TARGET} DESTINATION "${INSTALL_DIRECTORY_CODE_EXAMPLES}")
+target_link_libraries(
+    ${TARGET}
+    PRIVATE project_options)
+
+target_include_directories(
+    ${TARGET}
+    PRIVATE ${EXTERNALS_OSI_INCLUDES}
+            ${EXTERNALS_PUGIXML_PATH})
+
+target_include_directories(
+    ${TARGET}
+    SYSTEM
+    PUBLIC ${ESMINI_LIB_PATH}
+           ${COMMON_MINI_PATH})
+
+target_link_libraries(
+    ${TARGET}
+    PRIVATE esminiLib
+            CommonMini
+            RoadManager
+            ${TIME_LIB}
+            ${OSI_LIBRARIES})
+
+# ############################### Install ############################################################################
+
+install(
+    TARGETS ${TARGET}
+    DESTINATION "${CODE_EXAMPLES_BIN_PATH}")

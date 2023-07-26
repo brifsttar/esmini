@@ -1,28 +1,62 @@
+# ############################### Setting targets ####################################################################
 
-include_directories (
-  ${SCENARIOENGINE_DLL_INCLUDE_DIR}
-  ${COMMON_MINI_INCLUDE_DIR}
-)
+set(TARGET
+    hello_world)
 
-set (TARGET hello_world)
-set (TARGET_TMP hello_world_tmp)
+# ############################### Loading desired rules ##############################################################
 
-add_custom_target(${TARGET_TMP})
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_static_analysis.cmake)
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_iwyu.cmake)
 
-file(GLOB modules RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.cpp")
+# ############################### Setting target files ###############################################################
 
-foreach(file_path ${modules})
-  get_filename_component( filename ${file_path} NAME )
-  string( REPLACE ".cpp" "" module_name ${filename} )
+file(
+    GLOB
+    modules
+    RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+    "*.cpp")
 
-  add_executable( ${module_name} ${filename} )
+# ############################### Creating executable ################################################################
 
-  add_dependencies( ${TARGET_TMP} ${module_name} )
+foreach(
+    file_path
+    ${modules})
+    get_filename_component(
+        filename
+        ${file_path}
+        NAME)
 
-  target_link_libraries( ${module_name} esminiLib project_options)
+    string(
+        REPLACE ".cpp"
+                ""
+                module_name
+                ${filename})
 
-  set_target_properties ( ${module_name} PROPERTIES FOLDER ${CodeExamplesFolder}/${TARGET} )
+    add_executable(
+        ${module_name}
+        ${filename})
 
-  install ( TARGETS ${module_name} DESTINATION ${INSTALL_DIRECTORY_CODE_EXAMPLES})
+    target_link_libraries(
+        ${module_name}
+        PRIVATE project_options)
+
+    target_include_directories(
+        ${module_name}
+        PRIVATE ${EXTERNALS_PUGIXML_PATH}
+                SYSTEM
+        PUBLIC ${ESMINI_LIB_PATH}
+               ${COMMON_MINI_PATH})
+
+    target_link_libraries(
+        ${module_name}
+        PRIVATE esminiLib)
+
+    set_folder(
+        ${module_name}
+        ${CodeExamplesFolder}/${TARGET})
+
+    install(
+        TARGETS ${module_name}
+        DESTINATION ${CODE_EXAMPLES_BIN_PATH})
 
 endforeach()

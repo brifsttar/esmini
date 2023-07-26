@@ -7,33 +7,35 @@
 
 int main(int argc, char* argv[])
 {
-	SE_Init("../resources/xosc/cut-in_simple.xosc", 0, 1, 0, 0);
+    (void)argc;
+    (void)argv;
 
-	osi3::GroundTruth* gt;
+    SE_Init("../resources/xosc/cut-in_simple.xosc", 0, 1, 0, 0);
 
-	// Initial update of complete Ground Truth, including static things
-	SE_UpdateOSIGroundTruth();
-	// You could now retrieve the initial state of all objects before stepping the scenario
+    const osi3::GroundTruth* gt;
 
-	for (int i = 0; i < 1500; i++)
-	{
-		SE_StepDT(0.01f);
+    // Initial update of complete Ground Truth, including static things
+    SE_UpdateOSIGroundTruth();
+    // You could now retrieve the initial state of all objects before stepping the scenario
 
-		// Further updates will only affect dynamic OSI stuff
-		SE_UpdateOSIGroundTruth();
+    for (int i = 0; i < 1500; i++)
+    {
+        SE_StepDT(0.01f);
 
-		// Fetch OSI struct
-		gt = (osi3::GroundTruth*)SE_GetOSIGroundTruthRaw();
+        // Further updates will only affect dynamic OSI stuff
+        SE_UpdateOSIGroundTruth();
 
-		// Print timestamp
-		printf("Frame %d timestamp: %.2f\n", i, gt->mutable_timestamp()->seconds() +
-			1E-9 * gt->mutable_timestamp()->nanos());
+        // Fetch OSI struct
+        gt = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
 
-		// Lane boundaries
-		printf("lane boundaries: %d\n", gt->lane_boundary_size());
-		for (int j = 0; j < gt->lane_boundary_size(); j++)
-		{
-			printf("  lane boundary %d, nr of boundary points: %d\n", j, gt->lane_boundary(j).boundary_line_size());
+        // Print timestamp
+        printf("Frame %d timestamp: %.2f\n", i, static_cast<double>(gt->timestamp().seconds()) + 1E-9 * static_cast<double>(gt->timestamp().nanos()));
+
+        // Lane boundaries
+        printf("lane boundaries: %d\n", gt->lane_boundary_size());
+        for (int j = 0; j < gt->lane_boundary_size(); j++)
+        {
+            printf("  lane boundary %d, nr of boundary points: %d\n", j, gt->lane_boundary(j).boundary_line_size());
 
 #if 0  // change to 1 in order to print all boundary points
 			for (int k = 0; k < gt->lane_boundary(j).boundary_line_size(); k++)
@@ -43,38 +45,37 @@ int main(int argc, char* argv[])
 					gt->lane_boundary(j).boundary_line(k).position().y());
 			}
 #endif
-		}
+        }
 
-		// Road markings, e.g. zebra lines
-		printf("road markings: %d\n", gt->road_marking_size());
+        // Road markings, e.g. zebra lines
+        printf("road markings: %d\n", gt->road_marking_size());
 
-		// Moving objects
-		printf("moving objects: %d\n", gt->moving_object_size());
+        // Moving objects
+        printf("moving objects: %d\n", gt->moving_object_size());
 
 #if 1  // change to 1 in order to print some moving object state info
-		// Print object id, position, orientation and velocity
-		for (int j = 0; j < gt->mutable_moving_object()->size(); j++)
-		{
-			printf("  obj id %u pos (%.2f, %.2f, %.2f) orientation (%.2f, %.2f, %.2f) vel (%.2f, %.2f, %.2f) acc (%.2f, %.2f, %.2f)\n",
-				static_cast<unsigned int>(gt->mutable_moving_object(j)->mutable_id()->value()),
-				gt->mutable_moving_object(j)->mutable_base()->mutable_position()->x(),
-				gt->mutable_moving_object(j)->mutable_base()->mutable_position()->y(),
-				gt->mutable_moving_object(j)->mutable_base()->mutable_position()->z(),
-				gt->mutable_moving_object(j)->mutable_base()->mutable_orientation()->yaw(),
-				gt->mutable_moving_object(j)->mutable_base()->mutable_orientation()->pitch(),
-				gt->mutable_moving_object(j)->mutable_base()->mutable_orientation()->roll(),
-				gt->mutable_moving_object(j)->mutable_base()->mutable_velocity()->x(),
-				gt->mutable_moving_object(j)->mutable_base()->mutable_velocity()->y(),
-				gt->mutable_moving_object(j)->mutable_base()->mutable_velocity()->z(),
-				gt->mutable_moving_object(j)->mutable_base()->mutable_acceleration()->x(),
-				gt->mutable_moving_object(j)->mutable_base()->mutable_acceleration()->y(),
-				gt->mutable_moving_object(j)->mutable_base()->mutable_acceleration()->z()
-			);
-		}
+       // Print object id, position, orientation and velocity
+        for (int j = 0; j < gt->moving_object().size(); j++)
+        {
+            printf("  obj id %u pos (%.2f, %.2f, %.2f) orientation (%.2f, %.2f, %.2f) vel (%.2f, %.2f, %.2f) acc (%.2f, %.2f, %.2f)\n",
+                   static_cast<unsigned int>(gt->moving_object(j).id().value()),
+                   gt->moving_object(j).base().position().x(),
+                   gt->moving_object(j).base().position().y(),
+                   gt->moving_object(j).base().position().z(),
+                   gt->moving_object(j).base().orientation().yaw(),
+                   gt->moving_object(j).base().orientation().pitch(),
+                   gt->moving_object(j).base().orientation().roll(),
+                   gt->moving_object(j).base().velocity().x(),
+                   gt->moving_object(j).base().velocity().y(),
+                   gt->moving_object(j).base().velocity().z(),
+                   gt->moving_object(j).base().acceleration().x(),
+                   gt->moving_object(j).base().acceleration().y(),
+                   gt->moving_object(j).base().acceleration().z());
+        }
 #endif
-	}
+    }
 
-	SE_Close();
+    SE_Close();
 
-	return 0;
+    return 0;
 }

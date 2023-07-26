@@ -10,8 +10,14 @@ Options:
       Show this help message
   --odr <odr_filename>
       OpenDRIVE filename (required)
+  --aa_mode <mode>
+      Anti-alias mode=number of multisamples (subsamples, 0=off, 4=default)
   --capture_screen
       Continuous screen capture. Warning: Many .tga files will be created
+  --custom_fixed_camera <position and optional orientation>
+      Additional custom camera position <x,y,z>[,h,p] (multiple occurrences supported)
+  --custom_fixed_top_camera <position and rotation>
+      Additional custom top camera <x,y,z,rot> (multiple occurrences supported)
   --density [density]  (default = 1.000000)
       density (cars / 100 m)
   --enforce_generate_model
@@ -28,6 +34,8 @@ Options:
       Do not generate any OpenDRIVE road objects (e.g. when part of referred 3D model)
   --ground_plane
       Add a large flat ground surface
+  --headless
+      Run without viewer window
   --logfile_path <path>
       logfile path/filename, e.g. "../esmini.log" (default: log.txt)
   --model <model_filename>
@@ -46,6 +54,8 @@ Options:
       Specify seed number for random generator
   --speed_factor [speed_factor]  (default = 1.000000)
       speed_factor <number>
+  --stop_at_end_of_road
+      Instead of respawning elsewhere, stop when no connection exists
   --traffic_rule <rule (right/left)>
       Enforce left or right hand traffic, regardless OpenDRIVE rule attribute (default: right)
   --version
@@ -58,9 +68,6 @@ Additional OSG graphics options:
   --borderless-window <x y w h>              Set the position x, y and size w, h of a borderless viewer window. -1 -1 -1 -1 for fullscreen.
   --SingleThreaded                           Run application and all graphics tasks in one single thread.
   --lodScale <LOD scalefactor>               Adjust Level Of Detail 1=default >1 decrease fidelity <1 increase fidelity
-  
-For a complete list of OSG options and environment variables, see here:
-https://github.com/esmini/esmini/blob/master/docs/osg_options_and_env_variables.txt  
 
 Examples:
 
@@ -79,16 +86,19 @@ Examples:
 
 Key shortcuts
 
-    H (shift h): This help text
-    TAB:         Move camera to next vehicle
-    Shift - TAB: Move camera to previoius vehicle
-    o:           Toggle show/hide OpenDRIVE road feature lines
-    u:           Toggle show / hide OSI road lines
-    y:           Toggle show / hide OSI road points
-    p:           Toggle show / hide environment 3D model
-    i:           Toggle info text showing time and speed
-    , (comma):   Toggle entity view : Model / None
-    ESC:         quit
+    H (shift + h): This help text
+    Space:         Toggle pause/play simulation
+    Return:        Step simulation(one timestep) then pause
+    TAB:           Move camera to next vehicle
+    Shift + TAB:   Move camera to previoius vehicle
+    Delete:        Same as above (Shift + TAB)
+    o:             Toggle show/hide OpenDRIVE road feature lines
+    u:             Toggle show / hide OSI road lines
+    y:             Toggle show / hide OSI road points
+    p:             Toggle show / hide environment 3D model
+    i:             Toggle info text showing time and speed
+    , (comma):     Toggle entity view : Model / None
+    ESC:           quit
 
     1 - 9: Camera models acording to :
         1: Custom camera model

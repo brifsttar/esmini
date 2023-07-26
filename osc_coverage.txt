@@ -10,7 +10,9 @@ OpenSCENARIO
             ManeuverCatalog                                                    Yes
             TrajectoryCatalog                                                  Yes
             RouteCatalog                                                       Yes
-    ParameterValueDistributionDefinition (1.1)                                 No
+    ParameterValueDistributionDefinition (1.1)
+        Deterministic                                                          Yes
+        Stochastic                                                             No
     ScenarioDefinition
         ParameterDeclaration                                                   Yes
         VariableDeclaration (1.2)                                              No
@@ -59,8 +61,12 @@ OpenSCENARIO
                                         Entity                                 Yes
                                             AddEntityAction                    Yes
                                             DeleteEntityAction                 Yes
-                                        ParameterAction (<= 1.1)               Yes
-                                        VariableAction (>= 1.2)                No
+                                        ParameterAction (<= 1.1)
+                                            ParameterSetAction                 Yes
+                                            ParameterModifyAction              No
+                                        VariableAction (>= 1.2)
+                                            VariableSetAction                  Yes
+                                            VariableModifyAction               No
                                         Infrastructure                         No
                                         Traffic
                                             TrafficSourceAction                No
@@ -148,15 +154,15 @@ OpenSCENARIO
                                         OverrideControllerActionValue          Yes
                                             OverrideThrottleAction             Yes
                                             OverrideBrakeAction                Yes
-                                                BrakeInput (1.2)               No
+                                                BrakeInput (1.2)               Yes
                                             OverrideClutchAction               Yes
                                             OverrideParkingBrakeAction         Yes
-                                                BrakeInput (1.2)               No
+                                                BrakeInput (1.2)               Yes
                                             OverrideSteeringWheelAction        Yes
-                                                maxRate (1.2)                  No
-                                                maxTorque (1.2)                No
+                                                maxRate (1.2)                  Yes
+                                                maxTorque (1.2)                Yes
                                             OverrideGearAction                 Yes
-                                                Gear (1.2)                     No
+                                                Gear (1.2)                     Yes
                                         Routing
                                             AssignRoute                        Yes
                                             FollowTrajectory                   Yes
@@ -178,6 +184,7 @@ Common classes
         Expressions (1.1)                      Yes
             Arithmetic calculations            Yes
             Logical expressions                Yes
+    VariableDeclaration                        Yes
     CatalogReference                           Yes
     Trajectory                                 Yes
         polyLine                               Yes
@@ -248,22 +255,22 @@ Common classes
                     ByType                     Yes
                 Offroad                        Yes
                 TimeHeadway                    Yes
-                    Direction (1.2)            No
+                    routingAlgorithm (1.2)     No
                 TimeToCollision                Yes
                     routingAlgorithm (1.2)     No
                 Acceleration                   Yes
-                    Direction (1.2)            No
+                    Direction (1.2)            Yes
                 StandStill                     Yes
                 Speed                          Yes
-                    Direction (1.2)            No
+                    Direction (1.2)            Yes
                 RelativeSpeed                  Yes
-                    Direction (1.2)            No
+                    Direction (1.2)            Yes
                 TraveledDistance               Yes
                 ReachPosition                  Yes
                 Distance                       Yes
                     routingAlgorithm (1.2)     No
                 RelativeDistance               Yes
-                RelativeClearance (1.2)        No
+                RelativeClearance (1.2)        Yes
         ByState (<=1.0)
             AfterTermination                   Yes
             AtStart                            Yes
@@ -272,6 +279,7 @@ Common classes
             Controller                         No
         ByValue
             ParameterCondition                 Yes
+            VariableCondition                  Yes
             TimeOfDayCondition                 No
             SimulationTimeCondition            Yes
             StoryboardElementStateCondition	   yes

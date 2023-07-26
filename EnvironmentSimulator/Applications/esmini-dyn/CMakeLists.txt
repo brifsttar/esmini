@@ -1,30 +1,52 @@
+# ############################### Setting targets ####################################################################
 
-include_directories (
-  ${SCENARIOENGINE_DLL_INCLUDE_DIR}
-  ${COMMON_MINI_INCLUDE_DIR}  
-  ${OSI_INCLUDE_DIR}
-)
+set(TARGET
+    esmini-dyn)
 
-set (TARGET esmini-dyn)
+# ############################### Loading desired rules ##############################################################
 
-set ( SOURCES
-  main.cpp
-)
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_static_analysis.cmake)
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_iwyu.cmake)
 
-set ( INCLUDES
-)
+# ############################### Setting target files ###############################################################
 
-link_directories( ${OSI_DIR}/lib )
+set(SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp)
 
-add_executable ( ${TARGET} ${SOURCES} ${INCLUDES} )
+# ############################### Creating executable ################################################################
 
+add_executable(
+    ${TARGET}
+    ${SOURCES})
 
-target_link_libraries ( 
-	${TARGET}
-	esminiLib
-	CommonMini
-	${TIME_LIB}
-  project_options
-)
+target_link_libraries(
+    ${TARGET}
+    PRIVATE project_options)
 
-install ( TARGETS ${TARGET} DESTINATION "${INSTALL_DIRECTORY}")
+target_include_directories(
+    ${TARGET}
+    PRIVATE ${ESMINI_LIB_PATH}
+            ${COMMON_MINI_PATH})
+
+target_include_directories(
+    ${TARGET}
+    SYSTEM
+    PUBLIC ${EXTERNALS_OSI_INCLUDES})
+
+target_link_libraries(
+    ${TARGET}
+    PRIVATE esminiLib
+    PRIVATE CommonMini
+    PRIVATE ${TIME_LIB})
+
+if(USE_OSI)
+    target_link_libraries(
+        ${TARGET}
+        PRIVATE ${OSI_LIBRARIES})
+endif()
+
+# ############################### Install ############################################################################
+
+install(
+    TARGETS ${TARGET}
+    DESTINATION "${INSTALL_PATH}")

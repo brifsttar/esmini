@@ -14,23 +14,18 @@ using namespace roadmanager;
 ////////// TESTS FOR CLASS -> Polynomial //////////
 //////////////////////////////////////////////////////////////////////
 
-class PolynomialTestFixture: public testing::Test
+class PolynomialTestFixture : public testing::Test
 {
-    public:
-        PolynomialTestFixture();
-        PolynomialTestFixture(double a, double b, double c, double d, double p_scale);
-        virtual ~PolynomialTestFixture();
-    protected:
-        Polynomial polynomial;
+public:
+    PolynomialTestFixture();
+    PolynomialTestFixture(double a, double b, double c, double d, double p_scale);
+    virtual ~PolynomialTestFixture();
+
+protected:
+    Polynomial polynomial;
 };
 
-
-
 PolynomialTestFixture::PolynomialTestFixture()
-{
-}
-
-PolynomialTestFixture::PolynomialTestFixture(double a, double b, double c, double d, double p_scale)
 {
 }
 
@@ -49,7 +44,7 @@ TEST_F(PolynomialTestFixture, TestConstructorEmpty)
 
 TEST_F(PolynomialTestFixture, TestConstructorArgument)
 {
-    polynomial = Polynomial(1,-2,3,-4);
+    polynomial = Polynomial(1, -2, 3, -4);
     ASSERT_EQ(1, polynomial.GetA());
     ASSERT_EQ(-2, polynomial.GetB());
     ASSERT_EQ(3, polynomial.GetC());
@@ -59,7 +54,7 @@ TEST_F(PolynomialTestFixture, TestConstructorArgument)
 
 TEST_F(PolynomialTestFixture, TestConstructorArgumentPscale)
 {
-    polynomial = Polynomial(1,-2,3,-4,2);
+    polynomial = Polynomial(1, -2, 3, -4, 2);
     ASSERT_EQ(1, polynomial.GetA());
     ASSERT_EQ(-2, polynomial.GetB());
     ASSERT_EQ(3, polynomial.GetC());
@@ -69,7 +64,7 @@ TEST_F(PolynomialTestFixture, TestConstructorArgumentPscale)
 
 TEST_F(PolynomialTestFixture, TestSetGet)
 {
-    polynomial.Set(1,-2,3,-4);
+    polynomial.Set(1, -2, 3, -4);
     ASSERT_EQ(1, polynomial.GetA());
     ASSERT_EQ(-2, polynomial.GetB());
     ASSERT_EQ(3, polynomial.GetC());
@@ -79,7 +74,7 @@ TEST_F(PolynomialTestFixture, TestSetGet)
 
 TEST_F(PolynomialTestFixture, TestSetGetPscale)
 {
-    polynomial.Set(1,-2,3,-4, 2);
+    polynomial.Set(1, -2, 3, -4, 2);
     ASSERT_EQ(1, polynomial.GetA());
     ASSERT_EQ(-2, polynomial.GetB());
     ASSERT_EQ(3, polynomial.GetC());
@@ -99,11 +94,11 @@ TEST_F(PolynomialTestFixture, TestSetGetIndividual)
     ASSERT_EQ(-4, polynomial.GetD());
 }
 
-class PolynomialTestEvaluateEmptyParametrized: public testing::TestWithParam<std::tuple<double, double>>
+class PolynomialTestEvaluateEmptyParametrized : public testing::TestWithParam<std::tuple<double, double>>
 {
-    public:
-    protected:
-        Polynomial polynomial_empty;
+public:
+protected:
+    Polynomial polynomial_empty;
 };
 
 TEST_P(PolynomialTestEvaluateEmptyParametrized, TestEvaluateEmptyConstructor)
@@ -117,15 +112,15 @@ TEST_P(PolynomialTestEvaluateEmptyParametrized, TestEvaluateEmptyConstructor)
     ASSERT_EQ(polynomial_empty.Evaluate(std::get<0>(tuple)), std::get<1>(tuple));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestEvaluateParamEmpty, PolynomialTestEvaluateEmptyParametrized, testing::Values(
-                                                std::make_tuple(2,-23),
-                                                std::make_tuple(0, 1)));
+INSTANTIATE_TEST_SUITE_P(TestEvaluateParamEmpty,
+                         PolynomialTestEvaluateEmptyParametrized,
+                         testing::Values(std::make_tuple(2, -23), std::make_tuple(0, 1)));
 
-class PolynomialTestEvaluateArgumentParametrized: public testing::TestWithParam<std::tuple<double, double>>
+class PolynomialTestEvaluateArgumentParametrized : public testing::TestWithParam<std::tuple<double, double>>
 {
-    public:
-    protected:
-        Polynomial polynomial_argument{1,-2,3,-4,2};
+public:
+protected:
+    Polynomial polynomial_argument{1, -2, 3, -4, 2};
 };
 
 TEST_P(PolynomialTestEvaluateArgumentParametrized, TestEvaluateArgumentConstructor)
@@ -135,16 +130,15 @@ TEST_P(PolynomialTestEvaluateArgumentParametrized, TestEvaluateArgumentConstruct
     ASSERT_EQ(polynomial_argument.Evaluate(std::get<0>(tuple)), std::get<1>(tuple));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestEvaluateParamArgument, PolynomialTestEvaluateArgumentParametrized, testing::Values(
-                                                std::make_tuple(2,-215),
-                                                std::make_tuple(0, 1)));
+INSTANTIATE_TEST_SUITE_P(TestEvaluateParamArgument,
+                         PolynomialTestEvaluateArgumentParametrized,
+                         testing::Values(std::make_tuple(2, -215), std::make_tuple(0, 1)));
 
-
-class PolynomialTestEvaluatePrimEmptyParametrized: public testing::TestWithParam<std::tuple<double, double>>
+class PolynomialTestEvaluatePrimEmptyParametrized : public testing::TestWithParam<std::tuple<double, double>>
 {
-    public:
-    protected:
-        Polynomial polynomial_empty;
+public:
+protected:
+    Polynomial polynomial_empty;
 };
 
 TEST_P(PolynomialTestEvaluatePrimEmptyParametrized, TestEvaluatePrimEmptyConstructor)
@@ -158,15 +152,15 @@ TEST_P(PolynomialTestEvaluatePrimEmptyParametrized, TestEvaluatePrimEmptyConstru
     ASSERT_EQ(polynomial_empty.EvaluatePrim(std::get<0>(tuple)), std::get<1>(tuple));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestEvaluatePrimParamEmpty, PolynomialTestEvaluatePrimEmptyParametrized, testing::Values(
-                                                std::make_tuple(2,-38),
-                                                std::make_tuple(0, -2)));
+INSTANTIATE_TEST_SUITE_P(TestEvaluatePrimParamEmpty,
+                         PolynomialTestEvaluatePrimEmptyParametrized,
+                         testing::Values(std::make_tuple(2, -38), std::make_tuple(0, -2)));
 
-class PolynomialTestEvaluatePrimArgumentParametrized: public testing::TestWithParam<std::tuple<double, double>>
+class PolynomialTestEvaluatePrimArgumentParametrized : public testing::TestWithParam<std::tuple<double, double>>
 {
-    public:
-    protected:
-        Polynomial polynomial_argument{1,-2,3,-4,2};
+public:
+protected:
+    Polynomial polynomial_argument{1, -2, 3, -4, 2};
 };
 
 TEST_P(PolynomialTestEvaluatePrimArgumentParametrized, TestEvaluatePrimArgumentConstructor)
@@ -176,15 +170,15 @@ TEST_P(PolynomialTestEvaluatePrimArgumentParametrized, TestEvaluatePrimArgumentC
     ASSERT_EQ(polynomial_argument.EvaluatePrim(std::get<0>(tuple)), std::get<1>(tuple));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestEvaluatePrimParamArgument, PolynomialTestEvaluatePrimArgumentParametrized, testing::Values(
-                                                std::make_tuple(2,-170),
-                                                std::make_tuple(0, -2)));
+INSTANTIATE_TEST_SUITE_P(TestEvaluatePrimParamArgument,
+                         PolynomialTestEvaluatePrimArgumentParametrized,
+                         testing::Values(std::make_tuple(2, -170), std::make_tuple(0, -2)));
 
-class PolynomialTestEvaluatePrimPrimEmptyParametrized: public testing::TestWithParam<std::tuple<double, double>>
+class PolynomialTestEvaluatePrimPrimEmptyParametrized : public testing::TestWithParam<std::tuple<double, double>>
 {
-    public:
-    protected:
-        Polynomial polynomial_empty;
+public:
+protected:
+    Polynomial polynomial_empty;
 };
 
 TEST_P(PolynomialTestEvaluatePrimPrimEmptyParametrized, TestEvaluatePrimPrimEmptyConstructor)
@@ -198,15 +192,15 @@ TEST_P(PolynomialTestEvaluatePrimPrimEmptyParametrized, TestEvaluatePrimPrimEmpt
     ASSERT_EQ(polynomial_empty.EvaluatePrimPrim(std::get<0>(tuple)), std::get<1>(tuple));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestEvaluatePrimPrimParamEmpty, PolynomialTestEvaluatePrimPrimEmptyParametrized, testing::Values(
-                                                std::make_tuple(2,-42),
-                                                std::make_tuple(0, 6)));
+INSTANTIATE_TEST_SUITE_P(TestEvaluatePrimPrimParamEmpty,
+                         PolynomialTestEvaluatePrimPrimEmptyParametrized,
+                         testing::Values(std::make_tuple(2, -42), std::make_tuple(0, 6)));
 
-class PolynomialTestEvaluatePrimPrimArgumentParametrized: public testing::TestWithParam<std::tuple<double, double>>
+class PolynomialTestEvaluatePrimPrimArgumentParametrized : public testing::TestWithParam<std::tuple<double, double>>
 {
-    public:
-    protected:
-        Polynomial polynomial_argument{1,-2,3,-4,2};
+public:
+protected:
+    Polynomial polynomial_argument{1, -2, 3, -4, 2};
 };
 
 TEST_P(PolynomialTestEvaluatePrimPrimArgumentParametrized, TestEvaluatePrimPrimArgumentConstructor)
@@ -216,34 +210,30 @@ TEST_P(PolynomialTestEvaluatePrimPrimArgumentParametrized, TestEvaluatePrimPrimA
     ASSERT_EQ(polynomial_argument.EvaluatePrimPrim(std::get<0>(tuple)), std::get<1>(tuple));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestEvaluatePrimPrimParamArgument, PolynomialTestEvaluatePrimPrimArgumentParametrized, testing::Values(
-                                                std::make_tuple(2,-90),
-                                                std::make_tuple(0, 6)));
+INSTANTIATE_TEST_SUITE_P(TestEvaluatePrimPrimParamArgument,
+                         PolynomialTestEvaluatePrimPrimArgumentParametrized,
+                         testing::Values(std::make_tuple(2, -90), std::make_tuple(0, 6)));
 
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
-
 
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> OSIPoints //////////
 //////////////////////////////////////////////////////////////////////
 
-class OSIPointsTestFixture: public testing::Test
+class OSIPointsTestFixture : public testing::Test
 {
-    public:
-        OSIPointsTestFixture();
-        OSIPointsTestFixture(std::vector<double> s, std::vector<double> x, std::vector<double> y, std::vector<double> z, std::vector<double> h);
-        virtual ~OSIPointsTestFixture();
-    protected:
-        OSIPoints osi_points;
+public:
+    OSIPointsTestFixture();
+    OSIPointsTestFixture(std::vector<double> s, std::vector<double> x, std::vector<double> y, std::vector<double> z, std::vector<double> h);
+    virtual ~OSIPointsTestFixture();
+
+protected:
+    OSIPoints osi_points;
 };
 
 OSIPointsTestFixture::OSIPointsTestFixture()
-{
-}
-
-OSIPointsTestFixture::OSIPointsTestFixture(std::vector<double> s, std::vector<double> x, std::vector<double> y, std::vector<double> z, std::vector<double> h)
 {
 }
 
@@ -258,12 +248,7 @@ TEST_F(OSIPointsTestFixture, TestConstructorEmpty)
 
 TEST_F(OSIPointsTestFixture, TestConstructorArgument)
 {
-    std::vector<PointStruct> osi_points_test_set =
-    {
-        {0, 0, 0, 0, 0},
-        {-1, -1, -1, -1, -1},
-        {2, 2, 2, 2, 2}
-    };
+    std::vector<PointStruct> osi_points_test_set = {{0, 0, 0, 0, 0}, {-1, -1, -1, -1, -1}, {2, 2, 2, 2, 2}};
 
     OSIPoints osi_points_test_object = OSIPoints(osi_points_test_set);
 
@@ -281,12 +266,7 @@ TEST_F(OSIPointsTestFixture, TestConstructorArgument)
 
 TEST_F(OSIPointsTestFixture, TestSetGet)
 {
-    std::vector<PointStruct> osi_points_test_set =
-    {
-        {0, 0, 0, 0, 0},
-        {-1, -1, -1, -1, -1},
-        {2, 2, 2, 2, 2}
-    };
+    std::vector<PointStruct> osi_points_test_set = {{0, 0, 0, 0, 0}, {-1, -1, -1, -1, -1}, {2, 2, 2, 2, 2}};
 
     osi_points.Set(osi_points_test_set);
 
@@ -317,55 +297,45 @@ TEST_F(OSIPointsTestFixture, TestGetFromIdxEmpty)
 
 TEST_F(OSIPointsTestFixture, TestGetFromIdx)
 {
-    std::vector<PointStruct> osi_points_test_set =
-    {
-        {0, 0, 0, 0, 0},
-        {-1, -1, -1, -1, -1},
-        {2, 2, 2, 2, 2}
-    };
+    std::vector<PointStruct> osi_points_test_set = {{0, 0, 0, 0, 0}, {-1, -1, -1, -1, -1}, {2, 2, 2, 2, 2}};
 
     OSIPoints osi_points_test_object = OSIPoints(osi_points_test_set);
 
-    ASSERT_EQ(osi_points_test_object.GetXfromIdx(0), (double)0);
-    ASSERT_EQ(osi_points_test_object.GetXfromIdx(1), (double)-1);
-    ASSERT_EQ(osi_points_test_object.GetXfromIdx(2), (double)2);
+    ASSERT_EQ(osi_points_test_object.GetXfromIdx(0), 0);
+    ASSERT_EQ(osi_points_test_object.GetXfromIdx(1), -1);
+    ASSERT_EQ(osi_points_test_object.GetXfromIdx(2), 2);
 
-    ASSERT_EQ(osi_points_test_object.GetYfromIdx(0), (double)0);
-    ASSERT_EQ(osi_points_test_object.GetYfromIdx(1), (double)-1);
-    ASSERT_EQ(osi_points_test_object.GetYfromIdx(2), (double)2);
+    ASSERT_EQ(osi_points_test_object.GetYfromIdx(0), 0);
+    ASSERT_EQ(osi_points_test_object.GetYfromIdx(1), -1);
+    ASSERT_EQ(osi_points_test_object.GetYfromIdx(2), 2);
 
-    ASSERT_EQ(osi_points_test_object.GetZfromIdx(0), (double)0);
-    ASSERT_EQ(osi_points_test_object.GetZfromIdx(1), (double)-1);
-    ASSERT_EQ(osi_points_test_object.GetZfromIdx(2), (double)2);
+    ASSERT_EQ(osi_points_test_object.GetZfromIdx(0), 0);
+    ASSERT_EQ(osi_points_test_object.GetZfromIdx(1), -1);
+    ASSERT_EQ(osi_points_test_object.GetZfromIdx(2), 2);
 }
 
 TEST_F(OSIPointsTestFixture, TestGetNumOfOSIPoints)
 {
     ASSERT_EQ(osi_points.GetNumOfOSIPoints(), 0);
 
-    std::vector<PointStruct> osi_points_test_set =
-    {
-        {0, 0, 0, 0, 0},
-        {-1, -1, -1, -1, -1},
-        {2, 2, 2, 2, 2}
-    };
-    std::vector<double> s {0, -1, 2};
-    std::vector<double> x {0, -1, 2};
-    std::vector<double> y {0, -1, 2};
-    std::vector<double> z {0, -1, 2};
-    std::vector<double> h {0, -1, 2};
+    std::vector<PointStruct> osi_points_test_set = {{0, 0, 0, 0, 0}, {-1, -1, -1, -1, -1}, {2, 2, 2, 2, 2}};
+    std::vector<double>      s{0, -1, 2};
+    std::vector<double>      x{0, -1, 2};
+    std::vector<double>      y{0, -1, 2};
+    std::vector<double>      z{0, -1, 2};
+    std::vector<double>      h{0, -1, 2};
 
     OSIPoints osi_points_second = OSIPoints(osi_points_test_set);
     ASSERT_EQ(osi_points_second.GetNumOfOSIPoints(), 3);
 }
 
-
-
-class OSIPointsCloseCheck :public ::testing::TestWithParam<std::tuple<float,float,float,float,float,float,float,float,int>> {};
+class OSIPointsCloseCheck : public ::testing::TestWithParam<std::tuple<float, float, float, float, float, float, float, float, int>>
+{
+};
 // eight points (start and end for two lines)
 // l1_p1_x, l1_p1_y, l1_p2_x, l1_p2_y, l2_p1_x, l2_p1_y, l2_p2_x, l2_p2_y, expected amount points same
-TEST_P(OSIPointsCloseCheck, ClosenessChecker) {
-
+TEST_P(OSIPointsCloseCheck, ClosenessChecker)
+{
     PointStruct s1;
     s1.x = std::get<0>(GetParam());
     s1.y = std::get<1>(GetParam());
@@ -395,42 +365,37 @@ TEST_P(OSIPointsCloseCheck, ClosenessChecker) {
     OSIPoints line2 = OSIPoints();
     line2.Set(vec2);
 
-    int num_intersecting_points = CheckOverlapingOSIPoints(&line1, &line2,0.001);
-    ASSERT_EQ(num_intersecting_points,std::get<8>(GetParam()));
+    int num_intersecting_points = CheckOverlapingOSIPoints(&line1, &line2, 0.001);
+    ASSERT_EQ(num_intersecting_points, std::get<8>(GetParam()));
 }
 
-INSTANTIATE_TEST_SUITE_P(OSI_Points_check_test,OSIPointsCloseCheck,::testing::Values(
-    std::make_tuple(0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1),
-    std::make_tuple(0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 2),
-    std::make_tuple(0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 2.0f, 1.0f, 1.0f, 0),
-    std::make_tuple(0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 2.0f, 0.0f, 0.0f, 1),
-    std::make_tuple(0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 2)
-)
-);
+INSTANTIATE_TEST_SUITE_P(OSI_Points_check_test,
+                         OSIPointsCloseCheck,
+                         ::testing::Values(std::make_tuple(0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1),
+                                           std::make_tuple(0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 2),
+                                           std::make_tuple(0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 2.0f, 1.0f, 1.0f, 0),
+                                           std::make_tuple(0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 2.0f, 0.0f, 0.0f, 1),
+                                           std::make_tuple(0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 2)));
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
-
 
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> Line (Geometry) //////////
 //////////////////////////////////////////////////////////////////////
 
-class LineGeomTestFixture: public testing::Test
+class LineGeomTestFixture : public testing::Test
 {
-    public:
-        LineGeomTestFixture();
-        LineGeomTestFixture(double s, double x, double y, double hdg, double length);
-        virtual ~LineGeomTestFixture();
-    protected:
-        Line line;
+public:
+    LineGeomTestFixture();
+    LineGeomTestFixture(double s, double x, double y, double hdg, double length);
+    virtual ~LineGeomTestFixture();
+
+protected:
+    Line line;
 };
 
 LineGeomTestFixture::LineGeomTestFixture()
-{
-}
-
-LineGeomTestFixture::LineGeomTestFixture(double s, double x, double y, double hdg, double length)
 {
 }
 
@@ -447,7 +412,7 @@ TEST_F(LineGeomTestFixture, TestConstructorArgument)
     ASSERT_EQ(0, line.GetLength());
     EXPECT_EQ(line.GetType(), Geometry::GEOMETRY_TYPE_UNKNOWN);
 
-    Line line_second = Line(2, -1, 1, 5*M_PI, 4);
+    Line line_second = Line(2, -1, 1, 5 * M_PI, 4);
     ASSERT_EQ(2, line_second.GetS());
     ASSERT_EQ(-1, line_second.GetX());
     ASSERT_EQ(1, line_second.GetY());
@@ -455,7 +420,7 @@ TEST_F(LineGeomTestFixture, TestConstructorArgument)
     ASSERT_EQ(4, line_second.GetLength());
     EXPECT_EQ(line_second.GetType(), Geometry::GEOMETRY_TYPE_LINE);
 
-    Line line_third = Line(2, -1, 1, -5*M_PI, 4);
+    Line line_third = Line(2, -1, 1, -5 * M_PI, 4);
     ASSERT_EQ(2, line_third.GetS());
     ASSERT_EQ(-1, line_third.GetX());
     ASSERT_EQ(1, line_third.GetY());
@@ -472,12 +437,11 @@ TEST_F(LineGeomTestFixture, TestEvaluateCurvatureDS)
     ASSERT_EQ(line.EvaluateCurvatureDS(1000), 0.0);
 }
 
-
-class LineGeomTestEvaluateDsEmptyConstructor: public testing::TestWithParam<std::tuple<double, double, double, double>>
+class LineGeomTestEvaluateDsEmptyConstructor : public testing::TestWithParam<std::tuple<double, double, double, double>>
 {
-    public:
-    protected:
-        Line line;
+public:
+protected:
+    Line line;
 };
 
 TEST_P(LineGeomTestEvaluateDsEmptyConstructor, TestLineGeomEvaluateDsEmpty)
@@ -485,28 +449,27 @@ TEST_P(LineGeomTestEvaluateDsEmptyConstructor, TestLineGeomEvaluateDsEmpty)
     std::tuple<double, double, double, double> tuple = GetParam();
     ASSERT_GE(std::get<0>(tuple), 0);
     double *x, *y, *h;
-    double my_x = line.GetX();
-    double my_y = line.GetY();
-    double my_h = line.GetHdg();
-    x = &my_x;
-    y = &my_y;
-    h = &my_h;
+    double  my_x = line.GetX();
+    double  my_y = line.GetY();
+    double  my_h = line.GetHdg();
+    x            = &my_x;
+    y            = &my_y;
+    h            = &my_h;
     line.EvaluateDS(std::get<0>(tuple), x, y, h);
     ASSERT_EQ(*x, std::get<1>(tuple));
     ASSERT_EQ(*y, std::get<2>(tuple));
     ASSERT_EQ(*h, std::get<3>(tuple));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestEvaluateDsEmptyParam, LineGeomTestEvaluateDsEmptyConstructor, testing::Values(
-                                                std::make_tuple(0, 0, 0, 0),
-                                                std::make_tuple(1, 1, 0, 0),
-                                                std::make_tuple(100, 100, 0, 0)));
+INSTANTIATE_TEST_SUITE_P(TestEvaluateDsEmptyParam,
+                         LineGeomTestEvaluateDsEmptyConstructor,
+                         testing::Values(std::make_tuple(0, 0, 0, 0), std::make_tuple(1, 1, 0, 0), std::make_tuple(100, 100, 0, 0)));
 
-class LineGeomTestEvaluateDsArgumentConstructor: public testing::TestWithParam<std::tuple<double, double, double, double>>
+class LineGeomTestEvaluateDsArgumentConstructor : public testing::TestWithParam<std::tuple<double, double, double, double>>
 {
-    public:
-    protected:
-        Line line{2.0, -1.0, 1.0, 5*M_PI, 4.0};
+public:
+protected:
+    Line line{2.0, -1.0, 1.0, 5 * M_PI, 4.0};
 };
 
 TEST_P(LineGeomTestEvaluateDsArgumentConstructor, TestLineGeomEvaluateDsArgument)
@@ -514,47 +477,44 @@ TEST_P(LineGeomTestEvaluateDsArgumentConstructor, TestLineGeomEvaluateDsArgument
     std::tuple<double, double, double, double> tuple = GetParam();
     ASSERT_GE(std::get<0>(tuple), 0);
     double *x, *y, *h;
-    double my_x = line.GetX();
-    double my_y = line.GetY();
-    double my_h = line.GetHdg();
-    x = &my_x;
-    y = &my_y;
-    h = &my_h;
+    double  my_x = line.GetX();
+    double  my_y = line.GetY();
+    double  my_h = line.GetHdg();
+    x            = &my_x;
+    y            = &my_y;
+    h            = &my_h;
     line.EvaluateDS(std::get<0>(tuple), x, y, h);
     ASSERT_EQ(*x, std::get<1>(tuple));
     ASSERT_EQ(*y, std::get<2>(tuple));
     ASSERT_EQ(*h, std::get<3>(tuple));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestEvaluateLineDsArgumentParam, LineGeomTestEvaluateDsArgumentConstructor, testing::Values(
-                                                std::make_tuple(0.0, -1.0, 1.0, M_PI),
-                                                std::make_tuple(1.0, -2.0, 1.0+sin(M_PI), M_PI),
-                                                std::make_tuple(100.0, -101.0, 1.0+100*sin(M_PI), M_PI)));
+INSTANTIATE_TEST_SUITE_P(TestEvaluateLineDsArgumentParam,
+                         LineGeomTestEvaluateDsArgumentConstructor,
+                         testing::Values(std::make_tuple(0.0, -1.0, 1.0, M_PI),
+                                         std::make_tuple(1.0, -2.0, 1.0 + sin(M_PI), M_PI),
+                                         std::make_tuple(100.0, -101.0, 1.0 + 100 * sin(M_PI), M_PI)));
 
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
-
 
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> Arc (Geometry) //////////
 //////////////////////////////////////////////////////////////////////
 
-class ArcGeomTestFixture: public testing::Test
+class ArcGeomTestFixture : public testing::Test
 {
-    public:
-        ArcGeomTestFixture();
-        ArcGeomTestFixture(double s, double x, double y, double hdg, double length, double curvature);
-        virtual ~ArcGeomTestFixture();
-    protected:
-        Arc arc;
+public:
+    ArcGeomTestFixture();
+    ArcGeomTestFixture(double s, double x, double y, double hdg, double length, double curvature);
+    virtual ~ArcGeomTestFixture();
+
+protected:
+    Arc arc;
 };
 
 ArcGeomTestFixture::ArcGeomTestFixture()
-{
-}
-
-ArcGeomTestFixture::ArcGeomTestFixture(double s, double x, double y, double hdg, double length, double curvature)
 {
 }
 
@@ -567,7 +527,7 @@ TEST_F(ArcGeomTestFixture, TestConstructorArgument)
     ASSERT_EQ(0.0, arc.GetCurvature());
     EXPECT_EQ(arc.GetType(), Geometry::GEOMETRY_TYPE_UNKNOWN);
 
-    Arc arc_second = Arc(2, -1, 1, 5*M_PI, 4, 5);
+    Arc arc_second = Arc(2, -1, 1, 5 * M_PI, 4, 5);
     ASSERT_EQ(5.0, arc_second.GetCurvature());
     EXPECT_EQ(arc_second.GetType(), Geometry::GEOMETRY_TYPE_ARC);
 }
@@ -579,7 +539,7 @@ TEST_F(ArcGeomTestFixture, TestEvaluateCurvatureDS)
     ASSERT_EQ(arc.EvaluateCurvatureDS(100), 0.0);
     ASSERT_EQ(arc.EvaluateCurvatureDS(1000), 0.0);
 
-    Arc arc_second = Arc(2, -1, 1, 5*M_PI, 4, 5);
+    Arc arc_second = Arc(2, -1, 1, 5 * M_PI, 4, 5);
 
     ASSERT_EQ(arc_second.EvaluateCurvatureDS(0), 5.0);
     ASSERT_EQ(arc_second.EvaluateCurvatureDS(10), 5.0);
@@ -589,18 +549,18 @@ TEST_F(ArcGeomTestFixture, TestEvaluateCurvatureDS)
 
 TEST_F(ArcGeomTestFixture, TestGetRadius)
 {
-    Arc arc_second = Arc(2, -1, 1, 5*M_PI, 4, 5);
+    Arc arc_second = Arc(2, -1, 1, 5 * M_PI, 4, 5);
     ASSERT_EQ(arc_second.GetRadius(), 0.2);
 
-    Arc arc_third = Arc(2, -1, 1, 5*M_PI, 4, -10);
+    Arc arc_third = Arc(2, -1, 1, 5 * M_PI, 4, -10);
     ASSERT_EQ(arc_third.GetRadius(), 0.1);
 }
 
-class ArcGeomTestEvaluateDsCurvPositive: public testing::TestWithParam<std::tuple<double, double, double, double>>
+class ArcGeomTestEvaluateDsCurvPositive : public testing::TestWithParam<std::tuple<double, double, double, double>>
 {
-    public:
-    protected:
-        Arc arc{2.0, -1.0, 1.0, 5*M_PI, 4.0, 1.0};
+public:
+protected:
+    Arc arc{2.0, -1.0, 1.0, 5 * M_PI, 4.0, 1.0};
 };
 
 TEST_P(ArcGeomTestEvaluateDsCurvPositive, TestArcGeomEvaluateDsArgument)
@@ -608,28 +568,29 @@ TEST_P(ArcGeomTestEvaluateDsCurvPositive, TestArcGeomEvaluateDsArgument)
     std::tuple<double, double, double, double> tuple = GetParam();
     ASSERT_GE(std::get<0>(tuple), 0);
     double *x, *y, *h;
-    double my_x = arc.GetX();
-    double my_y = arc.GetY();
-    double my_h = arc.GetHdg();
-    x = &my_x;
-    y = &my_y;
-    h = &my_h;
+    double  my_x = arc.GetX();
+    double  my_y = arc.GetY();
+    double  my_h = arc.GetHdg();
+    x            = &my_x;
+    y            = &my_y;
+    h            = &my_h;
     arc.EvaluateDS(std::get<0>(tuple), x, y, h);
-    ASSERT_THAT(*x, testing::AllOf(testing::Gt(std::get<1>(tuple)-TRIG_ERR_MARGIN), testing::Lt(std::get<1>(tuple)+TRIG_ERR_MARGIN)));
-    ASSERT_THAT(*y,  testing::AllOf(testing::Gt(std::get<2>(tuple)-TRIG_ERR_MARGIN), testing::Lt(std::get<2>(tuple)+TRIG_ERR_MARGIN)));
+    ASSERT_THAT(*x, testing::AllOf(testing::Gt(std::get<1>(tuple) - TRIG_ERR_MARGIN), testing::Lt(std::get<1>(tuple) + TRIG_ERR_MARGIN)));
+    ASSERT_THAT(*y, testing::AllOf(testing::Gt(std::get<2>(tuple) - TRIG_ERR_MARGIN), testing::Lt(std::get<2>(tuple) + TRIG_ERR_MARGIN)));
     ASSERT_EQ(*h, std::get<3>(tuple));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestEvaluateArcDsArgumentParam, ArcGeomTestEvaluateDsCurvPositive, testing::Values(
-                                                std::make_tuple(0.0, -1.0, 1.0, M_PI),
-                                                std::make_tuple(M_PI/2, -2.0, 0.0, M_PI+M_PI/2),
-                                                std::make_tuple(M_PI, -1.0, -1.0, 2*M_PI)));
+INSTANTIATE_TEST_SUITE_P(TestEvaluateArcDsArgumentParam,
+                         ArcGeomTestEvaluateDsCurvPositive,
+                         testing::Values(std::make_tuple(0.0, -1.0, 1.0, M_PI),
+                                         std::make_tuple(M_PI / 2, -2.0, 0.0, M_PI + M_PI / 2),
+                                         std::make_tuple(M_PI, -1.0, -1.0, 2 * M_PI)));
 
-class ArcGeomTestEvaluateDsCurvNegative: public testing::TestWithParam<std::tuple<double, double, double, double>>
+class ArcGeomTestEvaluateDsCurvNegative : public testing::TestWithParam<std::tuple<double, double, double, double>>
 {
-    public:
-    protected:
-        Arc arc{2.0, -1.0, 1.0, 5*M_PI, 4.0, -1.0};
+public:
+protected:
+    Arc arc{2.0, -1.0, 1.0, 5 * M_PI, 4.0, -1.0};
 };
 
 TEST_P(ArcGeomTestEvaluateDsCurvNegative, TestArcGeomEvaluateDsArgument)
@@ -637,47 +598,44 @@ TEST_P(ArcGeomTestEvaluateDsCurvNegative, TestArcGeomEvaluateDsArgument)
     std::tuple<double, double, double, double> tuple = GetParam();
     ASSERT_GE(std::get<0>(tuple), 0);
     double *x, *y, *h;
-    double my_x = arc.GetX();
-    double my_y = arc.GetY();
-    double my_h = arc.GetHdg();
-    x = &my_x;
-    y = &my_y;
-    h = &my_h;
+    double  my_x = arc.GetX();
+    double  my_y = arc.GetY();
+    double  my_h = arc.GetHdg();
+    x            = &my_x;
+    y            = &my_y;
+    h            = &my_h;
     arc.EvaluateDS(std::get<0>(tuple), x, y, h);
-    ASSERT_THAT(*x, testing::AllOf(testing::Gt(std::get<1>(tuple)-TRIG_ERR_MARGIN), testing::Lt(std::get<1>(tuple)+TRIG_ERR_MARGIN)));
-    ASSERT_THAT(*y,  testing::AllOf(testing::Gt(std::get<2>(tuple)-TRIG_ERR_MARGIN), testing::Lt(std::get<2>(tuple)+TRIG_ERR_MARGIN)));
+    ASSERT_THAT(*x, testing::AllOf(testing::Gt(std::get<1>(tuple) - TRIG_ERR_MARGIN), testing::Lt(std::get<1>(tuple) + TRIG_ERR_MARGIN)));
+    ASSERT_THAT(*y, testing::AllOf(testing::Gt(std::get<2>(tuple) - TRIG_ERR_MARGIN), testing::Lt(std::get<2>(tuple) + TRIG_ERR_MARGIN)));
     ASSERT_EQ(*h, std::get<3>(tuple));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestEvaluateArcDsArgumentParam, ArcGeomTestEvaluateDsCurvNegative, testing::Values(
-                                                std::make_tuple(0.0, -1.0, 1.0, M_PI),
-                                                std::make_tuple(M_PI/2, -2.0, 2.0, M_PI-M_PI/2),
-                                                std::make_tuple(M_PI, -1.0, 3.0, 0)));
+INSTANTIATE_TEST_SUITE_P(TestEvaluateArcDsArgumentParam,
+                         ArcGeomTestEvaluateDsCurvNegative,
+                         testing::Values(std::make_tuple(0.0, -1.0, 1.0, M_PI),
+                                         std::make_tuple(M_PI / 2, -2.0, 2.0, M_PI - M_PI / 2),
+                                         std::make_tuple(M_PI, -1.0, 3.0, 0)));
 
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
-
 
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> Spiral (Geometry) //////////
 //////////////////////////////////////////////////////////////////////
 
-class SpiralGeomTestFixture: public testing::Test
+class SpiralGeomTestFixture : public testing::Test
 {
-    public:
-        SpiralGeomTestFixture();
-        SpiralGeomTestFixture(double s, double x, double y, double hdg, double length, double curv_start, double curv_end);
-        virtual ~SpiralGeomTestFixture();
-    protected:
-        Spiral spiral;
+public:
+    SpiralGeomTestFixture();
+    SpiralGeomTestFixture(double s, double x, double y, double hdg, double length, double curv_start, double curv_end);
+    virtual ~SpiralGeomTestFixture();
+
+protected:
+    Spiral spiral;
 };
 
 SpiralGeomTestFixture::SpiralGeomTestFixture()
-{
-}
-
-SpiralGeomTestFixture::SpiralGeomTestFixture(double s, double x, double y, double hdg, double length, double curv_start, double curv_end)
 {
 }
 
@@ -696,7 +654,7 @@ TEST_F(SpiralGeomTestFixture, TestConstructorArgument)
     ASSERT_EQ(0.0, spiral.GetS0());
     EXPECT_EQ(spiral.GetType(), Geometry::GEOMETRY_TYPE_UNKNOWN);
 
-    Spiral spiral_second = Spiral(2, -1, 1, 5*M_PI, 4, 2, 10);
+    Spiral spiral_second = Spiral(2, -1, 1, 5 * M_PI, 4, 2, 10);
     ASSERT_EQ(2.0, spiral_second.GetCurvStart());
     ASSERT_EQ(10.0, spiral_second.GetCurvEnd());
     // EMIL added constructor definition for Spiral constructor. Will be fixed later.
@@ -725,7 +683,7 @@ TEST_F(SpiralGeomTestFixture, TestGetSet)
 
 TEST_F(SpiralGeomTestFixture, TestEvaluateCurvatureDS)
 {
-    Spiral spiral_second = Spiral(2, -1, 1, 5*M_PI, 4, 2, 10);
+    Spiral spiral_second = Spiral(2, -1, 1, 5 * M_PI, 4, 2, 10);
 
     ASSERT_EQ(spiral_second.EvaluateCurvatureDS(0), 2.0);
     ASSERT_EQ(spiral_second.EvaluateCurvatureDS(10), 22.0);
@@ -742,26 +700,22 @@ as extern void -> Check this later.
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 
-
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> Poly3 (Geometry) //////////
 //////////////////////////////////////////////////////////////////////
 
-class Poly3GeomTestFixture: public testing::Test
+class Poly3GeomTestFixture : public testing::Test
 {
-    public:
-        Poly3GeomTestFixture();
-        Poly3GeomTestFixture(double s, double x, double y, double hdg, double length, double a, double b, double c, double d);
-        virtual ~Poly3GeomTestFixture();
-    protected:
-        Poly3 poly3;
+public:
+    Poly3GeomTestFixture();
+    Poly3GeomTestFixture(double s, double x, double y, double hdg, double length, double a, double b, double c, double d);
+    virtual ~Poly3GeomTestFixture();
+
+protected:
+    Poly3 poly3;
 };
 
 Poly3GeomTestFixture::Poly3GeomTestFixture()
-{
-}
-
-Poly3GeomTestFixture::Poly3GeomTestFixture(double s, double x, double y, double hdg, double length, double a, double b, double c, double d)
 {
 }
 
@@ -803,11 +757,11 @@ TEST_F(Poly3GeomTestFixture, TestEvaluateCurvatureDS)
     ASSERT_THAT(poly3_second.EvaluateCurvatureDS(1.0), testing::AllOf(testing::Gt(-10 - TRIG_ERR_MARGIN), testing::Lt(-10 + TRIG_ERR_MARGIN)));
 }
 
-class Poly3GeomTestEvaluateDsCurvUmaxZero: public testing::TestWithParam<std::tuple<double, double, double, double>>
+class Poly3GeomTestEvaluateDsCurvUmaxZero : public testing::TestWithParam<std::tuple<double, double, double, double>>
 {
-    public:
-    protected:
-        Poly3 poly3 = Poly3(0, 0, 0, 0, 1, 0, 0, 1, -2);
+public:
+protected:
+    Poly3 poly3 = Poly3(0, 0, 0, 0, 1, 0, 0, 1, -2);
 };
 
 TEST_P(Poly3GeomTestEvaluateDsCurvUmaxZero, TestPoly3GeomEvaluateDsArgument)
@@ -815,29 +769,30 @@ TEST_P(Poly3GeomTestEvaluateDsCurvUmaxZero, TestPoly3GeomEvaluateDsArgument)
     std::tuple<double, double, double, double> tuple = GetParam();
     ASSERT_GE(std::get<0>(tuple), 0);
     double *x, *y, *h;
-    double my_x = poly3.GetX();
-    double my_y = poly3.GetY();
-    double my_h = poly3.GetHdg();
-    x = &my_x;
-    y = &my_y;
-    h = &my_h;
+    double  my_x = poly3.GetX();
+    double  my_y = poly3.GetY();
+    double  my_h = poly3.GetHdg();
+    x            = &my_x;
+    y            = &my_y;
+    h            = &my_h;
     poly3.EvaluateDS(std::get<0>(tuple), x, y, h);
-    ASSERT_THAT(*x, testing::AllOf(testing::Gt(std::get<1>(tuple)-TRIG_ERR_MARGIN), testing::Lt(std::get<1>(tuple)+TRIG_ERR_MARGIN)));
-    ASSERT_THAT(*y,  testing::AllOf(testing::Gt(std::get<2>(tuple)-TRIG_ERR_MARGIN), testing::Lt(std::get<2>(tuple)+TRIG_ERR_MARGIN)));
+    ASSERT_THAT(*x, testing::AllOf(testing::Gt(std::get<1>(tuple) - TRIG_ERR_MARGIN), testing::Lt(std::get<1>(tuple) + TRIG_ERR_MARGIN)));
+    ASSERT_THAT(*y, testing::AllOf(testing::Gt(std::get<2>(tuple) - TRIG_ERR_MARGIN), testing::Lt(std::get<2>(tuple) + TRIG_ERR_MARGIN)));
     ASSERT_THAT(*h, testing::AllOf(testing::Gt(std::get<3>(tuple) - TRIG_ERR_MARGIN), testing::Lt(std::get<3>(tuple) + TRIG_ERR_MARGIN)));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestEvaluatePoly3DsArgumentParam, Poly3GeomTestEvaluateDsCurvUmaxZero, testing::Values(
-                                                std::make_tuple(0.1, 0.1, 0.008, 0.139),
-                                                std::make_tuple(0.2, 0.199, 0.024, 0.159),
-                                                std::make_tuple(0.8, 0.721, -0.230, -1.033),
-                                                std::make_tuple(1.0, 0.707, -0.207, -1.008)));
+INSTANTIATE_TEST_SUITE_P(TestEvaluatePoly3DsArgumentParam,
+                         Poly3GeomTestEvaluateDsCurvUmaxZero,
+                         testing::Values(std::make_tuple(0.1, 0.1, 0.008, 0.139),
+                                         std::make_tuple(0.2, 0.199, 0.024, 0.159),
+                                         std::make_tuple(0.8, 0.721, -0.230, -1.033),
+                                         std::make_tuple(1.0, 0.707, -0.207, -1.008)));
 
-class Poly3GeomTestEvaluateDsCurvUmaxNonZero: public testing::TestWithParam<std::tuple<double, double, double, double>>
+class Poly3GeomTestEvaluateDsCurvUmaxNonZero : public testing::TestWithParam<std::tuple<double, double, double, double>>
 {
-    public:
-    protected:
-        Poly3 poly3 = Poly3(0, 0, 0, 0, 2, 0, 0, 1, -2);
+public:
+protected:
+    Poly3 poly3 = Poly3(0, 0, 0, 0, 2, 0, 0, 1, -2);
 };
 
 TEST_P(Poly3GeomTestEvaluateDsCurvUmaxNonZero, TestPoly3GeomEvaluateDsArgument)
@@ -845,49 +800,56 @@ TEST_P(Poly3GeomTestEvaluateDsCurvUmaxNonZero, TestPoly3GeomEvaluateDsArgument)
     std::tuple<double, double, double, double> tuple = GetParam();
     ASSERT_GE(std::get<0>(tuple), 0);
     double *x, *y, *h;
-    double my_x = poly3.GetX();
-    double my_y = poly3.GetY();
-    double my_h = poly3.GetHdg();
-    x = &my_x;
-    y = &my_y;
-    h = &my_h;
+    double  my_x = poly3.GetX();
+    double  my_y = poly3.GetY();
+    double  my_h = poly3.GetHdg();
+    x            = &my_x;
+    y            = &my_y;
+    h            = &my_h;
     poly3.SetUMax(1.0);
     poly3.EvaluateDS(std::get<0>(tuple), x, y, h);
-    ASSERT_THAT(*x, testing::AllOf(testing::Gt(std::get<1>(tuple)-TRIG_ERR_MARGIN), testing::Lt(std::get<1>(tuple)+TRIG_ERR_MARGIN)));
-    ASSERT_THAT(*y,  testing::AllOf(testing::Gt(std::get<2>(tuple)-TRIG_ERR_MARGIN), testing::Lt(std::get<2>(tuple)+TRIG_ERR_MARGIN)));
+    ASSERT_THAT(*x, testing::AllOf(testing::Gt(std::get<1>(tuple) - TRIG_ERR_MARGIN), testing::Lt(std::get<1>(tuple) + TRIG_ERR_MARGIN)));
+    ASSERT_THAT(*y, testing::AllOf(testing::Gt(std::get<2>(tuple) - TRIG_ERR_MARGIN), testing::Lt(std::get<2>(tuple) + TRIG_ERR_MARGIN)));
     ASSERT_THAT(*h, testing::AllOf(testing::Gt(std::get<3>(tuple) - TRIG_ERR_MARGIN), testing::Lt(std::get<3>(tuple) + TRIG_ERR_MARGIN)));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestEvaluatePoly3DsArgumentParam, Poly3GeomTestEvaluateDsCurvUmaxNonZero, testing::Values(
-                                                std::make_tuple(0.0, 0.0, 0.0, 0.0),
-                                                std::make_tuple(2.0, 1.0, -1.0, -1.326)));
+INSTANTIATE_TEST_SUITE_P(TestEvaluatePoly3DsArgumentParam,
+                         Poly3GeomTestEvaluateDsCurvUmaxNonZero,
+                         testing::Values(std::make_tuple(0.0, 0.0, 0.0, 0.0), std::make_tuple(2.0, 1.0, -1.0, -1.326)));
 
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
-
 
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> ParamPoly3 (Geometry) //////////
 //////////////////////////////////////////////////////////////////////
 
-class ParamPoly3GeomTestFixture: public testing::Test
+class ParamPoly3GeomTestFixture : public testing::Test
 {
-    public:
-        ParamPoly3GeomTestFixture();
-        ParamPoly3GeomTestFixture(double s, double x, double y, double hdg, double length,
-        double aU, double bU, double cU, double dU, double aV, double bV, double cV, double dV, ParamPoly3::PRangeType p_range);
-        virtual ~ParamPoly3GeomTestFixture();
-    protected:
-        ParamPoly3 parampoly3;
+public:
+    ParamPoly3GeomTestFixture();
+    ParamPoly3GeomTestFixture(double                 s,
+                              double                 x,
+                              double                 y,
+                              double                 hdg,
+                              double                 length,
+                              double                 aU,
+                              double                 bU,
+                              double                 cU,
+                              double                 dU,
+                              double                 aV,
+                              double                 bV,
+                              double                 cV,
+                              double                 dV,
+                              ParamPoly3::PRangeType p_range);
+    virtual ~ParamPoly3GeomTestFixture();
+
+protected:
+    ParamPoly3 parampoly3;
 };
 
 ParamPoly3GeomTestFixture::ParamPoly3GeomTestFixture()
-{
-}
-
-ParamPoly3GeomTestFixture::ParamPoly3GeomTestFixture(double s, double x, double y, double hdg, double length,
-        double aU, double bU, double cU, double dU, double aV, double bV, double cV, double dV, ParamPoly3::PRangeType p_range)
 {
 }
 
@@ -897,19 +859,18 @@ ParamPoly3GeomTestFixture::~ParamPoly3GeomTestFixture()
 
 TEST_F(ParamPoly3GeomTestFixture, TestParamPoly3ArgumentConstructor)
 {
-
     EXPECT_EQ(parampoly3.GetType(), Geometry::GEOMETRY_TYPE_UNKNOWN);
 
-    ParamPoly3 parampoly3_second = ParamPoly3(2, -1, 1, 5*M_PI, 4, 1, -2, 3, -4, 1, -2, 3, -4, ParamPoly3::PRangeType::P_RANGE_NORMALIZED);
+    ParamPoly3 parampoly3_second = ParamPoly3(2, -1, 1, 5 * M_PI, 4, 1, -2, 3, -4, 1, -2, 3, -4, ParamPoly3::PRangeType::P_RANGE_NORMALIZED);
     EXPECT_EQ(parampoly3_second.GetType(), Geometry::GEOMETRY_TYPE_PARAM_POLY3);
     ASSERT_EQ(parampoly3_second.poly3U_.GetA(), 1.0);
     ASSERT_EQ(parampoly3_second.poly3U_.GetB(), -2.0);
     ASSERT_EQ(parampoly3_second.poly3U_.GetC(), 3.0);
     ASSERT_EQ(parampoly3_second.poly3U_.GetD(), -4.0);
-    ASSERT_EQ(parampoly3_second.poly3U_.GetPscale(), 1.0/4.0);
-    ASSERT_EQ(parampoly3_second.poly3V_.GetPscale(), 1.0/4.0);
+    ASSERT_EQ(parampoly3_second.poly3U_.GetPscale(), 1.0 / 4.0);
+    ASSERT_EQ(parampoly3_second.poly3V_.GetPscale(), 1.0 / 4.0);
 
-    ParamPoly3 parampoly3_third = ParamPoly3(2, -1, 1, 5*M_PI, 4, 1, -2, 3, -4, 1, -2, 3, -4, ParamPoly3::PRangeType::P_RANGE_UNKNOWN);
+    ParamPoly3 parampoly3_third = ParamPoly3(2, -1, 1, 5 * M_PI, 4, 1, -2, 3, -4, 1, -2, 3, -4, ParamPoly3::PRangeType::P_RANGE_UNKNOWN);
     ASSERT_EQ(parampoly3_third.poly3U_.GetPscale(), 1.0);
     ASSERT_EQ(parampoly3_third.poly3V_.GetPscale(), 1.0);
 
@@ -938,13 +899,13 @@ TEST_F(ParamPoly3GeomTestFixture, TestEvaluateCurvatureDS)
     EXPECT_NEAR(parampoly3_second.EvaluateCurvatureDS(0.1), -0.094853, 1e-5);
     EXPECT_NEAR(parampoly3_second.EvaluateCurvatureDS(0.5), 0.064564, 1e-5);
     EXPECT_NEAR(parampoly3_second.EvaluateCurvatureDS(1.0), 0.100000, 1e-5);
- }
+}
 
-class ParamPoly3GeomTestEvaluateDsCurv: public testing::TestWithParam<std::tuple<double, double, double, double>>
+class ParamPoly3GeomTestEvaluateDsCurv : public testing::TestWithParam<std::tuple<double, double, double, double>>
 {
-    public:
-    protected:
-        ParamPoly3 parampoly3 = ParamPoly3(2, -1, 1, 5*M_PI, 4, 1, -2, 3, -4, 1, -2, 3, -4, ParamPoly3::PRangeType::P_RANGE_UNKNOWN);
+public:
+protected:
+    ParamPoly3 parampoly3 = ParamPoly3(2, -1, 1, 5 * M_PI, 4, 1, -2, 3, -4, 1, -2, 3, -4, ParamPoly3::PRangeType::P_RANGE_UNKNOWN);
 };
 
 TEST_P(ParamPoly3GeomTestEvaluateDsCurv, TestParamPoly3GeomEvaluateDsArgument)
@@ -952,46 +913,43 @@ TEST_P(ParamPoly3GeomTestEvaluateDsCurv, TestParamPoly3GeomEvaluateDsArgument)
     std::tuple<double, double, double, double> tuple = GetParam();
     ASSERT_GE(std::get<0>(tuple), 0);
     double *x, *y, *h;
-    double my_x = parampoly3.GetX();
-    double my_y = parampoly3.GetY();
-    double my_h = parampoly3.GetHdg();
-    x = &my_x;
-    y = &my_y;
-    h = &my_h;
+    double  my_x = parampoly3.GetX();
+    double  my_y = parampoly3.GetY();
+    double  my_h = parampoly3.GetHdg();
+    x            = &my_x;
+    y            = &my_y;
+    h            = &my_h;
     parampoly3.EvaluateDS(std::get<0>(tuple), x, y, h);
-    ASSERT_THAT(*x, testing::AllOf(testing::Gt(std::get<1>(tuple)-TRIG_ERR_MARGIN), testing::Lt(std::get<1>(tuple)+TRIG_ERR_MARGIN)));
-    ASSERT_THAT(*y,  testing::AllOf(testing::Gt(std::get<2>(tuple)-TRIG_ERR_MARGIN), testing::Lt(std::get<2>(tuple)+TRIG_ERR_MARGIN)));
+    ASSERT_THAT(*x, testing::AllOf(testing::Gt(std::get<1>(tuple) - TRIG_ERR_MARGIN), testing::Lt(std::get<1>(tuple) + TRIG_ERR_MARGIN)));
+    ASSERT_THAT(*y, testing::AllOf(testing::Gt(std::get<2>(tuple) - TRIG_ERR_MARGIN), testing::Lt(std::get<2>(tuple) + TRIG_ERR_MARGIN)));
     ASSERT_EQ(*h, std::get<3>(tuple));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestEvaluateParamPoly3DsArgumentParam, ParamPoly3GeomTestEvaluateDsCurv, testing::Values(
-                                                std::make_tuple(0.0, -2.0, 0.0, M_PI+atan2(-2.0,-2.0)),
-                                                std::make_tuple(10.0, 214.0, 216.0, M_PI+atan2(-2.0,-2.0))));
+INSTANTIATE_TEST_SUITE_P(TestEvaluateParamPoly3DsArgumentParam,
+                         ParamPoly3GeomTestEvaluateDsCurv,
+                         testing::Values(std::make_tuple(0.0, -2.0, 0.0, M_PI + atan2(-2.0, -2.0)),
+                                         std::make_tuple(10.0, 214.0, 216.0, M_PI + atan2(-2.0, -2.0))));
 
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
-
 
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> Elevation /////////////////////////////
 //////////////////////////////////////////////////////////////////////
 
-class ElevationTestFixture: public testing::Test
+class ElevationTestFixture : public testing::Test
 {
-    public:
-        ElevationTestFixture();
-        ElevationTestFixture(double s, double a, double b, double c, double d);
-        virtual ~ElevationTestFixture();
-    protected:
-        Elevation elevation;
+public:
+    ElevationTestFixture();
+    ElevationTestFixture(double s, double a, double b, double c, double d);
+    virtual ~ElevationTestFixture();
+
+protected:
+    Elevation elevation;
 };
 
 ElevationTestFixture::ElevationTestFixture()
-{
-}
-
-ElevationTestFixture::ElevationTestFixture(double s, double a, double b, double c, double d)
 {
 }
 
@@ -1020,27 +978,27 @@ TEST_F(ElevationTestFixture, TestElevation)
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 
-
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> LaneLink /////////////////////////////
 //////////////////////////////////////////////////////////////////////
 
-TEST(LaneLinkTest, DefaultConstructor) {
+TEST(LaneLinkTest, DefaultConstructor)
+{
     LaneLink lane_link(NONE, 0);
     EXPECT_EQ(NONE, lane_link.GetType());
-    EXPECT_EQ(0,lane_link.GetId());
+    EXPECT_EQ(0, lane_link.GetId());
 }
 
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 
-
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> LaneWidth /////////////////////////////
 //////////////////////////////////////////////////////////////////////
 
-TEST(LaneWidthTest, DefaultConstructor) {
+TEST(LaneWidthTest, DefaultConstructor)
+{
     LaneWidth lane_width(1, 1, 1, 1, 1);
     EXPECT_EQ(1, lane_width.GetSOffset());
 }
@@ -1048,7 +1006,6 @@ TEST(LaneWidthTest, DefaultConstructor) {
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
-
 
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> LaneBoundaryOSI ////////////////////////
@@ -1062,60 +1019,68 @@ TEST(LaneWidthTest, DefaultConstructor) {
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 
-
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> LaneRoadMarkTypeLine ///////////////////
 //////////////////////////////////////////////////////////////////////
 
-class LaneRoadMarkTypeLineTest :public ::testing::TestWithParam<std::tuple<double,double,double,double,LaneRoadMarkTypeLine::RoadMarkTypeLineRule,double>> {};
+class LaneRoadMarkTypeLineTest
+    : public ::testing::TestWithParam<std::tuple<double, double, double, double, LaneRoadMarkTypeLine::RoadMarkTypeLineRule, double>>
+{
+};
 // inp: length,space,t_offset,s_offset,rule,width
 
-TEST_P(LaneRoadMarkTypeLineTest, DefaultConstructor) {
-    LaneRoadMarkTypeLine lane_roadmarking = LaneRoadMarkTypeLine(
-        std::get<0>(GetParam()),
-        std::get<1>(GetParam()),
-        std::get<2>(GetParam()),
-        std::get<3>(GetParam()),
-        std::get<4>(GetParam()),
-        std::get<5>(GetParam()));
+TEST_P(LaneRoadMarkTypeLineTest, DefaultConstructor)
+{
+    LaneRoadMarkTypeLine lane_roadmarking = LaneRoadMarkTypeLine(std::get<0>(GetParam()),
+                                                                 std::get<1>(GetParam()),
+                                                                 std::get<2>(GetParam()),
+                                                                 std::get<3>(GetParam()),
+                                                                 std::get<4>(GetParam()),
+                                                                 std::get<5>(GetParam()));
 
-    EXPECT_EQ(lane_roadmarking.GetLength(),std::get<0>(GetParam()));
-    EXPECT_EQ(lane_roadmarking.GetSpace(),std::get<1>(GetParam()));
-    EXPECT_EQ(lane_roadmarking.GetTOffset(),std::get<2>(GetParam()));
-    EXPECT_EQ(lane_roadmarking.GetSOffset(),std::get<3>(GetParam()));
+    EXPECT_EQ(lane_roadmarking.GetLength(), std::get<0>(GetParam()));
+    EXPECT_EQ(lane_roadmarking.GetSpace(), std::get<1>(GetParam()));
+    EXPECT_EQ(lane_roadmarking.GetTOffset(), std::get<2>(GetParam()));
+    EXPECT_EQ(lane_roadmarking.GetSOffset(), std::get<3>(GetParam()));
 
     // Test SetGlobalId method
     // OSI related stuff not implemented yet
-    //lane_roadmarking.SetGlobalId();
-    //EXPECT_EQ(lane_roadmarking.GetGlobalId(), 0);
+    // lane_roadmarking.SetGlobalId();
+    // EXPECT_EQ(lane_roadmarking.GetGlobalId(), 0);
 }
 
-INSTANTIATE_TEST_SUITE_P(LaneRoadMarkTypeLineTests,LaneRoadMarkTypeLineTest,::testing::Values(
-    std::make_tuple(100,100,0,0,LaneRoadMarkTypeLine::NO_PASSING,2),
-    std::make_tuple(10,10,-1,1,LaneRoadMarkTypeLine::CAUTION,6)));
+INSTANTIATE_TEST_SUITE_P(LaneRoadMarkTypeLineTests,
+                         LaneRoadMarkTypeLineTest,
+                         ::testing::Values(std::make_tuple(100, 100, 0, 0, LaneRoadMarkTypeLine::NO_PASSING, 2),
+                                           std::make_tuple(10, 10, -1, 1, LaneRoadMarkTypeLine::CAUTION, 6)));
 
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
-
 
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> LaneRoadMarkType ///////////////////////
 //////////////////////////////////////////////////////////////////////
 
-class LaneRoadMarkTypeTest : public ::testing::Test {
-    protected:
-    void SetUp() override { lane_test_0 = std::make_unique<LaneRoadMarkType>("test", 0.2); }
+class LaneRoadMarkTypeTest : public ::testing::Test
+{
+protected:
+    void SetUp() override
+    {
+        lane_test_0 = std::make_unique<LaneRoadMarkType>("test", 0.2);
+    }
     std::unique_ptr<LaneRoadMarkType> lane_test_0;
 };
 
-TEST_F(LaneRoadMarkTypeTest, DefaultConstructor) {
-    EXPECT_EQ(lane_test_0->GetName(),"test");
-    EXPECT_EQ(lane_test_0->GetWidth(),0.2);
+TEST_F(LaneRoadMarkTypeTest, DefaultConstructor)
+{
+    EXPECT_EQ(lane_test_0->GetName(), "test");
+    EXPECT_EQ(lane_test_0->GetWidth(), 0.2);
 }
 
-TEST_F(LaneRoadMarkTypeTest,AddLine) {
-    std::shared_ptr<LaneRoadMarkTypeLine> line_0 = std::make_shared<LaneRoadMarkTypeLine>(100,100,0,0,LaneRoadMarkTypeLine::NO_PASSING,2);
+TEST_F(LaneRoadMarkTypeTest, AddLine)
+{
+    std::shared_ptr<LaneRoadMarkTypeLine> line_0 = std::make_shared<LaneRoadMarkTypeLine>(100, 100, 0, 0, LaneRoadMarkTypeLine::NO_PASSING, 2);
     lane_test_0->AddLine(line_0);
     EXPECT_EQ(lane_test_0->GetNumberOfRoadMarkTypeLines(), 1);
 
@@ -1127,73 +1092,84 @@ TEST_F(LaneRoadMarkTypeTest,AddLine) {
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 
-
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> LaneRoadMark ///////////////////////////
 //////////////////////////////////////////////////////////////////////
 
-class LaneRoadMarkTest :public ::testing::TestWithParam<std::tuple<double,LaneRoadMark::RoadMarkType,LaneRoadMark::RoadMarkWeight,RoadMarkColor,LaneRoadMark::RoadMarkMaterial,LaneRoadMark::RoadMarkLaneChange,double,double>> {};
+class LaneRoadMarkTest : public ::testing::TestWithParam<std::tuple<double,
+                                                                    LaneRoadMark::RoadMarkType,
+                                                                    LaneRoadMark::RoadMarkWeight,
+                                                                    RoadMarkColor,
+                                                                    LaneRoadMark::RoadMarkMaterial,
+                                                                    LaneRoadMark::RoadMarkLaneChange,
+                                                                    double,
+                                                                    double>>
+{
+};
 // inp: s_offset,type,weight,color,material,lane_change,width,height
 
-TEST_P(LaneRoadMarkTest, DefaultConstructor) {
-    LaneRoadMark lane_test_0 = LaneRoadMark(
-        std::get<0>(GetParam()),
-        std::get<1>(GetParam()),
-        std::get<2>(GetParam()),
-        std::get<3>(GetParam()),
-        std::get<4>(GetParam()),
-        std::get<5>(GetParam()),
-        std::get<6>(GetParam()),
-        std::get<7>(GetParam()));
+TEST_P(LaneRoadMarkTest, DefaultConstructor)
+{
+    LaneRoadMark lane_test_0 = LaneRoadMark(std::get<0>(GetParam()),
+                                            std::get<1>(GetParam()),
+                                            std::get<2>(GetParam()),
+                                            std::get<3>(GetParam()),
+                                            std::get<4>(GetParam()),
+                                            std::get<5>(GetParam()),
+                                            std::get<6>(GetParam()),
+                                            std::get<7>(GetParam()));
 
-    EXPECT_EQ(lane_test_0.GetSOffset(),std::get<0>(GetParam()));
-    EXPECT_EQ(lane_test_0.GetType(),std::get<1>(GetParam()));
-    EXPECT_EQ(lane_test_0.GetColor(),std::get<3>(GetParam()));
-    EXPECT_EQ(lane_test_0.GetWidth(),std::get<6>(GetParam()));
-    EXPECT_EQ(lane_test_0.GetHeight(),std::get<7>(GetParam()));
+    EXPECT_EQ(lane_test_0.GetSOffset(), std::get<0>(GetParam()));
+    EXPECT_EQ(lane_test_0.GetType(), std::get<1>(GetParam()));
+    EXPECT_EQ(lane_test_0.GetColor(), std::get<3>(GetParam()));
+    EXPECT_EQ(lane_test_0.GetWidth(), std::get<6>(GetParam()));
+    EXPECT_EQ(lane_test_0.GetHeight(), std::get<7>(GetParam()));
 
     std::shared_ptr<LaneRoadMarkType> type_test_0 = std::make_shared<LaneRoadMarkType>("test", 0.2);
     lane_test_0.AddType(type_test_0);
-    EXPECT_EQ(lane_test_0.GetNumberOfRoadMarkTypes(),1);
-    EXPECT_EQ(lane_test_0.GetLaneRoadMarkTypeByIdx(0)->GetName(),type_test_0->GetName());
+    EXPECT_EQ(lane_test_0.GetNumberOfRoadMarkTypes(), 1);
+    EXPECT_EQ(lane_test_0.GetLaneRoadMarkTypeByIdx(0)->GetName(), type_test_0->GetName());
 }
 
-INSTANTIATE_TEST_SUITE_P(LaneRoadMarkTests,LaneRoadMarkTest,::testing::Values(
-    std::make_tuple(0,LaneRoadMark::NONE_TYPE,
-        LaneRoadMark::STANDARD,
-        RoadMarkColor::STANDARD_COLOR,
-        LaneRoadMark::STANDARD_MATERIAL,
-        LaneRoadMark::INCREASE,0.2,0),
-    std::make_tuple(100,LaneRoadMark::SOLID,
-        LaneRoadMark::BOLD,
-        RoadMarkColor::BLUE,
-        LaneRoadMark::STANDARD_MATERIAL,
-        LaneRoadMark::DECREASE,0.2,-1)));
+INSTANTIATE_TEST_SUITE_P(LaneRoadMarkTests,
+                         LaneRoadMarkTest,
+                         ::testing::Values(std::make_tuple(0,
+                                                           LaneRoadMark::NONE_TYPE,
+                                                           LaneRoadMark::STANDARD,
+                                                           RoadMarkColor::STANDARD_COLOR,
+                                                           LaneRoadMark::STANDARD_MATERIAL,
+                                                           LaneRoadMark::INCREASE,
+                                                           0.2,
+                                                           0),
+                                           std::make_tuple(100,
+                                                           LaneRoadMark::SOLID,
+                                                           LaneRoadMark::BOLD,
+                                                           RoadMarkColor::BLUE,
+                                                           LaneRoadMark::STANDARD_MATERIAL,
+                                                           LaneRoadMark::DECREASE,
+                                                           0.2,
+                                                           -1)));
 
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
-
 
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> LaneOffSet ///////////////////////////
 //////////////////////////////////////////////////////////////////////
 
-class LaneOffsetTestFixture: public testing::Test
+class LaneOffsetTestFixture : public testing::Test
 {
-    public:
-        LaneOffsetTestFixture();
-        LaneOffsetTestFixture(double s, double a, double b, double c, double d);
-        virtual ~LaneOffsetTestFixture();
-    protected:
-        LaneOffset laneoffset;
+public:
+    LaneOffsetTestFixture();
+    LaneOffsetTestFixture(double s, double a, double b, double c, double d);
+    virtual ~LaneOffsetTestFixture();
+
+protected:
+    LaneOffset laneoffset;
 };
 
 LaneOffsetTestFixture::LaneOffsetTestFixture()
-{
-}
-
-LaneOffsetTestFixture::LaneOffsetTestFixture(double s, double a, double b, double c, double d)
 {
 }
 
@@ -1219,12 +1195,11 @@ TEST_F(LaneOffsetTestFixture, TestLaneOffSetCommon)
     ASSERT_EQ(laneoffset_second.GetPolynomial().GetPscale(), 1.0);
 }
 
-
-class LaneOffsetGetLaneOffsetTest: public testing::TestWithParam<std::tuple<double, double>>
+class LaneOffsetGetLaneOffsetTest : public testing::TestWithParam<std::tuple<double, double>>
 {
-    public:
-    protected:
-        LaneOffset laneoffset = LaneOffset(2.0, 1.0, -2.0, 3.0, -4.0);
+public:
+protected:
+    LaneOffset laneoffset = LaneOffset(2.0, 1.0, -2.0, 3.0, -4.0);
 };
 
 TEST_P(LaneOffsetGetLaneOffsetTest, TestGetLaneOffset)
@@ -1233,16 +1208,15 @@ TEST_P(LaneOffsetGetLaneOffsetTest, TestGetLaneOffset)
     ASSERT_EQ(laneoffset.GetLaneOffset(std::get<0>(tuple)), std::get<1>(tuple));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestGetLaneOffsetParam, LaneOffsetGetLaneOffsetTest, testing::Values(
-                                                std::make_tuple(0.0, 49.0),
-                                                std::make_tuple(10.0, -1871.0)));
+INSTANTIATE_TEST_SUITE_P(TestGetLaneOffsetParam,
+                         LaneOffsetGetLaneOffsetTest,
+                         testing::Values(std::make_tuple(0.0, 49.0), std::make_tuple(10.0, -1871.0)));
 
-
-class LaneOffsetGetLaneOffsetPrimTest: public testing::TestWithParam<std::tuple<double, double>>
+class LaneOffsetGetLaneOffsetPrimTest : public testing::TestWithParam<std::tuple<double, double>>
 {
-    public:
-    protected:
-        LaneOffset laneoffset = LaneOffset(2.0, 1.0, -2.0, 3.0, -4.0);
+public:
+protected:
+    LaneOffset laneoffset = LaneOffset(2.0, 1.0, -2.0, 3.0, -4.0);
 };
 
 TEST_P(LaneOffsetGetLaneOffsetPrimTest, TestGetLaneOffsetPrim)
@@ -1251,34 +1225,30 @@ TEST_P(LaneOffsetGetLaneOffsetPrimTest, TestGetLaneOffsetPrim)
     ASSERT_EQ(laneoffset.GetLaneOffsetPrim(std::get<0>(tuple)), std::get<1>(tuple));
 }
 
-INSTANTIATE_TEST_SUITE_P(TestGetLaneOffsetPrimParam, LaneOffsetGetLaneOffsetPrimTest, testing::Values(
-                                                std::make_tuple(0.0, -62),
-                                                std::make_tuple(10.0, -722.0)));
+INSTANTIATE_TEST_SUITE_P(TestGetLaneOffsetPrimParam,
+                         LaneOffsetGetLaneOffsetPrimTest,
+                         testing::Values(std::make_tuple(0.0, -62), std::make_tuple(10.0, -722.0)));
 
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
-
 
 //////////////////////////////////////////////////////////////////////
 ////////// TESTS FOR CLASS -> Lane ///////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 
-class LaneTestFixture: public testing::Test
+class LaneTestFixture : public testing::Test
 {
-    public:
-        LaneTestFixture();
-        LaneTestFixture(double s, double a, double b, double c, double d);
-        virtual ~LaneTestFixture();
-    protected:
-        Lane lane;
+public:
+    LaneTestFixture();
+    LaneTestFixture(double s, double a, double b, double c, double d);
+    virtual ~LaneTestFixture();
+
+protected:
+    Lane lane;
 };
 
 LaneTestFixture::LaneTestFixture()
-{
-}
-
-LaneTestFixture::LaneTestFixture(double s, double a, double b, double c, double d)
 {
 }
 
@@ -1304,10 +1274,16 @@ TEST_F(LaneTestFixture, TestLaneAddFunctions)
     ASSERT_EQ(lane.GetNumberOfRoadMarks(), 0);
     ASSERT_EQ(lane.GetNumberOfLaneWidths(), 0);
 
-    LaneLink *lanelink = new LaneLink(LinkType::SUCCESSOR, 3);
-    LaneWidth *lanewidth = new LaneWidth(2.0, 1.0, -2.0, -3.0, 4.0);
-    LaneRoadMark *laneroadmark = new LaneRoadMark(2.0, LaneRoadMark::RoadMarkType::BROKEN, LaneRoadMark::RoadMarkWeight::STANDARD,
-    RoadMarkColor::RED,LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL, LaneRoadMark::RoadMarkLaneChange::BOTH, 4.0, 2.0);
+    LaneLink     *lanelink     = new LaneLink(LinkType::SUCCESSOR, 3);
+    LaneWidth    *lanewidth    = new LaneWidth(2.0, 1.0, -2.0, -3.0, 4.0);
+    LaneRoadMark *laneroadmark = new LaneRoadMark(2.0,
+                                                  LaneRoadMark::RoadMarkType::BROKEN,
+                                                  LaneRoadMark::RoadMarkWeight::STANDARD,
+                                                  RoadMarkColor::RED,
+                                                  LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL,
+                                                  LaneRoadMark::RoadMarkLaneChange::BOTH,
+                                                  4.0,
+                                                  2.0);
 
     lane.AddLink(lanelink);
     lane.AddLaneWidth(lanewidth);
@@ -1316,7 +1292,6 @@ TEST_F(LaneTestFixture, TestLaneAddFunctions)
     ASSERT_EQ(lane.GetNumberOfLinks(), 1);
     ASSERT_EQ(lane.GetNumberOfLaneWidths(), 1);
     ASSERT_EQ(lane.GetNumberOfRoadMarks(), 1);
-
 }
 
 TEST_F(LaneTestFixture, TestLaneGetLink)
@@ -1324,7 +1299,7 @@ TEST_F(LaneTestFixture, TestLaneGetLink)
     LaneLink *lanelink = new LaneLink(LinkType::SUCCESSOR, 3);
     lane.AddLink(lanelink);
     LaneLink *mylanelink = lane.GetLink(LinkType::PREDECESSOR);
-    LaneLink *dummylink = 0;
+    LaneLink *dummylink  = 0;
     ASSERT_EQ(mylanelink, dummylink);
     LaneLink *mylanelink_second = lane.GetLink(LinkType::SUCCESSOR);
     ASSERT_EQ(mylanelink_second->GetType(), LinkType::SUCCESSOR);
@@ -1333,7 +1308,7 @@ TEST_F(LaneTestFixture, TestLaneGetLink)
 
 TEST_F(LaneTestFixture, TestLaneGetWidth)
 {
-    LaneWidth *lanewidth = new LaneWidth(2.0, 1.0, -2.0, 3.0, -4.0);
+    LaneWidth *lanewidth        = new LaneWidth(2.0, 1.0, -2.0, 3.0, -4.0);
     LaneWidth *lanewidth_second = new LaneWidth(10.0, 2.0, -3.0, 4.0, -5.0);
 
     LaneWidth *dummywidth = 0;
@@ -1348,7 +1323,7 @@ TEST_F(LaneTestFixture, TestLaneGetWidth)
     ASSERT_THROW(lane.GetWidthByIndex(2), std::runtime_error);
     ASSERT_THROW(lane.GetWidthByIndex(3), std::runtime_error);
 
-    LaneWidth *mylanewidth = lane.GetWidthByIndex(0);
+    LaneWidth *mylanewidth   = lane.GetWidthByIndex(0);
     LaneWidth *mylanewidth_s = lane.GetWidthByS(1);
     ASSERT_EQ(mylanewidth->GetSOffset(), 2.0);
     ASSERT_EQ(mylanewidth->poly3_.GetA(), 1.0);
@@ -1363,7 +1338,7 @@ TEST_F(LaneTestFixture, TestLaneGetWidth)
     ASSERT_EQ(mylanewidth_s->poly3_.GetD(), -4.0);
     ASSERT_EQ(mylanewidth_s->poly3_.GetPscale(), 1.0);
 
-    LaneWidth *mylanewidth_second = lane.GetWidthByIndex(1);
+    LaneWidth *mylanewidth_second   = lane.GetWidthByIndex(1);
     LaneWidth *mylanewidth_s_second = lane.GetWidthByS(5);
     ASSERT_EQ(mylanewidth_second->GetSOffset(), 10.0);
     ASSERT_EQ(mylanewidth_second->poly3_.GetA(), 2.0);
@@ -1389,8 +1364,14 @@ TEST_F(LaneTestFixture, TestLaneGetWidth)
 
 TEST_F(LaneTestFixture, TestLaneGetRoadMark)
 {
-    LaneRoadMark *laneroadmark = new LaneRoadMark(2.0, LaneRoadMark::RoadMarkType::BROKEN, LaneRoadMark::RoadMarkWeight::STANDARD,
-    RoadMarkColor::RED,LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL, LaneRoadMark::RoadMarkLaneChange::BOTH, 4.0, 2.0);
+    LaneRoadMark *laneroadmark = new LaneRoadMark(2.0,
+                                                  LaneRoadMark::RoadMarkType::BROKEN,
+                                                  LaneRoadMark::RoadMarkWeight::STANDARD,
+                                                  RoadMarkColor::RED,
+                                                  LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL,
+                                                  LaneRoadMark::RoadMarkLaneChange::BOTH,
+                                                  4.0,
+                                                  2.0);
     lane.AddLaneRoadMark(laneroadmark);
 
     ASSERT_THROW(lane.GetLaneRoadMarkByIdx(-1), std::runtime_error);
@@ -1406,13 +1387,18 @@ TEST_F(LaneTestFixture, TestLaneGetRoadMark)
     ASSERT_EQ(mylaneroadmark->GetColor(), RoadMarkColor::RED);
     ASSERT_EQ(mylaneroadmark->GetMaterial(), LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL);
     ASSERT_EQ(mylaneroadmark->GetLaneChange(), LaneRoadMark::RoadMarkLaneChange::BOTH);
-
 }
 
 TEST_F(LaneTestFixture, TestLaneGetRoadMark2)
 {
-    LaneRoadMark *laneroadmark = new LaneRoadMark(2.0, LaneRoadMark::RoadMarkType::BROKEN_BROKEN, LaneRoadMark::RoadMarkWeight::STANDARD,
-    RoadMarkColor::RED,LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL, LaneRoadMark::RoadMarkLaneChange::BOTH, 4.0, 2.0);
+    LaneRoadMark *laneroadmark = new LaneRoadMark(2.0,
+                                                  LaneRoadMark::RoadMarkType::BROKEN_BROKEN,
+                                                  LaneRoadMark::RoadMarkWeight::STANDARD,
+                                                  RoadMarkColor::RED,
+                                                  LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL,
+                                                  LaneRoadMark::RoadMarkLaneChange::BOTH,
+                                                  4.0,
+                                                  2.0);
     lane.AddLaneRoadMark(laneroadmark);
 
     ASSERT_THROW(lane.GetLaneRoadMarkByIdx(-1), std::runtime_error);
@@ -1425,8 +1411,14 @@ TEST_F(LaneTestFixture, TestLaneGetRoadMark2)
 
 TEST_F(LaneTestFixture, TestLaneGetRoadMark3)
 {
-    LaneRoadMark *laneroadmark = new LaneRoadMark(2.0, LaneRoadMark::RoadMarkType::SOLID_SOLID, LaneRoadMark::RoadMarkWeight::STANDARD,
-    RoadMarkColor::RED,LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL, LaneRoadMark::RoadMarkLaneChange::BOTH, 4.0, 2.0);
+    LaneRoadMark *laneroadmark = new LaneRoadMark(2.0,
+                                                  LaneRoadMark::RoadMarkType::SOLID_SOLID,
+                                                  LaneRoadMark::RoadMarkWeight::STANDARD,
+                                                  RoadMarkColor::RED,
+                                                  LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL,
+                                                  LaneRoadMark::RoadMarkLaneChange::BOTH,
+                                                  4.0,
+                                                  2.0);
     lane.AddLaneRoadMark(laneroadmark);
 
     ASSERT_THROW(lane.GetLaneRoadMarkByIdx(-1), std::runtime_error);
@@ -1439,8 +1431,14 @@ TEST_F(LaneTestFixture, TestLaneGetRoadMark3)
 
 TEST_F(LaneTestFixture, TestLaneGetRoadMark4)
 {
-    LaneRoadMark *laneroadmark = new LaneRoadMark(2.0, LaneRoadMark::RoadMarkType::BROKEN_SOLID, LaneRoadMark::RoadMarkWeight::STANDARD,
-    RoadMarkColor::RED,LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL, LaneRoadMark::RoadMarkLaneChange::BOTH, 4.0, 2.0);
+    LaneRoadMark *laneroadmark = new LaneRoadMark(2.0,
+                                                  LaneRoadMark::RoadMarkType::BROKEN_SOLID,
+                                                  LaneRoadMark::RoadMarkWeight::STANDARD,
+                                                  RoadMarkColor::RED,
+                                                  LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL,
+                                                  LaneRoadMark::RoadMarkLaneChange::BOTH,
+                                                  4.0,
+                                                  2.0);
     lane.AddLaneRoadMark(laneroadmark);
 
     ASSERT_THROW(lane.GetLaneRoadMarkByIdx(-1), std::runtime_error);
@@ -1480,18 +1478,30 @@ TEST_F(LaneTestFixture, TestLaneGetOSIPoints)
 
 TEST_F(LaneTestFixture, TestLaneGetLineGlobalIds)
 {
-    LaneRoadMark *laneroadmark = new LaneRoadMark(0, LaneRoadMark::RoadMarkType::BROKEN, LaneRoadMark::RoadMarkWeight::STANDARD,
-    RoadMarkColor::STANDARD_COLOR, LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL, LaneRoadMark::RoadMarkLaneChange::BOTH,
-    1.0, 1.0);
-    LaneRoadMark *laneroadmark_second = new LaneRoadMark(50, LaneRoadMark::RoadMarkType::BROKEN, LaneRoadMark::RoadMarkWeight::STANDARD,
-    RoadMarkColor::STANDARD_COLOR, LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL, LaneRoadMark::RoadMarkLaneChange::BOTH,
-    2.0, 2.0);
+    LaneRoadMark *laneroadmark        = new LaneRoadMark(0,
+                                                  LaneRoadMark::RoadMarkType::BROKEN,
+                                                  LaneRoadMark::RoadMarkWeight::STANDARD,
+                                                  RoadMarkColor::STANDARD_COLOR,
+                                                  LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL,
+                                                  LaneRoadMark::RoadMarkLaneChange::BOTH,
+                                                  1.0,
+                                                  1.0);
+    LaneRoadMark *laneroadmark_second = new LaneRoadMark(50,
+                                                         LaneRoadMark::RoadMarkType::BROKEN,
+                                                         LaneRoadMark::RoadMarkWeight::STANDARD,
+                                                         RoadMarkColor::STANDARD_COLOR,
+                                                         LaneRoadMark::RoadMarkMaterial::STANDARD_MATERIAL,
+                                                         LaneRoadMark::RoadMarkLaneChange::BOTH,
+                                                         2.0,
+                                                         2.0);
 
-    std::shared_ptr<LaneRoadMarkType> laneroadmarktype = std::make_shared<LaneRoadMarkType>("type1", 1.0);
+    std::shared_ptr<LaneRoadMarkType> laneroadmarktype        = std::make_shared<LaneRoadMarkType>("type1", 1.0);
     std::shared_ptr<LaneRoadMarkType> laneroadmarktype_second = std::make_shared<LaneRoadMarkType>("type2", 1.0);
 
-    std::shared_ptr<LaneRoadMarkTypeLine> laneRoadMarktypeline = std::make_shared<LaneRoadMarkTypeLine>(3.0, 1.0, 0.5, 0.0, LaneRoadMarkTypeLine::RoadMarkTypeLineRule::CAUTION, 1.0);
-    std::shared_ptr<LaneRoadMarkTypeLine> laneRoadMarktypeline_second = std::make_shared<LaneRoadMarkTypeLine>(3.0, 1.0, 0.5, 50.0, LaneRoadMarkTypeLine::RoadMarkTypeLineRule::CAUTION, 1.0);
+    std::shared_ptr<LaneRoadMarkTypeLine> laneRoadMarktypeline =
+        std::make_shared<LaneRoadMarkTypeLine>(3.0, 1.0, 0.5, 0.0, LaneRoadMarkTypeLine::RoadMarkTypeLineRule::CAUTION, 1.0);
+    std::shared_ptr<LaneRoadMarkTypeLine> laneRoadMarktypeline_second =
+        std::make_shared<LaneRoadMarkTypeLine>(3.0, 1.0, 0.5, 50.0, LaneRoadMarkTypeLine::RoadMarkTypeLineRule::CAUTION, 1.0);
 
     laneroadmark->AddType(laneroadmarktype);
     laneroadmark->AddType(laneroadmarktype_second);
@@ -1510,7 +1520,7 @@ TEST_F(LaneTestFixture, TestLaneGetLineGlobalIds)
 
     std::vector<int> all_glob_ids = lane.GetLineGlobalIds();
 
-    ASSERT_THAT(all_glob_ids.size(),3);
+    ASSERT_THAT(all_glob_ids.size(), 3);
     ASSERT_THAT(laneroadmarktype->GetLaneRoadMarkTypeLineByIdx(0)->GetGlobalId(), 0);
     ASSERT_THAT(laneroadmarktype->GetLaneRoadMarkTypeLineByIdx(1)->GetGlobalId(), 1);
     ASSERT_THAT(laneroadmarktype_second->GetLaneRoadMarkTypeLineByIdx(0)->GetGlobalId(), 1);
@@ -1521,13 +1531,13 @@ TEST_F(LaneTestFixture, TestLaneGetLineGlobalIds)
 TEST(RoadTest, RoadWidthAllLanes)
 {
     ASSERT_EQ(roadmanager::Position::LoadOpenDrive("../../../resources/xodr/soderleden.xodr"), true);
-    roadmanager::OpenDrive* odr = Position::GetOpenDrive();
+    roadmanager::OpenDrive *odr = Position::GetOpenDrive();
     ASSERT_NE(odr, nullptr);
 
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 5);
 
-    Road* road = odr->GetRoadByIdx(1);
+    Road *road = odr->GetRoadByIdx(1);
     EXPECT_EQ(road->GetId(), 1);
 
     EXPECT_NEAR(road->GetWidth(0, -1), 5.8, 1e-5);
@@ -1539,12 +1549,12 @@ TEST(RoadTest, RoadWidthAllLanes)
 
 TEST(RoadTest, RoadWidthDrivingLanes)
 {
-    roadmanager::OpenDrive* odr = new OpenDrive("../../../resources/xodr/soderleden.xodr");
+    roadmanager::OpenDrive *odr = new OpenDrive("../../../resources/xodr/soderleden.xodr");
 
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 5);
 
-    Road* road = odr->GetRoadByIdx(1);
+    Road *road = odr->GetRoadByIdx(1);
     EXPECT_EQ(road->GetId(), 1);
 
     EXPECT_DOUBLE_EQ(road->GetWidth(0, -1, Lane::LaneType::LANE_TYPE_ANY_DRIVING), 3.5);
@@ -1557,7 +1567,7 @@ TEST(RoadTest, RoadWidthDrivingLanes)
 TEST(TrajectoryTest, PolyLineBase_YawInterpolation)
 {
     PolyLineBase pline;
-    TrajVertex v = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false };
+    TrajVertex   v = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
 
     // Simple case
     pline.AddVertex(0.0, 0.0, 0.0, 0.0);
@@ -1603,7 +1613,7 @@ TEST(DistanceTest, CalcDistanceLong)
 {
     double dist = 0.0;
     Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/fabriksgatan.xodr");
-    OpenDrive* odr = Position::GetOpenDrive();
+    OpenDrive *odr = Position::GetOpenDrive();
 
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 16);
@@ -1669,7 +1679,7 @@ TEST(DistanceTest, CalcDistanceLong)
     pos0.SetLanePos(3, 1, 5.0, -0.25);
     pos1.SetLanePos(0, -1, 15.0, 0.15);
     ASSERT_EQ(pos0.Distance(&pos1, CoordinateSystem::CS_ROAD, RelativeDistanceType::REL_DIST_LATERAL, dist), 0);
-    EXPECT_NEAR(dist, 3.1, 1e-5);
+    EXPECT_NEAR(dist, -3.1, 1e-5);
     ASSERT_EQ(pos0.Distance(&pos1, CoordinateSystem::CS_ROAD, RelativeDistanceType::REL_DIST_LONGITUDINAL, dist), 0);
     EXPECT_NEAR(dist, 139.317791, 1e-5);
 
@@ -1677,7 +1687,7 @@ TEST(DistanceTest, CalcDistanceLong)
     pos0.SetLanePos(3, -1, 5.0, -0.25);
     pos1.SetLanePos(2, -1, 1.0, 0.15);
     ASSERT_EQ(pos0.Distance(&pos1, CoordinateSystem::CS_ROAD, RelativeDistanceType::REL_DIST_LATERAL, dist), 0);
-    EXPECT_NEAR(dist, 3.6, 1e-5);
+    EXPECT_NEAR(dist, -3.6, 1e-5);
 
     // No valid route is to be found between connecting roads (following directed connectivity in OpenDRIVE file)
     pos0.SetLanePos(16, -1, 5.0, -0.25);
@@ -1720,7 +1730,7 @@ TEST(NurbsTest, TestNurbsPosition)
     n.AddControlPoint(Position(2.0, -4.0, 0.0, 0.0, 0.0, 0.0), 0.0, 1.0, true);
     n.AddControlPoint(Position(4.0, 4.0, 0.0, 0.0, 0.0, 0.0), 0.0, 1.0, true);
 
-    std::vector<double> knots = { 0, 0, 0, 0, 1, 1, 1, 1 };
+    std::vector<double> knots = {0, 0, 0, 0, 1, 1, 1, 1};
     n.AddKnots(knots);
     n.CalculatePolyLine();
 
@@ -1747,16 +1757,16 @@ TEST(NurbsTest, TestNurbsPosition)
 TEST(Route, TestAssignRoute)
 {
     Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/fabriksgatan.xodr");
-    OpenDrive* odr = Position::GetOpenDrive();
+    OpenDrive *odr = Position::GetOpenDrive();
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 16);
 
     const int nrWaypoints = 6;
-    Route route;
-    Position routepos[nrWaypoints];
+    Route     route;
+    Position  routepos[nrWaypoints];
     routepos[0].SetLanePos(0, 1, 10.0, 0);
     routepos[0].SetHeadingRelative(M_PI);
-    routepos[1].SetLanePos(0, 1, 7.0, 0);   // Add extra waypoint on first road - should be removed
+    routepos[1].SetLanePos(0, 1, 7.0, 0);  // Add extra waypoint on first road - should be removed
     routepos[0].SetHeadingRelative(M_PI);
     routepos[2].SetLanePos(8, -1, 2.0, 0);
     routepos[3].SetLanePos(8, -1, 4.0, 0);  // Add extra waypoint on same road - previous should be ignored
@@ -1792,11 +1802,11 @@ TEST(Route, TestAssignRoute)
 TEST(GeoReferenceTest, TestNoGeoReferenceSimpleRoad)
 {
     Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/straight_500m_signs.xodr");
-    OpenDrive* odr = Position::GetOpenDrive();
+    OpenDrive *odr = Position::GetOpenDrive();
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 1);
 
-    GeoReference* geo_ref = odr->GetGeoReference();
+    GeoReference *geo_ref = odr->GetGeoReference();
     EXPECT_EQ(std::isnan(geo_ref->lat_0_), true);
     EXPECT_EQ(std::isnan(geo_ref->lon_0_), true);
     EXPECT_EQ(geo_ref->proj_, "");
@@ -1817,11 +1827,11 @@ TEST(GeoReferenceTest, TestNoGeoReferenceSimpleRoad)
 TEST(GeoReferenceTest, TestGeoReferenceSimpleRoad)
 {
     Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/curve_r100.xodr");
-    OpenDrive* odr = Position::GetOpenDrive();
+    OpenDrive *odr = Position::GetOpenDrive();
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 1);
 
-    GeoReference* geo_ref = odr->GetGeoReference();
+    GeoReference *geo_ref = odr->GetGeoReference();
     EXPECT_EQ(geo_ref->lat_0_, 37.35429341239328);
     EXPECT_EQ(geo_ref->lon_0_, -122.0859797650754);
     EXPECT_EQ(geo_ref->proj_, "utm");
@@ -1842,12 +1852,12 @@ TEST(GeoReferenceTest, TestGeoReferenceSimpleRoad)
 TEST(ProbeTest, TestProbeSimpleRoad)
 {
     Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/curve_r100.xodr");
-    OpenDrive* odr = Position::GetOpenDrive();
+    OpenDrive *odr = Position::GetOpenDrive();
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 1);
 
     roadmanager::RoadProbeInfo probe_data;
-    Position pos_pivot = Position(0, -1, 5.0, 0.0);
+    Position                   pos_pivot = Position(0, -1, 5.0, 0.0);
 
     pos_pivot.GetProbeInfo(5.0, &probe_data, roadmanager::Position::LookAheadMode::LOOKAHEADMODE_AT_LANE_CENTER);
     EXPECT_EQ(probe_data.road_lane_info.roadId, 0);
@@ -1904,7 +1914,7 @@ TEST(ProbeTest, TestProbeSimpleRoad)
 TEST(ProbeTest, TestProbeComplexRoad)
 {
     Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/fabriksgatan.xodr");
-    OpenDrive* odr = Position::GetOpenDrive();
+    OpenDrive *odr = Position::GetOpenDrive();
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 16);
 
@@ -1914,7 +1924,8 @@ TEST(ProbeTest, TestProbeComplexRoad)
     Position pos_pivot = Position(3, 1, 5.0, 0.0);
     pos_pivot.SetHeadingRelative(M_PI);
 
-    EXPECT_EQ(pos_pivot.GetProbeInfo(20.0, &probe_data, roadmanager::Position::LookAheadMode::LOOKAHEADMODE_AT_LANE_CENTER), Position::ReturnCode::ERROR_END_OF_ROAD);
+    EXPECT_EQ(pos_pivot.GetProbeInfo(20.0, &probe_data, roadmanager::Position::LookAheadMode::LOOKAHEADMODE_AT_LANE_CENTER),
+              Position::ReturnCode::ERROR_END_OF_ROAD);
     EXPECT_EQ(probe_data.road_lane_info.roadId, 3);
     EXPECT_EQ(probe_data.road_lane_info.laneId, 1);
     EXPECT_NEAR(probe_data.road_lane_info.heading, GetAngleSum(pos_pivot.GetH(), M_PI), 1E-5);
@@ -1923,7 +1934,8 @@ TEST(ProbeTest, TestProbeComplexRoad)
     // Position on right side, looking through the intersection
     pos_pivot.SetLanePos(3, -1, 5.0, 0.0);
     pos_pivot.SetHeadingRelative(0.0);
-    EXPECT_EQ(pos_pivot.GetProbeInfo(130.0, &probe_data, roadmanager::Position::LookAheadMode::LOOKAHEADMODE_AT_LANE_CENTER), Position::ReturnCode::ENTERED_NEW_ROAD);
+    EXPECT_EQ(pos_pivot.GetProbeInfo(130.0, &probe_data, roadmanager::Position::LookAheadMode::LOOKAHEADMODE_AT_LANE_CENTER),
+              Position::ReturnCode::ENTERED_NEW_ROAD);
     EXPECT_EQ(probe_data.road_lane_info.roadId, 1);
     EXPECT_EQ(probe_data.road_lane_info.laneId, -1);
     EXPECT_NEAR(probe_data.road_lane_info.heading, 0.192980, 1E-5);
@@ -1933,7 +1945,7 @@ TEST(ProbeTest, TestProbeComplexRoad)
 TEST(DeltaTest, TestDelta)
 {
     Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/fabriksgatan.xodr");
-    OpenDrive* odr = Position::GetOpenDrive();
+    OpenDrive *odr = Position::GetOpenDrive();
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 16);
 
@@ -1947,19 +1959,22 @@ TEST(DeltaTest, TestDelta)
     EXPECT_EQ(pos_pivot.Delta(&pos_target, pos_diff), true);
     EXPECT_NEAR(pos_diff.ds, 74.56580, 1E-5);
     EXPECT_EQ(pos_diff.dLaneId, 0);
+    EXPECT_EQ(pos_diff.dOppLane, false);
 
     pos_target.SetLanePos(2, -1, 250.0, 0.0);
     pos_target.SetHeadingRelative(M_PI);
     EXPECT_EQ(pos_pivot.Delta(&pos_target, pos_diff), true);
     EXPECT_NEAR(pos_diff.ds, 74.56580, 1E-5);
-    EXPECT_EQ(pos_diff.dLaneId, 2);
+    EXPECT_EQ(pos_diff.dLaneId, -1);
+    EXPECT_EQ(pos_diff.dOppLane, true);
 
     pos_target.SetLanePos(3, -1, 100.0, 0.0);
     pos_target.SetHeadingRelative(0.0);
     EXPECT_EQ(pos_pivot.Delta(&pos_target, pos_diff), true);
     EXPECT_NEAR(pos_diff.ds, 34.31779, 1E-5);
-    EXPECT_NEAR(pos_diff.dt, 3.5, 1E-5);
-    EXPECT_EQ(pos_diff.dLaneId, 2);
+    EXPECT_NEAR(pos_diff.dt, -3.5, 1E-5);
+    EXPECT_EQ(pos_diff.dLaneId, -1);
+    EXPECT_EQ(pos_diff.dOppLane, true);
 
     // Now try diff two positions that are not connected
     pos_pivot.SetLanePos(11, -1, 1.0, 0.0);
@@ -1972,7 +1987,7 @@ TEST(DeltaTest, TestDelta)
 TEST(PositionTest, TestJunctionId)
 {
     Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/fabriksgatan.xodr");
-    OpenDrive* odr = Position::GetOpenDrive();
+    OpenDrive *odr = Position::GetOpenDrive();
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 16);
 
@@ -2010,18 +2025,18 @@ TEST(PositionTest, TestJunctionId)
 TEST(ControllerTest, TestControllers)
 {
     Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/multi_intersections.xodr");
-    OpenDrive* odr = Position::GetOpenDrive();
+    OpenDrive *odr = Position::GetOpenDrive();
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 63);
 
     EXPECT_EQ(odr->GetNumberOfControllers(), 23);
 
     // check a few samples
-    roadmanager::Controller* controller;
+    roadmanager::Controller *controller;
 
     controller = odr->GetControllerByIdx(0);
     EXPECT_EQ(controller->GetName(), "ctrl001");
-    int signalIds1[] = { 294, 295, 287, 288 };
+    int signalIds1[] = {294, 295, 287, 288};
     for (int i = 0; i < controller->GetNumberOfControls(); i++)
     {
         EXPECT_EQ(controller->GetControl(i)->signalId_, signalIds1[i]);
@@ -2029,17 +2044,17 @@ TEST(ControllerTest, TestControllers)
 
     controller = odr->GetControllerByIdx(22);
     EXPECT_EQ(controller->GetName(), "ctrl027");
-    int signalIds2[] = { 33617, 33618 };
+    int signalIds2[] = {33617, 33618};
     for (int i = 0; i < controller->GetNumberOfControls(); i++)
     {
         EXPECT_EQ(controller->GetControl(i)->signalId_, signalIds2[i]);
     }
 
-    JunctionController* jcontroller;
-    Junction* junction = odr->GetJunctionByIdx(1);
+    JunctionController *jcontroller;
+    Junction           *junction = odr->GetJunctionByIdx(1);
     EXPECT_EQ(junction->GetNumberOfControllers(), 5);
-    int controllerIds[] = { 7, 9, 10, 8, 6 };
-    for (int i = 0; i < (int)junction->GetNumberOfControllers(); i++)
+    int controllerIds[] = {7, 9, 10, 8, 6};
+    for (int i = 0; i < junction->GetNumberOfControllers(); i++)
     {
         jcontroller = junction->GetJunctionControllerByIdx(i);
         EXPECT_EQ(jcontroller->id_, controllerIds[i]);
@@ -2053,16 +2068,16 @@ TEST(ControllerTest, TestControllers)
 TEST(EdgeCaseTest, TestSTruncation)
 {
     Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/fabriksgatan.xodr");
-    OpenDrive* odr = Position::GetOpenDrive();
+    OpenDrive *odr = Position::GetOpenDrive();
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 16);
 
-    Road* road = odr->GetRoadById(1);
+    Road *road = odr->GetRoadById(1);
     EXPECT_NE(road, nullptr);
 
-    Position pos;
-    double s = 16.0;
-    LaneSection* laneSection = nullptr;
+    Position     pos;
+    double       s           = 16.0;
+    LaneSection *laneSection = nullptr;
 
     // inside road length
     EXPECT_EQ(road->GetLaneSectionIdxByS(s), 0);
@@ -2090,14 +2105,15 @@ TEST(EdgeCaseTest, TestSTruncation)
 TEST(LaneInfoTest, TestLaneWidthAndType)
 {
     Position::GetOpenDrive()->LoadOpenDriveFile("../../../EnvironmentSimulator/Unittest/xodr/highway_exit.xodr");
-    OpenDrive* odr = Position::GetOpenDrive();
+    OpenDrive *odr = Position::GetOpenDrive();
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 5);
 
-    Road* road = odr->GetRoadById(0);
+    Road *road = odr->GetRoadById(0);
     EXPECT_NE(road, nullptr);
 
-    EXPECT_NEAR(road->GetLaneWidthByS(80, -2), 3.000, 1e-3); ;
+    EXPECT_NEAR(road->GetLaneWidthByS(80, -2), 3.000, 1e-3);
+    ;
     EXPECT_EQ(road->GetLaneTypeByS(80, 0), 1);
     EXPECT_EQ(road->GetLaneTypeByS(80, -2), 2);
 
@@ -2109,13 +2125,13 @@ TEST(LaneInfoTest, TestLaneWidthAndType)
 
 TEST(RoadInfoTest, TestGetNrRoadsOverlappingPos)
 {
-    int road_id_0[] = { 5, 9, 10, 12, 15 };
-    int road_id_1[] = { 16, 7, 10 };
-    int road_id_2[] = { 2 };
-    int n = 0;
+    int road_id_0[] = {5, 9, 10, 12, 15};
+    int road_id_1[] = {16, 7, 10};
+    int road_id_2[] = {2};
+    int n           = 0;
 
     Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/fabriksgatan.xodr");
-    OpenDrive* odr = Position::GetOpenDrive();
+    OpenDrive *odr = Position::GetOpenDrive();
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 16);
 
@@ -2173,7 +2189,7 @@ TEST(RoadInfoTest, TestGetNrRoadsOverlappingPos)
 TEST(RoadPosTest, TestPrioStraightRoadInJunction)
 {
     Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/fabriksgatan.xodr");
-    OpenDrive* odr = Position::GetOpenDrive();
+    OpenDrive *odr = Position::GetOpenDrive();
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 16);
 
@@ -2205,10 +2221,11 @@ class StarRoadTestFixture : public testing::Test
 public:
     StarRoadTestFixture();
     void Check(double a, double b, double c, double d, double e);
+
 protected:
-    OpenDrive* odr;
-    Position pos;
-    double lane_width;
+    OpenDrive *odr;
+    Position   pos;
+    double     lane_width;
 };
 
 StarRoadTestFixture::StarRoadTestFixture() : lane_width(3.5)
@@ -2235,7 +2252,7 @@ TEST_F(StarRoadTestFixture, TestRelativeRoadPos)
     // Road heading pi/2 downhill - RHT
     // right side
     pos.SetHeadingRelative(0.0);
-    pos.SetTrackPos(7, 10.0, -lane_width/2.0);
+    pos.SetTrackPos(7, 10.0, -lane_width / 2.0);
     Check(lane_width / 2.0, 20.0, M_PI / 2, 0.55, 0.55);
     pos.SetLanePos(7, -1, 10.0, 0.0);
     Check(lane_width / 2.0, 20.0, M_PI / 2, 0.55, 0.55);
@@ -2270,13 +2287,12 @@ TEST_F(StarRoadTestFixture, TestRelativeRoadPos)
 TEST(OSIPointTest, MixedRoads)
 {
     ASSERT_EQ(roadmanager::Position::LoadOpenDrive("../../../EnvironmentSimulator/Unittest/xodr/mixed_roads.xodr"), true);
-    roadmanager::OpenDrive* odr = Position::GetOpenDrive();
+    roadmanager::OpenDrive *odr = Position::GetOpenDrive();
     ASSERT_NE(odr, nullptr);
 
-    ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 4);
 
-    Road* road = odr->GetRoadByIdx(0);
+    Road *road = odr->GetRoadByIdx(0);
     EXPECT_EQ(road->GetId(), 0);
     EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(0).x, 0.0, 1e-3);
     EXPECT_NEAR(road->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetPoint(0).y, 1.5, 1e-3);
@@ -2339,13 +2355,79 @@ TEST(OSIPointTest, MixedRoads)
     odr->Clear();
 }
 
+TEST(RoadEdgeTest, TestRoadEdge)
+{
+    ASSERT_EQ(roadmanager::Position::LoadOpenDrive("../../../EnvironmentSimulator/Unittest/xodr/highway_example_with_merge_and_split.xodr"), true);
+    roadmanager::OpenDrive *odr = Position::GetOpenDrive();
+    ASSERT_NE(odr, nullptr);
 
+    EXPECT_EQ(odr->GetNumOfRoads(), 9);
+
+    Road *road = odr->GetRoadById(0);
+    EXPECT_EQ(road->GetId(), 0);
+    LaneSection *lane_section = road->GetLaneSectionByIdx(2);
+    EXPECT_EQ(lane_section->GetLaneById(2)->IsRoadEdge(), true);
+    EXPECT_EQ(lane_section->GetLaneById(1)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(0)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(-1)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(-2)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(-3)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(-4)->IsRoadEdge(), true);
+
+    road = odr->GetRoadById(3);
+    EXPECT_EQ(road->GetId(), 3);
+    lane_section = road->GetLaneSectionByIdx(0);
+    EXPECT_EQ(lane_section->GetLaneById(2)->IsRoadEdge(), true);
+    EXPECT_EQ(lane_section->GetLaneById(1)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(0)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(-1)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(-2)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(-3)->IsRoadEdge(), true);
+
+    road = odr->GetRoadById(4);
+    EXPECT_EQ(road->GetId(), 4);
+    lane_section = road->GetLaneSectionByIdx(0);
+    EXPECT_EQ(lane_section->GetLaneById(-1)->IsRoadEdge(), true);
+    EXPECT_EQ(lane_section->GetLaneById(0)->IsRoadEdge(), true);
+
+    road = odr->GetRoadById(1);
+    EXPECT_EQ(road->GetId(), 1);
+    lane_section = road->GetLaneSectionByIdx(1);
+    EXPECT_EQ(lane_section->GetLaneById(3)->IsRoadEdge(), true);
+    EXPECT_EQ(lane_section->GetLaneById(2)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(1)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(0)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(-1)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(-2)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(-3)->IsRoadEdge(), true);
+
+    odr->Clear();
+
+    ASSERT_EQ(roadmanager::Position::LoadOpenDrive("../../../resources/xodr/jolengatan.xodr"), true);
+    odr = Position::GetOpenDrive();
+    ASSERT_NE(odr, nullptr);
+
+    EXPECT_EQ(odr->GetNumOfRoads(), 1);
+
+    road = odr->GetRoadById(1);
+    EXPECT_EQ(road->GetId(), 1);
+    lane_section = road->GetLaneSectionByIdx(0);
+    EXPECT_EQ(lane_section->GetLaneById(3)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(2)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(1)->IsRoadEdge(), true);
+    EXPECT_EQ(lane_section->GetLaneById(0)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(-1)->IsRoadEdge(), true);
+    EXPECT_EQ(lane_section->GetLaneById(-2)->IsRoadEdge(), false);
+    EXPECT_EQ(lane_section->GetLaneById(-3)->IsRoadEdge(), false);
+
+    odr->Clear();
+}
 
 // Uncomment to print log output to console
-//#define LOG_TO_CONSOLE
+// #define LOG_TO_CONSOLE
 
 #ifdef LOG_TO_CONSOLE
-static void log_callback(const char* str)
+static void log_callback(const char *str)
 {
     printf("%s\n", str);
 }
@@ -2360,7 +2442,7 @@ int main(int argc, char **argv)
     }
 #endif
 
-    //testing::GTEST_FLAG(filter) = "*RoadWidthAllLanes*";
+    // testing::GTEST_FLAG(filter) = "*RoadWidthAllLanes*";
 
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

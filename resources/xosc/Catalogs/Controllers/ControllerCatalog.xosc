@@ -92,11 +92,25 @@
                 <ParameterDeclaration name="HeadStartTime" parameterType="double" value="3" />
                 <!-- FollowModes: time (time offset), position (distance offset) -->
                 <ParameterDeclaration name="FollowMode" parameterType="string" value="time" />
+                <!-- LookaheadSpeed: Look ahead time for picking ghost speed -->
+                <ParameterDeclaration name="LookaheadSpeed" parameterType="string" value="0.1" />
+                <!-- MinLookaheadSpeed: Minimum look ahead for picking ghost speed -->
+                <!-- Unit: time in time mode, distance in position mode -->
+                <ParameterDeclaration name="MinLookaheadSpeed" parameterType="string" value="0.1" />
+                <!-- LookaheadSteering: Look ahead time for picking ghost position for steering target -->
+                <ParameterDeclaration name="LookaheadSteering" parameterType="string" value="1.0" />
+                <!-- MinLookaheadSteering: Minimum look ahead for picking ghost position for steering target -->
+                <!-- Unit: time in time mode, distance in position mode -->
+                <ParameterDeclaration name="MinLookaheadSteering" parameterType="string" value="0.1" />
             </ParameterDeclarations>
             <Properties>
                 <Property name="esminiController" value="FollowGhostController" />
                 <Property name="headstartTime"  value="$HeadStartTime" />
                 <Property name="followMode"  value="$FollowMode" />
+                <Property name="lookaheadSpeed"  value="$LookaheadSpeed" />
+                <Property name="minLookaheadSpeed"  value="$MinLookaheadSpeed" />
+                <Property name="lookaheadSteering"  value="$LookaheadSteering" />
+                <Property name="minLookaheadSteering"  value="$MinLookaheadSteering" />
             </Properties>
         </Controller>
         <Controller name="followRoute">
@@ -125,12 +139,15 @@
             <ParameterDeclarations>
                 <ParameterDeclaration name="SetSpeed" parameterType="double" value="50" />
                 <ParameterDeclaration name="TimeGap" parameterType="double" value="1.5" />
+                <!-- Do not consider vehicles otside the lateral space specified by LateralDist -->
+                <ParameterDeclaration name="LateralDist" parameterType="double" value="5" />
                 <ParameterDeclaration name="Mode" parameterType="string" value="additive" />
             </ParameterDeclarations>
             <Properties>
                 <Property name="esminiController" value="ACCController" />
                 <Property name="mode" value="$Mode" />
                 <Property name="setSpeed"  value="$SetSpeed" />
+                <Property name="lateralDist"  value="$LateralDist" />
                 <Property name="timeGap"  value="$TimeGap" />
             </Properties>
         </Controller>
@@ -154,21 +171,44 @@
                 <Property name="logging" value="$Logging" />
             </Properties>
         </Controller>
-        <Controller name="ALKS_R157SM">
+        <Controller name="ALKS_R157SM_Controller">
             <ParameterDeclarations>
                 <ParameterDeclaration name="Mode" parameterType="string" value="additive" />
                 <!-- logLevel: 0 (none), 1 (log), 2 (log + debug) -->
-                <ParameterDeclaration name="LogLevel" parameterType="integer" value="0" />                
+                <ParameterDeclaration name="LogLevel" parameterType="integer" value="1" />
                 <!-- models: Regulation, ReferenceDriver, FSM, RSS -->
-                <ParameterDeclaration name="Model" parameterType="string" value="Regulation" />
+                <ParameterDeclaration name="Model" parameterType="string" value="ReferenceDriver" />
                 <!-- cruise: false (no adaptive cruise control), true (use adaptive cruise control) -->
                 <ParameterDeclaration name="Cruise" parameterType="boolean" value="true" />                
+                <!-- perceptionDelayMode: Dist (0.72m), Time (0.4s default) (only applicable to ReferenceDriver) -->
+                <!-- time 0.4s can be overriden for pedestrians by setting PedestrianRiskEvaluationTime -->
+                <ParameterDeclaration name="CutInPerceptionDelayMode" parameterType="string" value="Dist" />
+                <!-- fullStop: "true" = decelerate to a full stop, "false" = decelerate until safe -->
+                <ParameterDeclaration name="FullStop" parameterType="boolean" value="false" />                
+                <!-- alwaysTrigOnScenario: "false" = only act if critical, "true" = take action also outside critical zone -->
+                <ParameterDeclaration name="AlwaysTrigOnScenario" parameterType="boolean" value="false" />                
+                <!-- pedestrianRiskEvaluationTime: Time to perceive/evaluate a risk involving a pedestrian (ref driver only) -->
+                <ParameterDeclaration name="PedestrianRiskEvaluationTime" parameterType="double" value="0.4" />
+                <!-- aebTTC: TTC at which to trig AEB (ref driver only) -->
+                <ParameterDeclaration name="AEBTTC" parameterType="double" value="1.4" />
+                <!-- lateralTrigDistance: Trig cut-in when obj moved this lateral distance towards Ego (ref driver only) -->
+                <!-- set to > 0 to use instead of standard r157 ref driver cut-in trig condition -->
+                <ParameterDeclaration name="LateralTrigDistance" parameterType="double" value="0.0" />
+                <!-- overlapTolerance: Tolerance for overlap check between target object and Ego vehicle front (ref driver only) -->
+                <ParameterDeclaration name="OverlapTolerance" parameterType="double" value="0.1" />
             </ParameterDeclarations>
             <Properties>
                 <Property name="mode" value="$Mode" />
                 <Property name="logLevel" value="$LogLevel" />
                 <Property name="model"  value="$Model" />
                 <Property name="cruise"  value="$Cruise" />
+                <Property name="cutInPerceptionDelayMode"  value="$CutInPerceptionDelayMode" />
+                <Property name="fullStop"  value="$FullStop" />
+                <Property name="alwaysTrigOnScenario"  value="$AlwaysTrigOnScenario" />
+                <Property name="pedestrianRiskEvaluationTime"  value="$PedestrianRiskEvaluationTime" />
+                <Property name="aebTTC"  value="$AEBTTC" />
+                <Property name="lateralTrigDistance"  value="$LateralTrigDistance" />
+                <Property name="overlapTolerance"  value="$OverlapTolerance" />
             </Properties>
         </Controller>        
         <Controller name="UDPDriverController">

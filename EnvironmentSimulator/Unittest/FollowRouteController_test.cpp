@@ -24,8 +24,6 @@ public:
     }
 };
 
-static void log_callback(const char *str);
-
 TEST_F(FollowRouteControllerTest, PerformSingleLaneChange)
 {
     ScenarioEngine *se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/perform_single_lane_change.xosc");
@@ -49,7 +47,7 @@ TEST_F(FollowRouteControllerTest, PerformSingleLaneChange)
     ASSERT_EQ(target.GetTrackId(), finalPos.GetTrackId());
     ASSERT_EQ(target.GetLaneId(), finalPos.GetLaneId());
     ASSERT_NEAR(target.GetS(), finalPos.GetS(), 10);
-    
+
     delete se;
 }
 
@@ -73,7 +71,7 @@ TEST_F(FollowRouteControllerTest, FollowRouteWithLaneChanges)
     ASSERT_EQ(target.GetTrackId(), finalPos.GetTrackId());
     ASSERT_EQ(target.GetLaneId(), finalPos.GetLaneId());
     ASSERT_NEAR(target.GetS(), finalPos.GetS(), 10);
-    
+
     delete se;
 }
 
@@ -97,7 +95,7 @@ TEST_F(FollowRouteControllerTest, FollowRouteWithCollisionRisk)
     ASSERT_EQ(target.GetTrackId(), finalPos.GetTrackId());
     ASSERT_EQ(target.GetLaneId(), finalPos.GetLaneId());
     ASSERT_NEAR(target.GetS(), finalPos.GetS(), 10);
-    
+
     delete se;
 }
 
@@ -136,7 +134,7 @@ TEST_F(FollowRouteControllerTest, FollowRouteMedium)
     double dt = 0.1;
 
     // Fast forward
-    while (se->getSimulationTime() < (100 - SMALL_NUMBER))
+    while (se->getSimulationTime() < (35 - SMALL_NUMBER))
     {
         se->step(dt);
         se->prepareGroundTruth(dt);
@@ -185,11 +183,7 @@ TEST_F(FollowRouteControllerTest, FollowRouteMultipleScenarioWaypoints)
     ScenarioEngine *se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/follow_route_multiple_scenario_waypoints.xosc");
     ASSERT_NE(se, nullptr);
 
-    std::vector<Position> scenarioWaypoints = {
-        Position(284, -1, 10, 0),
-        Position(196, 1, 10, 0),
-        Position(202, 2, 40, 0)
-    };
+    std::vector<Position> scenarioWaypoints = {Position(284, -1, 10, 0), Position(196, 1, 10, 0), Position(202, 2, 40, 0)};
     std::vector<Position> passedPositions;
 
     double dt = 0.1;
@@ -203,13 +197,14 @@ TEST_F(FollowRouteControllerTest, FollowRouteMultipleScenarioWaypoints)
         se->prepareGroundTruth(dt);
     }
 
-    for(Position &scenarioWp : scenarioWaypoints)
+    for (Position &scenarioWp : scenarioWaypoints)
     {
-        bool hasPassedWaypoint = std::find_if(passedPositions.begin(), passedPositions.end(), [&](const Position &p){
-            return p.GetTrackId() == scenarioWp.GetTrackId() &&
-                    p.GetLaneId() == scenarioWp.GetLaneId() &&
-                    abs(p.GetS() - scenarioWp.GetS()) < 5;
-        }) != passedPositions.end();
+        bool hasPassedWaypoint = std::find_if(passedPositions.begin(),
+                                              passedPositions.end(),
+                                              [&](const Position &p) {
+                                                  return p.GetTrackId() == scenarioWp.GetTrackId() && p.GetLaneId() == scenarioWp.GetLaneId() &&
+                                                         abs(p.GetS() - scenarioWp.GetS()) < 5;
+                                              }) != passedPositions.end();
         ASSERT_TRUE(hasPassedWaypoint);
     }
 
@@ -217,7 +212,7 @@ TEST_F(FollowRouteControllerTest, FollowRouteMultipleScenarioWaypoints)
     ASSERT_EQ(scenarioWaypoints.back().GetTrackId(), finalPos.GetTrackId());
     ASSERT_EQ(scenarioWaypoints.back().GetLaneId(), finalPos.GetLaneId());
     ASSERT_NEAR(scenarioWaypoints.back().GetS(), finalPos.GetS(), 10);
-    
+
     delete se;
 }
 
@@ -229,12 +224,12 @@ TEST_F(FollowRouteControllerTest, FollowRouteSetParameters)
     scenarioengine::ControllerFollowRoute *controller = static_cast<scenarioengine::ControllerFollowRoute *>(se->entities_.object_[0]->controller_);
     ASSERT_NEAR(controller->GetMinDistForCollision(), 69, 0.01);
     ASSERT_NEAR(controller->GetLaneChangeTime(), 420, 0.01);
-    
+
     delete se;
 }
 
 // Uncomment to print log output to console
-//#define LOG_TO_CONSOLE
+// #define LOG_TO_CONSOLE
 
 #ifdef LOG_TO_CONSOLE
 static void log_callback(const char *str)

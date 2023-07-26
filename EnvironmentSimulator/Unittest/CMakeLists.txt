@@ -1,89 +1,111 @@
-include_directories (
-  ${SCENARIOENGINE_INCLUDE_DIRS}
-  ${SCENARIOENGINE_DLL_INCLUDE_DIR}
-  ${ROADMANAGER_DLL_INCLUDE_DIR}
-  ${COMMON_MINI_INCLUDE_DIR}
-  ${ROADMANAGER_INCLUDE_DIR}
-  ${VIEWER_BASE_INCLUDE_DIR}
-  ${PLAYER_BASE_INCLUDE_DIR}
-  ${CONTROLLERS_INCLUDE_DIR}
-  ${REPLAY_INCLUDE_DIR}
-  ${GTEST_INCLUDE_DIR}
-  ${OSI_INCLUDE_DIR}
-  ${OSG_INCLUDE_DIR}
-  ${DIRENT_INCLUDE_DIR}
-)
+# ############################### Loading desired rules ##############################################################
 
-add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_static_analysis.cmake)
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_iwyu.cmake)
 
-macro(package_add_test_with_libraries TESTNAME FILES LIBRARIES)
-    add_executable(${TESTNAME} ${FILES})
+# ############################### Loading unittest macro #############################################################
 
-    target_link_libraries(${TESTNAME} ${GTEST_LIBRARIES} ${LIBRARIES} ${ARGN} project_options)
+include(${CMAKE_SOURCE_DIR}/support/cmake/common/unittest.cmake)
 
-    set_target_properties(${TESTNAME} PROPERTIES FOLDER Unittest)
+# ############################### Creating executable (OperatingSystem_test) #########################################
 
-    add_test(
-      NAME ${TESTNAME}
-      COMMAND ${TESTNAME}
-    )
-endmacro()
+if(USE_OSG)
+    set(VIEWER_LIBS_FOR_TEST
+        ViewerBase)
+endif()
 
-if (USE_OSG)
-  add_definitions(-DOSG_LIBRARY_STATIC)
-  set (viewer_libs ViewerBase ${OSG_LIBRARIES})
-endif (USE_OSG)
+unittest(
+    OperatingSystem_test
+    OperatingSystem_test.cpp
+    PlayerBase)
 
-if (USE_SUMO)
-  set (sumo_libs ${SUMO_LIBRARIES})
-endif (USE_SUMO)
+# ############################### Creating executable (RoadManager_test) #############################################
 
-if (USE_OSI)
-  set (osi_libs ${OSI_LIBRARIES})
-endif (USE_OSI)
+unittest(
+    RoadManager_test
+    RoadManager_test.cpp
+    RoadManager)
 
-package_add_test_with_libraries(OperatingSystem_test OperatingSystem_test.cpp PlayerBase)
-package_add_test_with_libraries(RoadManager_test RoadManager_test.cpp RoadManager)
-package_add_test_with_libraries(ScenarioEngine_test ScenarioEngine_test.cpp
+# ############################### Creating executable (ScenarioEngine_test) ##########################################
+
+unittest(
+    ScenarioEngine_test
+    ScenarioEngine_test.cpp
     ScenarioEngine
     Controllers
-	RoadManager
-	CommonMini
-    ${viewer_libs}
-	${osi_libs}
-	${sumo_libs}
-	${SOCK_LIB}
-)
-package_add_test_with_libraries(ScenarioPlayer_test ScenarioPlayer_test.cpp
+    RoadManager
+    CommonMini
+    PlayerBase
+    ScenarioEngine
+    ${VIEWER_LIBS_FOR_TEST}
+    ${OSG_LIBRARIES}
+    ${OSI_LIBRARIES}
+    ${SUMO_LIBRARIES}
+    ${SOCK_LIB})
+
+# ############################### Creating executable (ScenarioPlayer_test) ##########################################
+
+unittest(
+    ScenarioPlayer_test
+    ScenarioPlayer_test.cpp
     PlayerBase
     ScenarioEngine
     Controllers
-	RoadManager
-	CommonMini
-    ${viewer_libs}
-	${osi_libs}
-	${sumo_libs}
-	${SOCK_LIB}
-)
-set (sources ScenarioEngineDll_test.cpp  "../Applications/replayer/Replay.cpp")
-package_add_test_with_libraries(ScenarioEngineDll_test "${sources}" esminiLib CommonMini ${OSI_LIBRARIES})
-package_add_test_with_libraries(RoadManagerDll_test RoadManagerDll_test.cpp esminiRMLib CommonMini)
-package_add_test_with_libraries(CommonMini_test CommonMini_test.cpp CommonMini)
-package_add_test_with_libraries(FollowRoute_test FollowRoute_test.cpp
+    RoadManager
+    CommonMini
+    ${VIEWER_LIBS_FOR_TEST}
+    ${OSG_LIBRARIES}
+    ${OSI_LIBRARIES}
+    ${SUMO_LIBRARIES}
+    ${SOCK_LIB})
+
+# ############################### Creating executable (ScenarioEngineDll_test) #######################################
+
+set(ScenarioEngineDll_sources
+    ScenarioEngineDll_test.cpp
+    "${REPLAYER_PATH}/Replay.cpp")
+
+unittest(
+    ScenarioEngineDll_test
+    "${ScenarioEngineDll_sources}"
+    esminiLib
+    CommonMini
+    ${OSI_LIBRARIES})
+
+# ############################### Creating executable (RoadManagerDll_test) ##########################################
+
+unittest(
+    RoadManagerDll_test
+    RoadManagerDll_test.cpp
+    esminiRMLib
+    CommonMini)
+
+# ############################### Creating executable (CommonMini_test) ##############################################
+
+unittest(
+    CommonMini_test
+    CommonMini_test.cpp
+    CommonMini)
+
+# ############################### Creating executable (FollowRoute_test) ##############################################
+
+unittest(
+    FollowRoute_test
+    FollowRoute_test.cpp
+    RoadManager)
+
+# ############################### Creating executable (FollowRouteController_test) ##############################################
+
+unittest(
+    FollowRouteController_test
+    FollowRouteController_test.cpp
     ScenarioEngine
     Controllers
-  RoadManager
-  CommonMini
-    ${viewer_libs}
-	${SUMO_LIBRARIES}
-	${SOCK_LIB}
-)
-package_add_test_with_libraries(FollowRouteController_test FollowRouteController_test.cpp
+    PlayerBase
     ScenarioEngine
-    Controllers
-  RoadManager
-  CommonMini
-    ${viewer_libs}
-	${SUMO_LIBRARIES}
-	${SOCK_LIB}
-)
+    RoadManager
+    ${VIEWER_LIBS_FOR_TEST}
+    ${OSG_LIBRARIES}
+    ${OSI_LIBRARIES}
+    ${SUMO_LIBRARIES}
+    ${SOCK_LIB})

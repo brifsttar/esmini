@@ -3,22 +3,36 @@
 
 int main(int argc, char* argv[])
 {
-	SE_Init("../resources/xosc/cut-in.xosc", 0, 1, 0, 0);
+    (void)argc;
+    (void)argv;
 
-	for (int i = 0; i < 500; i++)
-	{
-		SE_Step();
+    if (SE_Init("../resources/xosc/cut-in.xosc", 0, 1, 0, 0) != 0)
+    {
+        printf("Failed to initialize scenario\n");
+        return -1;
+    }
 
-		for (int j = 0; j < SE_GetNumberOfObjects(); j++)
-		{
-			SE_ScenarioObjectState state;
+    for (int i = 0; i < 500; i++)
+    {
+        SE_Step();
 
-			SE_GetObjectState(SE_GetId(j), &state);
-			printf("time [%.2f] object[%d] id %d pos[%.2f, %.2f] %.2f %.2f \n", state.timestamp, j, SE_GetId(j), state.x, state.y, state.wheel_angle, state.wheel_rot);
-		}
-	}
+        for (int j = 0; j < SE_GetNumberOfObjects(); j++)
+        {
+            SE_ScenarioObjectState state;
 
-	SE_Close();
+            SE_GetObjectState(SE_GetId(j), &state);
+            printf("time [%.2f] object[%d] id %d pos[%.2f, %.2f] %.2f %.2f \n",
+                   static_cast<double>(state.timestamp),
+                   j,
+                   SE_GetId(j),
+                   static_cast<double>(state.x),
+                   static_cast<double>(state.y),
+                   static_cast<double>(state.wheel_angle),
+                   static_cast<double>(state.wheel_rot));
+        }
+    }
 
-	return 0;
+    SE_Close();
+
+    return 0;
 }

@@ -1,32 +1,65 @@
+# ############################### Setting targets ####################################################################
 
-include_directories (
-  ${SCENARIOENGINE_INCLUDE_DIRS}
-  ${ROADMANAGER_INCLUDE_DIR}
-  ${COMMON_MINI_INCLUDE_DIR}
-)
+set(TARGET
+    esminiRMLib)
 
-set(TARGET esminiRMLib)
+# ############################### Loading desired rules ##############################################################
 
-set ( SOURCES esminiRMLib.cpp )
-set ( INCLUDES esminiRMLib.hpp )
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_static_analysis.cmake)
+include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_iwyu.cmake)
 
-add_library ( ${TARGET} SHARED ${SOURCES} ${INCLUDES} )
+# ############################### Setting target files ###############################################################
 
-add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+set(SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/esminiRMLib.cpp)
 
-target_link_libraries(${TARGET} PRIVATE project_options)
+set(INCLUDES
+    ${CMAKE_CURRENT_SOURCE_DIR}/esminiRMLib.hpp)
 
-target_link_libraries (
-	${TARGET}
-	PRIVATE RoadManager
-	PRIVATE CommonMini
-	PRIVATE ${TIME_LIB}
-)
+# ############################### Creating library ###################################################################
 
-install ( TARGETS ${TARGET} DESTINATION "${INSTALL_DIRECTORY}")
-if (WIN32)
-  install ( TARGETS ${TARGET} RUNTIME DESTINATION "${INSTALL_DIRECTORY_CODE_EXAMPLES}")
-else ()
-  install ( TARGETS ${TARGET} LIBRARY DESTINATION "${INSTALL_DIRECTORY_CODE_EXAMPLES}")
-endif ()
+add_library(
+    ${TARGET}
+    SHARED
+    ${SOURCES}
+    ${INCLUDES})
 
+target_link_libraries(
+    ${TARGET}
+    PRIVATE project_options)
+
+target_include_directories(
+    ${TARGET}
+    PRIVATE ${SCENARIO_ENGINE_PATH}/SourceFiles
+            ${SCENARIO_ENGINE_PATH}/OSCTypeDefs
+            ${COMMON_MINI_PATH})
+
+target_include_directories(
+    ${TARGET}
+    SYSTEM
+    PUBLIC ${ROAD_MANAGER_PATH}
+           ${EXTERNALS_PUGIXML_PATH})
+
+target_link_libraries(
+    ${TARGET}
+    PRIVATE RoadManager
+    PRIVATE CommonMini
+    PRIVATE ${TIME_LIB})
+
+disable_static_analysis(${TARGET})
+disable_iwyu(${TARGET})
+
+# ############################### Install ############################################################################
+
+install(
+    TARGETS ${TARGET}
+    DESTINATION "${INSTALL_PATH}")
+if(WIN32)
+    install(
+        TARGETS ${TARGET}
+        RUNTIME DESTINATION "${CODE_EXAMPLES_BIN_PATH}")
+else()
+    install(
+        TARGETS ${TARGET}
+        LIBRARY DESTINATION "${CODE_EXAMPLES_BIN_PATH}")
+endif()

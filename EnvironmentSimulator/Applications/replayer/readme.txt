@@ -1,11 +1,13 @@
 replayer is a simple application for re-playing .dat files recorded by esmini.
 
-Application is launched from command line (or batch file). 
+Application is launched from command line (or batch file).
 
-Usage:  [options]
+Usage: replayer [options]
 Options:
   --file <filename>
       Simulation recording data file (.dat)
+  --aa_mode <mode>
+      Anti-alias mode=number of multisamples (subsamples, 0=off, 4=default)
   --camera_mode <mode>
       Initial camera mode ("orbit" (default), "fixed", "flex", "flex-orbit", "top", "driver") (toggle during simulation by press 'k')
   --capture_screen
@@ -13,15 +15,19 @@ Options:
   --collision
       Pauses the replay if the ego collides with another entity
   --custom_camera <position>
-      Additional custom fixed camera position <x,y,z,h,p> (multiple occurrences supported)
-  --custom_fixed_camera <position and optional orientation>
       Additional custom camera position <x,y,z>[,h,p] (multiple occurrences supported)
+  --custom_fixed_camera <position and optional orientation>
+      Additional custom fixed camera position <x,y,z>[,h,p] (multiple occurrences supported)
   --custom_fixed_top_camera <position and rotation>
       Additional custom top camera <x,y,z,rot> (multiple occurrences supported)
   --dir <path>
       Directory containing replays to overlay, pair with "file" argument, where "file" is .dat filename match substring
   --disable_off_screen
       Disable esmini off-screen rendering, revert to OSG viewer default handling
+  --ground_plane
+      Add a large flat ground surface
+  --headless
+      Run without viewer window
   --hide_trajectories
       Hide trajectories from start (toggle with key 'n')
   --info_text <mode>
@@ -59,6 +65,7 @@ Additional OSG graphics options:
   --window <x y w h>                         Set the position x, y and size w, h of the viewer window. -1 -1 -1 -1 for fullscreen.
   --borderless-window <x y w h>              Set the position x, y and size w, h of a borderless viewer window. -1 -1 -1 -1 for fullscreen.
   --SingleThreaded                           Run application and all graphics tasks in one single thread.
+  --lodScale <LOD scalefactor>               Adjust Level Of Detail 1=default >1 decrease fidelity <1 increase fidelity
 
 Key shortcuts
 
@@ -78,14 +85,16 @@ Key shortcuts
     ESC:           quit
 
     Arrow keys
-        Left:          Pause and move to previous frame(+Shift to skip 10 frames)
-        Right:         Pause and move to next frame(+Shift to skip 10 frames)
-        Shift + Left:  Pause and jump 10 frames back
-        Shift + Right: Pause and jump 10 frames forward
-        Ctrl + Left:   Jump to beginning
-        Ctrl + Right:  Jump to end
-        Up:            Increase timeScale(play faster)
-        Down:          Decrease timeScale(play slower)
+        Left:               Pause and move to previous frame(+Shift to skip 10 frames)
+        Right:              Pause and move to next frame(+Shift to skip 10 frames)
+        Shift + Left:       Pause and jump 0.1s back
+        Shift + Right:      Pause and jump 0.1s forward
+        Shift + Ctrl Left:  Pause and jump 1.0s back
+        Shift + Ctrl Right: Pause and jump 1.0s forward
+        Ctrl + Left:        Pause and jump to beginning
+        Ctrl + Right:       Pause and jump to end
+        Up:                 Increase timeScale(play faster)
+        Down:               Decrease timeScale(play slower)
 
     1 - 9: Camera models acording to :
         1: Custom camera model
