@@ -9128,9 +9128,13 @@ roadmanager::Position::NextJunction roadmanager::Position::GetNextJunction() con
 	LinkType lt = DrivingSide() == 1 ? SUCCESSOR : PREDECESSOR;
 	ContactPointType cpt;
 	Road* r = GetRoad();
+        const Road* initRoad = r;
 	if (r == nullptr) return next;
 	while(true) {
 		if (!r->GetLink(lt)) {
+			break;
+		}
+		if (r == initRoad) {
 			break;
 		}
 		if (r->GetLink(lt)->GetElementType() == RoadLink::ElementType::ELEMENT_TYPE_JUNCTION) {
