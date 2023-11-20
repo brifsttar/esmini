@@ -216,6 +216,31 @@ static int copyOverrideActionListfromScenarioEngine(SE_OverrideActionList *list,
     return 0;
 }
 
+static void CopyRoadInfo(SE_RoadInfo *r_data, roadmanager::RoadProbeInfo *s_data)
+{
+    if (r_data && s_data)
+    {
+        r_data->local_pos_x  = static_cast<float>(s_data->relative_pos[0]);
+        r_data->local_pos_y  = static_cast<float>(s_data->relative_pos[1]);
+        r_data->local_pos_z  = static_cast<float>(s_data->relative_pos[2]);
+        r_data->global_pos_x = static_cast<float>(s_data->road_lane_info.pos[0]);
+        r_data->global_pos_y = static_cast<float>(s_data->road_lane_info.pos[1]);
+        r_data->global_pos_z = static_cast<float>(s_data->road_lane_info.pos[2]);
+        r_data->angle        = static_cast<float>(s_data->relative_h);
+        r_data->curvature    = static_cast<float>(s_data->road_lane_info.curvature);
+        r_data->road_heading = static_cast<float>(s_data->road_lane_info.heading);
+        r_data->road_pitch   = static_cast<float>(s_data->road_lane_info.pitch);
+        r_data->road_roll    = static_cast<float>(s_data->road_lane_info.roll);
+        r_data->speed_limit  = static_cast<float>(s_data->road_lane_info.speed_limit);
+        r_data->junctionId   = s_data->road_lane_info.junctionId;
+        r_data->roadId       = s_data->road_lane_info.roadId;
+        r_data->laneId       = s_data->road_lane_info.laneId;
+        r_data->laneOffset   = static_cast<float>(s_data->road_lane_info.laneOffset);
+        r_data->s            = static_cast<float>(s_data->road_lane_info.s);
+        r_data->t            = static_cast<float>(s_data->road_lane_info.t);
+    }
+}
+
 static int GetRoadInfoAtDistance(int object_id, float lookahead_distance, SE_RoadInfo *r_data, int lookAheadMode)
 {
     roadmanager::RoadProbeInfo s_data;
@@ -231,26 +256,7 @@ static int GetRoadInfoAtDistance(int object_id, float lookahead_distance, SE_Roa
 
     if (retval != roadmanager::Position::ReturnCode::ERROR_GENERIC)
     {
-        // Copy data
-        r_data->local_pos_x   = static_cast<float>(s_data.relative_pos[0]);
-        r_data->local_pos_y   = static_cast<float>(s_data.relative_pos[1]);
-        r_data->local_pos_z   = static_cast<float>(s_data.relative_pos[2]);
-        r_data->global_pos_x  = static_cast<float>(s_data.road_lane_info.pos[0]);
-        r_data->global_pos_y  = static_cast<float>(s_data.road_lane_info.pos[1]);
-        r_data->global_pos_z  = static_cast<float>(s_data.road_lane_info.pos[2]);
-        r_data->angle         = static_cast<float>(s_data.relative_h);
-        r_data->curvature     = static_cast<float>(s_data.road_lane_info.curvature);
-        r_data->road_heading  = static_cast<float>(s_data.road_lane_info.heading);
-        r_data->road_pitch    = static_cast<float>(s_data.road_lane_info.pitch);
-        r_data->road_roll     = static_cast<float>(s_data.road_lane_info.roll);
-        r_data->trail_heading = r_data->road_heading;
-        r_data->speed_limit   = static_cast<float>(s_data.road_lane_info.speed_limit);
-        r_data->roadId        = s_data.road_lane_info.roadId;
-        r_data->junctionId    = s_data.road_lane_info.junctionId;
-        r_data->laneId        = s_data.road_lane_info.laneId;
-        r_data->laneOffset    = static_cast<float>(s_data.road_lane_info.laneOffset);
-        r_data->s             = static_cast<float>(s_data.road_lane_info.s);
-        r_data->t             = static_cast<float>(s_data.road_lane_info.t);
+        CopyRoadInfo(r_data, &s_data);
 
         // Visualize forward looking road sensor probe
         main_object->SetSensorPosition(s_data.road_lane_info.pos[0], s_data.road_lane_info.pos[1], s_data.road_lane_info.pos[2]);
@@ -311,23 +317,20 @@ static int GetRoadInfoAlongGhostTrail(int object_id, float lookahead_distance, S
         return -1;
     }
 
-    roadmanager::Position pos(trailPos.x, trailPos.y, 0, 0, 0, 0);
+    roadmanager::Position pos;
+    if (trailPos.road_id >= 0)
+    {
+        pos.XYZ2TrackPos(trailPos.x, trailPos.y, 0.0, false, trailPos.road_id, false);
+    }
+    else
+    {
+        pos.XYZ2TrackPos(trailPos.x, trailPos.y, 0.0);
+    }
+
     obj->pos_.CalcProbeTarget(&pos, &s_data);
 
-    // Copy data
-    r_data->local_pos_x   = static_cast<float>(s_data.relative_pos[0]);
-    r_data->local_pos_y   = static_cast<float>(s_data.relative_pos[1]);
-    r_data->local_pos_z   = static_cast<float>(s_data.relative_pos[2]);
-    r_data->global_pos_x  = static_cast<float>(s_data.road_lane_info.pos[0]);
-    r_data->global_pos_y  = static_cast<float>(s_data.road_lane_info.pos[1]);
-    r_data->global_pos_z  = static_cast<float>(s_data.road_lane_info.pos[2]);
-    r_data->angle         = static_cast<float>(s_data.relative_h);
-    r_data->curvature     = static_cast<float>(s_data.road_lane_info.curvature);
-    r_data->road_heading  = static_cast<float>(s_data.road_lane_info.heading);
+    CopyRoadInfo(r_data, &s_data);
     r_data->trail_heading = static_cast<float>(trailPos.h);
-    r_data->road_pitch    = static_cast<float>(s_data.road_lane_info.pitch);
-    r_data->road_roll     = static_cast<float>(s_data.road_lane_info.roll);
-    r_data->speed_limit   = static_cast<float>(s_data.road_lane_info.speed_limit);
 
     *speed_ghost = static_cast<float>(trailPos.speed);
 
@@ -382,23 +385,20 @@ static int GetRoadInfoAtGhostTrailTime(int object_id, float time, SE_RoadInfo *r
         obj->trail_follow_index_ = index_out;
     }
 
-    roadmanager::Position pos(trailPos.x, trailPos.y, 0, 0, 0, 0);
+    roadmanager::Position pos;
+    if (trailPos.road_id >= 0)
+    {
+        pos.XYZ2TrackPos(trailPos.x, trailPos.y, 0.0, false, trailPos.road_id, false);
+    }
+    else
+    {
+        pos.XYZ2TrackPos(trailPos.x, trailPos.y, 0.0);
+    }
+
     obj->pos_.CalcProbeTarget(&pos, &s_data);
 
-    // Copy data
-    r_data->local_pos_x   = static_cast<float>(s_data.relative_pos[0]);
-    r_data->local_pos_y   = static_cast<float>(s_data.relative_pos[1]);
-    r_data->local_pos_z   = static_cast<float>(s_data.relative_pos[2]);
-    r_data->global_pos_x  = static_cast<float>(s_data.road_lane_info.pos[0]);
-    r_data->global_pos_y  = static_cast<float>(s_data.road_lane_info.pos[1]);
-    r_data->global_pos_z  = static_cast<float>(s_data.road_lane_info.pos[2]);
-    r_data->angle         = static_cast<float>(s_data.relative_h);
-    r_data->curvature     = static_cast<float>(s_data.road_lane_info.curvature);
-    r_data->road_heading  = static_cast<float>(s_data.road_lane_info.heading);
+    CopyRoadInfo(r_data, &s_data);
     r_data->trail_heading = static_cast<float>(trailPos.h);
-    r_data->road_pitch    = static_cast<float>(s_data.road_lane_info.pitch);
-    r_data->road_roll     = static_cast<float>(s_data.road_lane_info.roll);
-    r_data->speed_limit   = static_cast<float>(s_data.road_lane_info.speed_limit);
 
     *speed_ghost = static_cast<float>(trailPos.speed);
 
@@ -964,7 +964,7 @@ extern "C"
         return static_cast<float>(SE_getSimTimeStep(time_stamp, 0.001, 0.1));
     }
 
-    SE_DLL_API void SE_SetAlignMode(int object_id, int mode)
+    SE_DLL_API void SE_SetObjectPositionMode(int object_id, SE_PositionModeType type, int mode)
     {
         if (player != nullptr)
         {
@@ -974,14 +974,11 @@ extern "C"
                 return;
             }
 
-            player->scenarioGateway->setObjectAlignModeH(object_id, mode);
-            player->scenarioGateway->setObjectAlignModeP(object_id, mode);
-            player->scenarioGateway->setObjectAlignModeR(object_id, mode);
-            player->scenarioGateway->setObjectAlignModeZ(object_id, mode);
+            player->scenarioGateway->setObjectPositionMode(object_id, type, mode);
         }
     }
 
-    SE_DLL_API void SE_SetAlignModeH(int object_id, int mode)
+    SE_DLL_API void SE_SetObjectPositionModeDefault(int object_id, SE_PositionModeType type)
     {
         if (player != nullptr)
         {
@@ -991,53 +988,29 @@ extern "C"
                 return;
             }
 
-            player->scenarioGateway->setObjectAlignModeH(object_id, mode);
-        }
-    }
-
-    SE_DLL_API void SE_SetAlignModeP(int object_id, int mode)
-    {
-        if (player != nullptr)
-        {
-            Object *obj = nullptr;
-            if (getObjectById(object_id, obj) == -1)
-            {
-                return;
-            }
-
-            player->scenarioGateway->setObjectAlignModeP(object_id, mode);
-        }
-    }
-
-    SE_DLL_API void SE_SetAlignModeR(int object_id, int mode)
-    {
-        if (player != nullptr)
-        {
-            Object *obj = nullptr;
-            if (getObjectById(object_id, obj) == -1)
-            {
-                return;
-            }
-
-            player->scenarioGateway->setObjectAlignModeR(object_id, mode);
-        }
-    }
-
-    SE_DLL_API void SE_SetAlignModeZ(int object_id, int mode)
-    {
-        if (player != nullptr)
-        {
-            Object *obj = nullptr;
-            if (getObjectById(object_id, obj) == -1)
-            {
-                return;
-            }
-
-            player->scenarioGateway->setObjectAlignModeZ(object_id, mode);
+            player->scenarioGateway->setObjectPositionModeDefault(object_id, type);
         }
     }
 
     SE_DLL_API int SE_AddObject(const char *object_name, int object_type, int object_category, int object_role, int model_id)
+    {
+        SE_OSCBoundingBox bb = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
+        return SE_AddObjectWithBoundingBox(object_name,
+                                           object_type,
+                                           object_category,
+                                           object_role,
+                                           model_id,
+                                           bb,
+                                           static_cast<int>(EntityScaleMode::BB_TO_MODEL));
+    }
+
+    SE_DLL_API int SE_AddObjectWithBoundingBox(const char       *object_name,
+                                               int               object_type,
+                                               int               object_category,
+                                               int               object_role,
+                                               int               model_id,
+                                               SE_OSCBoundingBox bounding_box,
+                                               int               scale_mode)
     {
         int object_id = -1;
 
@@ -1059,22 +1032,31 @@ extern "C"
                 object_type = scenarioengine::Object::Type::VEHICLE;
             }
 
-            Vehicle *vehicle = nullptr;
+            Vehicle                       *vehicle = nullptr;
+            scenarioengine::OSCBoundingBox bb;
+            bb.center_.x_          = bounding_box.center_.x_;
+            bb.center_.y_          = bounding_box.center_.y_;
+            bb.center_.z_          = bounding_box.center_.z_;
+            bb.dimensions_.height_ = bounding_box.dimensions_.height_;
+            bb.dimensions_.length_ = bounding_box.dimensions_.length_;
+            bb.dimensions_.width_  = bounding_box.dimensions_.width_;
+
             if (object_type == scenarioengine::Object::Type::VEHICLE)
             {
-                vehicle             = new Vehicle();
-                object_id           = player->scenarioEngine->entities_.addObject(vehicle, true);
-                vehicle->name_      = name;
-                vehicle->scaleMode_ = EntityScaleMode::BB_TO_MODEL;
-                vehicle->model_id_  = model_id;
-                vehicle->model3d_   = SE_Env::Inst().GetModelFilenameById(model_id);
-                vehicle->category_  = object_category;
-                vehicle->role_      = object_role;
+                vehicle               = new Vehicle();
+                object_id             = player->scenarioEngine->entities_.addObject(vehicle, true);
+                vehicle->name_        = name;
+                vehicle->scaleMode_   = static_cast<EntityScaleMode>(scale_mode);
+                vehicle->model_id_    = model_id;
+                vehicle->model3d_     = SE_Env::Inst().GetModelFilenameById(model_id);
+                vehicle->category_    = object_category;
+                vehicle->role_        = object_role;
+                vehicle->boundingbox_ = bb;
 
                 Controller::InitArgs args = {"", "", 0, 0, 0, 0};
                 args.type                 = ControllerExternal::GetTypeNameStatic();
                 vehicle->controller_      = InstantiateControllerExternal(&args);
-                vehicle->controller_->Activate(ControlDomains::DOMAIN_BOTH);
+                vehicle->controller_->Activate(Controller::DomainActivation::ON, Controller::DomainActivation::ON);
             }
             else
             {
@@ -1082,7 +1064,6 @@ extern "C"
                 return -1;
             }
 
-            scenarioengine::OSCBoundingBox bb = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
             if (player->scenarioGateway->reportObject(object_id,
                                                       name,
                                                       object_type,
@@ -1091,7 +1072,7 @@ extern "C"
                                                       model_id,
                                                       vehicle->GetActivatedControllerType(),
                                                       bb,
-                                                      static_cast<int>(EntityScaleMode::BB_TO_MODEL),
+                                                      scale_mode,
                                                       0xff,
                                                       0.0,
                                                       0.0,
@@ -1140,6 +1121,19 @@ extern "C"
         }
 
         player->scenarioGateway->updateObjectWorldPos(object_id, timestamp, x, y, z, h, p, r);
+
+        return 0;
+    }
+
+    SE_DLL_API int SE_ReportObjectPosMode(int object_id, float timestamp, float x, float y, float z, float h, float p, float r, int mode)
+    {
+        Object *obj = nullptr;
+        if (getObjectById(object_id, obj) == -1)
+        {
+            return -1;
+        }
+
+        player->scenarioGateway->updateObjectWorldPosMode(object_id, timestamp, x, y, z, h, p, r, mode);
 
         return 0;
     }

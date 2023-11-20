@@ -73,9 +73,11 @@ TEST(DistanceTest, CalcDistanceVariations)
     EXPECT_NEAR(dist, 0.468766, 1e-5);
 
     // freespace with overlap
-    obj0.pos_.SetAlignMode(Position::ALIGN_MODE::ALIGN_HARD);
+    obj0.pos_.SetMode(Position::PosModeType::UPDATE,
+                      Position::PosMode::Z_REL | Position::PosMode::H_REL | Position::PosMode::P_REL | Position::PosMode::R_REL);
     obj0.pos_.SetLanePos(0, -1, 549.0, 0.0);
-    obj1.pos_.SetAlignMode(Position::ALIGN_MODE::ALIGN_HARD);
+    obj0.pos_.SetMode(Position::PosModeType::UPDATE,
+                      Position::PosMode::Z_REL | Position::PosMode::H_REL | Position::PosMode::P_REL | Position::PosMode::R_REL);
     obj1.pos_.SetLanePos(0, -1, 550.0, 0.0);
     ASSERT_EQ(obj0.Distance(&obj1, CoordinateSystem::CS_ROAD, RelativeDistanceType::REL_DIST_LONGITUDINAL, true, dist), 0);
     EXPECT_NEAR(dist, 0.0, 1e-5);
@@ -922,7 +924,7 @@ TEST(RoadOrientationTest, TestElevationPitchRoll)
     }
 
     // Check vehicle orientation
-    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetZ(), -0.568177, 1e-5);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetZ(), -0.61162, 1e-5);
     EXPECT_NEAR(se->entities_.object_[0]->pos_.GetP(), 0.0, 1e-5);
     EXPECT_NEAR(se->entities_.object_[0]->pos_.GetR(), 0.37917, 1e-5);
 
@@ -933,13 +935,13 @@ TEST(RoadOrientationTest, TestElevationPitchRoll)
         se->prepareGroundTruth(dt);
     }
 
-    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetZ(), 0.47815, 1e-5);
-    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetP(), 0.0, 1e-5);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetZ(), 0.50319, 1e-5);
+    EXPECT_NEAR(fmod(2.0 * M_PI, se->entities_.object_[1]->pos_.GetP()), 0.0, 1e-5);
     EXPECT_NEAR(se->entities_.object_[1]->pos_.GetR(), 5.96641, 1e-5);
 
     EXPECT_NEAR(se->entities_.object_[2]->pos_.GetZ(), 13.24676, 1e-5);
     EXPECT_NEAR(se->entities_.object_[2]->pos_.GetP(), 0.27808, 1e-5);
-    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetR(), 0, 1e-5);
+    EXPECT_NEAR(fmod(2.0 * M_PI, se->entities_.object_[2]->pos_.GetR()), 0, 1e-5);
 
     delete se;
 }
@@ -1637,53 +1639,53 @@ TEST(OverlapTest, TestOverlapCalculations)
     double    s_norm    = 0.0;
     bool      is_within = false;
 
-    ProjectPointOnVector2D(point_to_test.x(),
-                           point_to_test.y(),
-                           line_v0.x(),
-                           line_v0.y(),
-                           line_v1.x(),
-                           line_v1.y(),
-                           projected_point[0],
-                           projected_point[1]);
+    ProjectPointOnLine2D(point_to_test.x(),
+                         point_to_test.y(),
+                         line_v0.x(),
+                         line_v0.y(),
+                         line_v1.x(),
+                         line_v1.y(),
+                         projected_point[0],
+                         projected_point[1]);
     is_within = PointInBetweenVectorEndpoints(projected_point[0], projected_point[1], line_v0.x(), line_v0.y(), line_v1.x(), line_v1.y(), s_norm);
     EXPECT_EQ(is_within, true);
     EXPECT_NEAR(s_norm, 0.75, 1e-3);
 
     point_to_test = {-5, -0.5};
-    ProjectPointOnVector2D(point_to_test.x(),
-                           point_to_test.y(),
-                           line_v0.x(),
-                           line_v0.y(),
-                           line_v1.x(),
-                           line_v1.y(),
-                           projected_point[0],
-                           projected_point[1]);
+    ProjectPointOnLine2D(point_to_test.x(),
+                         point_to_test.y(),
+                         line_v0.x(),
+                         line_v0.y(),
+                         line_v1.x(),
+                         line_v1.y(),
+                         projected_point[0],
+                         projected_point[1]);
     is_within = PointInBetweenVectorEndpoints(projected_point[0], projected_point[1], line_v0.x(), line_v0.y(), line_v1.x(), line_v1.y(), s_norm);
     EXPECT_EQ(is_within, true);
     EXPECT_NEAR(s_norm, 0.75, 1e-3);
 
     point_to_test = {-5, -1.1};
-    ProjectPointOnVector2D(point_to_test.x(),
-                           point_to_test.y(),
-                           line_v0.x(),
-                           line_v0.y(),
-                           line_v1.x(),
-                           line_v1.y(),
-                           projected_point[0],
-                           projected_point[1]);
+    ProjectPointOnLine2D(point_to_test.x(),
+                         point_to_test.y(),
+                         line_v0.x(),
+                         line_v0.y(),
+                         line_v1.x(),
+                         line_v1.y(),
+                         projected_point[0],
+                         projected_point[1]);
     is_within = PointInBetweenVectorEndpoints(projected_point[0], projected_point[1], line_v0.x(), line_v0.y(), line_v1.x(), line_v1.y(), s_norm);
     EXPECT_EQ(is_within, false);
     EXPECT_NEAR(s_norm, 0.1, 1e-3);
 
     point_to_test = {-5, 1.1};
-    ProjectPointOnVector2D(point_to_test.x(),
-                           point_to_test.y(),
-                           line_v0.x(),
-                           line_v0.y(),
-                           line_v1.x(),
-                           line_v1.y(),
-                           projected_point[0],
-                           projected_point[1]);
+    ProjectPointOnLine2D(point_to_test.x(),
+                         point_to_test.y(),
+                         line_v0.x(),
+                         line_v0.y(),
+                         line_v1.x(),
+                         line_v1.y(),
+                         projected_point[0],
+                         projected_point[1]);
     is_within = PointInBetweenVectorEndpoints(projected_point[0], projected_point[1], line_v0.x(), line_v0.y(), line_v1.x(), line_v1.y(), s_norm);
     EXPECT_EQ(is_within, false);
     EXPECT_NEAR(s_norm, -0.1, 1e-3);
@@ -1691,27 +1693,27 @@ TEST(OverlapTest, TestOverlapCalculations)
     line_v0       = {-1.0, 0.0};
     line_v1       = {1.0, 0.0};
     point_to_test = {-0.5, 2.0};
-    ProjectPointOnVector2D(point_to_test.x(),
-                           point_to_test.y(),
-                           line_v0.x(),
-                           line_v0.y(),
-                           line_v1.x(),
-                           line_v1.y(),
-                           projected_point[0],
-                           projected_point[1]);
+    ProjectPointOnLine2D(point_to_test.x(),
+                         point_to_test.y(),
+                         line_v0.x(),
+                         line_v0.y(),
+                         line_v1.x(),
+                         line_v1.y(),
+                         projected_point[0],
+                         projected_point[1]);
     is_within = PointInBetweenVectorEndpoints(projected_point[0], projected_point[1], line_v0.x(), line_v0.y(), line_v1.x(), line_v1.y(), s_norm);
     EXPECT_EQ(is_within, true);
     EXPECT_NEAR(s_norm, 0.25, 1e-3);
 
     point_to_test = {-20.5, 2.0};
-    ProjectPointOnVector2D(point_to_test.x(),
-                           point_to_test.y(),
-                           line_v0.x(),
-                           line_v0.y(),
-                           line_v1.x(),
-                           line_v1.y(),
-                           projected_point[0],
-                           projected_point[1]);
+    ProjectPointOnLine2D(point_to_test.x(),
+                         point_to_test.y(),
+                         line_v0.x(),
+                         line_v0.y(),
+                         line_v1.x(),
+                         line_v1.y(),
+                         projected_point[0],
+                         projected_point[1]);
     is_within = PointInBetweenVectorEndpoints(projected_point[0], projected_point[1], line_v0.x(), line_v0.y(), line_v1.x(), line_v1.y(), s_norm);
     EXPECT_EQ(is_within, false);
     EXPECT_NEAR(s_norm, -19.5, 1e-3);
@@ -1830,12 +1832,12 @@ TEST(SpeedTest, TestAbsoluteSpeed)
         se->prepareGroundTruth(dt);
         time = se->getSimulationTime();
 
-        if (time > 1.1 + SMALL_NUMBER && time < 3.1 + SMALL_NUMBER)
+        if (time > 1.1 + SMALL_NUMBER && time < 3.05 + SMALL_NUMBER)
         {
             // Lane change action
             EXPECT_NEAR(se->entities_.object_[0]->pos_.GetVelY(), 1.535, 1e-3);
         }
-        else if (time > 4.15 + SMALL_NUMBER && time < 7.15 + SMALL_NUMBER)
+        else if (time > 4.15 + SMALL_NUMBER && time < 7.10 + SMALL_NUMBER)
         {
             // Lane change action
             EXPECT_NEAR(se->entities_.object_[0]->pos_.GetVelY(), -1.0116, 1e-4);
@@ -1992,7 +1994,7 @@ TEST(RelativeClearanceTest, TestRelativeClearanceFreeSpace)
 
         if (i == 1)
         {
-            ASSERT_NEAR(se->entities_.object_[2]->pos_.GetT(), -3.0749722, 1E-3);
+            ASSERT_NEAR(se->entities_.object_[2]->pos_.GetT(), -3.000, 1E-3);
             ASSERT_EQ(se->entities_.object_[2]->GetName(), "TargetRef");
         }
         if (i == 2)
@@ -2017,10 +2019,10 @@ TEST(TwoPlusOneRoadTest, TestTwoPlusOneRoad)
         double h;
         int    lane_id;
     } exp_values[5] = {{4.0, 115.0, -1.75, 0.0, -1},
-                       {5.25, 134.19, -1.81, 0.054, -2},
-                       {7.0, 168.89, -2.18, 0.05, -1},
+                       {5.25, 134.19, -1.789, 0.054, -2},
+                       {7.0, 168.89, -2.154, 0.05, -1},
                        {9.0, 218.22, -1.75, 0.0, -1},
-                       {11.25, 274.39, -4.02, 6.20, -2}};
+                       {11.25, 274.39, -4.118, 6.20, -2}};
 
     ASSERT_NE(se, nullptr);
 
@@ -2064,7 +2066,7 @@ TEST(RelativeClearanceTest, TestRelativeClearanceOppositeLane)
         ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/relative_clearance_oppositLane.xosc");
         ASSERT_NE(se, nullptr);
 
-        while (se->getSimulationTime() < 1.65 - SMALL_NUMBER)
+        while (se->getSimulationTime() < 1.6 - SMALL_NUMBER)
         {
             se->step(dt);
             se->prepareGroundTruth(dt);
@@ -2075,7 +2077,7 @@ TEST(RelativeClearanceTest, TestRelativeClearanceOppositeLane)
             ASSERT_EQ(se->entities_.object_[2]->GetName(), "TargetRef");
         }
 
-        while (se->getSimulationTime() < 5.80 - SMALL_NUMBER)
+        while (se->getSimulationTime() < 5.75 - SMALL_NUMBER)
         {
             se->step(dt);
             se->prepareGroundTruth(dt);
@@ -2128,6 +2130,287 @@ TEST(ControllerTest, TestLoomingControllerAdvanced)
         se->prepareGroundTruth(dt);
     }
     EXPECT_EQ(ctrl->getHasFarTan(), false);
+
+    delete se;
+}
+
+static void TTCAndLateralDistParamDeclCallback(void*)
+{
+    static int counter  = 0;
+    double     value[2] = {0.2, 5.0};
+
+    if (counter < 2)
+    {
+        ScenarioReader::parameters.setParameterValue("LateralDist", value[counter]);
+    }
+
+    counter++;
+}
+
+TEST(ConditionTest, TestTTCAndLateralDist)
+{
+    double dt = 0.05;
+
+    RegisterParameterDeclarationCallback(TTCAndLateralDistParamDeclCallback, 0);
+    for (int i = 0; i < 2; i++)
+    {
+        ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/ttc_condition.xosc");
+        ASSERT_NE(se, nullptr);
+        ASSERT_EQ(se->entities_.object_[0]->GetName(), "Ego");
+        ASSERT_EQ(se->entities_.object_[1]->GetName(), "Target");
+
+        while (se->getSimulationTime() < 2.0 - SMALL_NUMBER)
+        {
+            se->step(dt);
+            se->prepareGroundTruth(dt);
+        }
+
+        if (i == 0)
+        {
+            EXPECT_NEAR(se->entities_.object_[0]->pos_.GetVelX(), 10.0, 1E-3);
+        }
+        else
+        {
+            EXPECT_NEAR(se->entities_.object_[0]->pos_.GetVelX(), 1.0, 1E-3);
+        }
+
+        delete se;
+    }
+    RegisterParameterDeclarationCallback(nullptr, 0);
+}
+
+TEST(ActionTest, TestRelativeLaneChangeAction)
+{
+    double dt = 0.1;
+
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/relative_lane_change.xosc");
+    ASSERT_NE(se, nullptr);
+    ASSERT_EQ(se->entities_.object_[0]->GetName(), "Ego");
+    ASSERT_EQ(se->entities_.object_[1]->GetName(), "Target1");
+    ASSERT_EQ(se->entities_.object_[2]->GetName(), "Target2");
+    ASSERT_EQ(se->entities_.object_[3]->GetName(), "Target3");
+
+    while (se->getSimulationTime() < 4.5 + dt - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 109.483, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -4.425, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetX(), 140.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetY(), -8.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetX(), 290.547, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetY(), 11.7, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetX(), 260.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetY(), 8.0, 1E-3);
+
+    while (se->getSimulationTime() < 8.5 + dt - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 188.965, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -11.5, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetX(), 220.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetY(), -8.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetX(), 211.095, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetY(), 4.425, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetX(), 180.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetY(), 8.0, 1E-3);
+
+    delete se;
+}
+
+TEST(ActionTest, TestRelativeLaneOffsetAction)
+{
+    double dt = 0.1;
+
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/relative_lane_offset.xosc");
+    ASSERT_NE(se, nullptr);
+    ASSERT_EQ(se->entities_.object_[0]->GetName(), "Ego");
+    ASSERT_EQ(se->entities_.object_[1]->GetName(), "Target1");
+    ASSERT_EQ(se->entities_.object_[2]->GetName(), "Target2");
+    ASSERT_EQ(se->entities_.object_[3]->GetName(), "Target3");
+
+    while (se->getSimulationTime() < 4.5 + dt - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 110.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -7.1, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetX(), 140.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetY(), -8.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetX(), 290.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetY(), 8.9, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetX(), 260.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetY(), 8.0, 1E-3);
+
+    while (se->getSimulationTime() < 8.5 + dt - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 190.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -3.5, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetX(), 220.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetY(), -8.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetX(), 210.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetY(), 4.1, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetX(), 180.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetY(), 8.0, 1E-3);
+
+    delete se;
+}
+
+TEST(ActionTest, TestRelativeLanePosition)
+{
+    const int    n         = 8;
+    const double pos[n][5] = {{1.5, 75.833, -5.250, 78.730, -2.332},
+                              {4.2, 158.333, -5.250, 158.369, -8.168},
+                              {7.0, 243.889, -5.250, 245.441, -2.652},
+                              {9.6, 323.333, -5.250, 323.369, -8.168},
+                              {12.5, 451.667, 5.250, 450.115, 2.652},
+                              {15.2, 369.167, 5.250, 367.615, 7.848},
+                              {17.8, 289.722, 5.250, 289.695, 2.690},
+                              {20.5, 207.222, 5.250, 207.195, 7.810}};
+
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/relative_lane_pos_trajectories.xosc");
+    ASSERT_NE(se, nullptr);
+    ASSERT_EQ(se->entities_.object_[0]->GetName(), "Ego");
+    ASSERT_EQ(se->entities_.object_[1]->GetName(), "Target");
+
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    double dt = 0.1;
+    for (int i = 0; i < n; i++)
+    {
+        while (se->getSimulationTime() < pos[i][0] - SMALL_NUMBER)
+        {
+            se->step(dt);
+            se->prepareGroundTruth(dt);
+        }
+        EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), pos[i][1], 1E-3);
+        EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), pos[i][2], 1E-3);
+        EXPECT_NEAR(se->entities_.object_[1]->pos_.GetX(), pos[i][3], 1E-3);
+        EXPECT_NEAR(se->entities_.object_[1]->pos_.GetY(), pos[i][4], 1E-3);
+    }
+
+    delete se;
+}
+
+TEST(ActionTest, TestRelativeLaneOffsetPosition)
+{
+    const int    n         = 8;
+    const double pos[n][5] = {{1.5, 75.833, -5.250, 78.730, -2.332},
+                              {4.2, 158.333, -5.250, 158.369, -8.168},
+                              {7.0, 243.889, -5.250, 245.441, -2.652},
+                              {9.6, 323.333, -5.250, 323.369, -8.168},
+                              {12.5, 451.667, 5.250, 450.115, 2.652},
+                              {15.2, 369.167, 5.250, 367.615, 7.848},
+                              {17.8, 289.722, 5.250, 289.695, 2.690},
+                              {20.5, 207.222, 5.250, 207.195, 7.810}};
+
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/relative_lane_pos_offset_trajectories.xosc");
+    ASSERT_NE(se, nullptr);
+    ASSERT_EQ(se->entities_.object_[0]->GetName(), "Ego");
+    ASSERT_EQ(se->entities_.object_[1]->GetName(), "Target");
+
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    double dt = 0.1;
+    for (int i = 0; i < n; i++)
+    {
+        while (se->getSimulationTime() < pos[i][0] - SMALL_NUMBER)
+        {
+            se->step(dt);
+            se->prepareGroundTruth(dt);
+        }
+        EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), pos[i][1], 1E-3);
+        EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), pos[i][2], 1E-3);
+        EXPECT_NEAR(se->entities_.object_[1]->pos_.GetX(), pos[i][3], 1E-3);
+        EXPECT_NEAR(se->entities_.object_[1]->pos_.GetY(), pos[i][4], 1E-3);
+    }
+
+    delete se;
+}
+
+TEST(PositionTest, TestPositionMode)
+{
+    double dt = 0.1;
+
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/positioning_slope_up_leaning_right.xosc");
+    ASSERT_NE(se, nullptr);
+    EXPECT_EQ(se->entities_.object_[0]->GetName(), "Ego");
+
+    se->step(dt);
+    se->prepareGroundTruth(dt);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 10.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -3.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetZ(), -0.268, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetH(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetP(), 6.184, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetR(), 0.4, 1E-3);
+
+    se->entities_.object_[0]->pos_.SetInertiaPosMode(35.0,
+                                                     -3.0,
+                                                     0.0,
+                                                     1.0,
+                                                     0.0,
+                                                     0.0,
+                                                     roadmanager::Position::PosMode::Z_REL | roadmanager::Position::PosMode::H_REL |
+                                                         roadmanager::Position::PosMode::R_REL | roadmanager::Position::PosMode::P_REL);
+
+    se->step(dt);
+    se->prepareGroundTruth(dt);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 35.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -3.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetZ(), 2.232, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetH(), 0.993, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetP(), 5.894, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetR(), 0.136, 1E-3);
+
+    se->entities_.object_[0]->pos_.SetInertiaPosMode(30.0,
+                                                     -2.0,
+                                                     1.0,
+                                                     -0.5,
+                                                     0.3,
+                                                     0.5,
+                                                     roadmanager::Position::PosMode::Z_REL | roadmanager::Position::PosMode::H_ABS |
+                                                         roadmanager::Position::PosMode::R_REL | roadmanager::Position::PosMode::P_ABS);
+
+    se->step(dt);
+    se->prepareGroundTruth(dt);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 30.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -2.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetZ(), 3.154, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetH(), 5.932, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetP(), 0.467, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetR(), 0.893, 1E-3);
+
+    se->entities_.object_[0]->pos_.SetInertiaPosMode(30.0,
+                                                     -2.0,
+                                                     0.0,
+                                                     -0.5,
+                                                     0.3,
+                                                     0.0,
+                                                     roadmanager::Position::PosMode::Z_REL | roadmanager::Position::PosMode::H_ABS |
+                                                         roadmanager::Position::PosMode::R_REL | roadmanager::Position::PosMode::P_REL);
+
+    se->step(dt);
+    se->prepareGroundTruth(dt);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 30.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -2.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetZ(), 2.154, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetH(), 5.947, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetP(), 0.374, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetR(), 0.430, 1E-3);
 
     delete se;
 }

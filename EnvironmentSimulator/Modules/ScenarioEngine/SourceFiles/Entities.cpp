@@ -719,7 +719,7 @@ int Object::FreeSpaceDistancePointRoadLane(double x, double y, double* latDist, 
     // Map XY point to road coordinates, but consider only roads reachable from point
     Position pointPos = pos_;
     pointPos.SetRoute(0);  // don't mess with the route of the original position object
-    if (static_cast<int>(pointPos.XYZH2TrackPos(x, y, 0, 0, true)) < 0)
+    if (static_cast<int>(pointPos.XYZ2TrackPos(x, y, 0, true)) < 0)
     {
         return -1;
     }
@@ -736,7 +736,7 @@ int Object::FreeSpaceDistancePointRoadLane(double x, double y, double* latDist, 
         pos[j] = pos_;
         pos[j].SetRoute(0);  // don't mess with the route of the original position object
         // Map bounding box points to road coordinates, consider only roads reachable from current position
-        if (static_cast<int>(pos[j].XYZH2TrackPos(vertices[j][0], vertices[j][1], 0, vertices[j][2], true)) < 0)
+        if (static_cast<int>(pos[j].XYZ2TrackPos(vertices[j][0], vertices[j][1], 0, true)) < 0)
         {
             return -1;
         }
@@ -861,7 +861,7 @@ int Object::FreeSpaceDistanceObjectRoadLane(Object* target, PositionDiff* posDif
 
             // Map XY points to road coordinates, but consider only roads reachable from point
             pos[i][j] = pos_;
-            if (static_cast<int>(pos[i][j].XYZH2TrackPos(vertices[i][j][0], vertices[i][j][1], 0, vertices[i][j][2], true)) < 0)
+            if (static_cast<int>(pos[i][j].XYZ2TrackPos(vertices[i][j][0], vertices[i][j][1], 0, true)) < 0)
             {
                 return -1;
             }
@@ -1116,14 +1116,14 @@ Object::OverlapType Object::OverlappingFront(Object* target, double tolerance)
         double projected_point[2];
         double s_norm = 0.0;
 
-        ProjectPointOnVector2D(vertex[i].x(),
-                               vertex[i].y(),
-                               front_left.x(),
-                               front_left.y(),
-                               front_right.x(),
-                               front_right.y(),
-                               projected_point[0],
-                               projected_point[1]);
+        ProjectPointOnLine2D(vertex[i].x(),
+                             vertex[i].y(),
+                             front_left.x(),
+                             front_left.y(),
+                             front_right.x(),
+                             front_right.y(),
+                             projected_point[0],
+                             projected_point[1]);
 
         bool is_within = PointInBetweenVectorEndpoints(projected_point[0],
                                                        projected_point[1],
@@ -1452,6 +1452,17 @@ int Vehicle::ConnectTrailer(Vehicle* trailer)
     return -1;
 }
 
+int Vehicle::DisconnectTrailer()
+{
+    if (trailer_hitch_ && trailer_hitch_->trailer_vehicle_)
+    {
+        reinterpret_cast<Vehicle*>(trailer_hitch_->trailer_vehicle_)->trailer_coupler_->tow_vehicle_ = nullptr;
+        trailer_hitch_->trailer_vehicle_                                                             = nullptr;
+    }
+
+    return 0;
+}
+
 void Vehicle::AlignTrailers()
 {
     // Calculate neutral trailer position and orientation
@@ -1473,6 +1484,60 @@ void Vehicle::AlignTrailers()
             trailer->SetSpeed(GetSpeed());
         }
         v = trailer;
+    }
+}
+
+std::string Vehicle::Category2String(int category)
+{
+    switch (category)
+    {
+        case Category::BICYCLE:
+            return "BICYCLE";
+        case Category::BUS:
+            return "BUS";
+        case Category::CAR:
+            return "CAR";
+        case Category::MOTORBIKE:
+            return "MOTORBIKE";
+        case Category::SEMITRAILER:
+            return "SEMITRAILER";
+        case Category::TRAILER:
+            return "TRAILER";
+        case Category::TRAIN:
+            return "TRAIN";
+        case Category::TRAM:
+            return "TRAM";
+        case Category::TRUCK:
+            return "TRUCK";
+        case Category::VAN:
+            return "VAN";
+        default:
+            return "Unknown";
+    }
+}
+
+std::string Vehicle::Role2String(int role)
+{
+    switch (role)
+    {
+        case Role::AMBULANCE:
+            return "AMBULANCE";
+        case Role::CIVIL:
+            return "CIVIL";
+        case Role::FIRE:
+            return "FIRE";
+        case Role::MILITARY:
+            return "MILITARY";
+        case Role::NONE:
+            return "NONE";
+        case Role::POLICE:
+            return "POLICE";
+        case Role::PUBLIC_TRANSPORT:
+            return "PUBLIC_TRANSPORT";
+        case Role::ROAD_ASSISTANCE:
+            return "ROAD_ASSISTANCE";
+        default:
+            return "Unknown";
     }
 }
 
@@ -1616,4 +1681,79 @@ Object* Object::TrailerVehicle()
     }
 
     return trailer_vehicle;
+}
+
+std::string Object::Type2String(int type)
+{
+    switch (type)
+    {
+        case Type::MISC_OBJECT:
+            return "MISC_OBJEC";
+        case Type::PEDESTRIAN:
+            return "PEDESTRIAN";
+        case Type::VEHICLE:
+            return "VEHICLE";
+        case Type::TYPE_NONE:
+            return "NONE";
+        default:
+            return "Unknown";
+    }
+}
+
+std::string Pedestrian::Category2String(int category)
+{
+    switch (category)
+    {
+        case Category::ANIMAL:
+            return "ANIMAL";
+        case Category::PEDESTRIAN:
+            return "PEDESTRIAN";
+        case Category::WHEELCHAIR:
+            return "WHEELCHAIR";
+        default:
+            return "Unknown";
+    }
+}
+
+std::string MiscObject::Category2String(int category)
+{
+    switch (category)
+    {
+        case Category::BARRIER:
+            return "BARRIER";
+        case Category::BUILDING:
+            return "BUILDING";
+        case Category::CROSSWALK:
+            return "CROSSWALK";
+        case Category::GANTRY:
+            return "GANTRY";
+        case Category::NONE:
+            return "NONE";
+        case Category::OBSTACLE:
+            return "OBSTACLE";
+        case Category::PARKINGSPACE:
+            return "PARKINGSPACE";
+        case Category::PATCH:
+            return "PATCH";
+        case Category::POLE:
+            return "POLE";
+        case Category::RAILING:
+            return "RAILING";
+        case Category::ROADMARK:
+            return "ROADMARK";
+        case Category::SOUNDBARRIER:
+            return "SOUNDBARRIER";
+        case Category::STREETLAMP:
+            return "STREETLAMP";
+        case Category::TRAFFICISLAND:
+            return "TRAFFICISLAND";
+        case Category::TREE:
+            return "TREE";
+        case Category::VEGETATION:
+            return "VEGETATION";
+        case Category::WIND:
+            return "WIND";
+        default:
+            return "Unknown";
+    }
 }

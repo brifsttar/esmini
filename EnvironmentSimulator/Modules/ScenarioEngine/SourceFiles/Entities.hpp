@@ -43,22 +43,26 @@ namespace scenarioengine
 
         typedef enum
         {
-            NONE           = 0,
-            LONGITUDINAL   = (1 << 0),
-            LATERAL        = (1 << 1),
-            SPEED          = (1 << 2),
-            WHEEL_ANGLE    = (1 << 3),
-            WHEEL_ROTATION = (1 << 4),
-            VISIBILITY     = (1 << 5),
-            VELOCITY       = (1 << 6),
-            ANGULAR_RATE   = (1 << 7),
-            ACCELERATION   = (1 << 8),
-            ANGULAR_ACC    = (1 << 9),
-            ROUTE          = (1 << 10),
-            ALIGN_MODE_H   = (1 << 11),
-            ALIGN_MODE_P   = (1 << 12),
-            ALIGN_MODE_R   = (1 << 13),
-            ALIGN_MODE_Z   = (1 << 14)
+            NONE                = 0,
+            LONGITUDINAL        = (1 << 0),
+            LATERAL             = (1 << 1),
+            SPEED               = (1 << 2),
+            WHEEL_ANGLE         = (1 << 3),
+            WHEEL_ROTATION      = (1 << 4),
+            VISIBILITY          = (1 << 5),
+            VELOCITY            = (1 << 6),
+            ANGULAR_RATE        = (1 << 7),
+            ACCELERATION        = (1 << 8),
+            ANGULAR_ACC         = (1 << 9),
+            ROUTE               = (1 << 10),
+            ALIGN_MODE_Z_SET    = (1 << 11),
+            ALIGN_MODE_H_SET    = (1 << 12),
+            ALIGN_MODE_P_SET    = (1 << 13),
+            ALIGN_MODE_R_SET    = (1 << 14),
+            ALIGN_MODE_Z_UPDATE = (1 << 15),
+            ALIGN_MODE_H_UPDATE = (1 << 16),
+            ALIGN_MODE_P_UPDATE = (1 << 17),
+            ALIGN_MODE_R_UPDATE = (1 << 18)
         } DirtyBit;
 
         typedef enum
@@ -512,8 +516,9 @@ namespace scenarioengine
             dirty_ = 0;
         }
 
-        Object* TowVehicle();
-        Object* TrailerVehicle();
+        Object*            TowVehicle();
+        Object*            TrailerVehicle();
+        static std::string Type2String(int type);
 
     private:
         int  dirty_;
@@ -664,9 +669,11 @@ namespace scenarioengine
                 role_ = static_cast<int>(Vehicle::Role::NONE);
             }
         }
-        int  ConnectTrailer(Vehicle* trailer);
-        void AlignTrailers();
-
+        int                             ConnectTrailer(Vehicle* trailer);
+        int                             DisconnectTrailer();
+        void                            AlignTrailers();
+        static std::string              Category2String(int category);
+        static std::string              Role2String(int role);
         std::shared_ptr<TrailerCoupler> trailer_coupler_;  // mounting point to any tow vehicle
         std::shared_ptr<TrailerHitch>   trailer_hitch_;    // mounting point to any tow vehicle
     };
@@ -720,6 +727,8 @@ namespace scenarioengine
 
             return;
         }
+
+        static std::string Category2String(int category);
     };
 
     class MiscObject : public Object
@@ -833,6 +842,8 @@ namespace scenarioengine
 
             return;
         }
+
+        static std::string Category2String(int category);
     };
 
     class Entities

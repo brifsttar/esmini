@@ -209,6 +209,56 @@ typedef struct
     unsigned char *data;
 } SE_Image;  // Should be synked with CommonMini/OffScreenImage
 
+typedef struct
+{
+    float x_;  // Center offset in x direction.
+    float y_;  // Center offset in y direction.
+    float z_;  // Center offset in z direction.
+} SE_Center;
+
+typedef struct
+{
+    float width_;   // Width of the entity's bounding box. Unit: m; Range: [0..inf[.
+    float length_;  // Length of the entity's bounding box. Unit: m; Range: [0..inf[.
+    float height_;  // Height of the entity's bounding box. Unit: m; Range: [0..inf[.
+} SE_Dimensions;
+
+typedef struct
+{
+    SE_Center     center_;      // Represents the geometrical center of the bounding box
+    SE_Dimensions dimensions_;  // Width, length and height of the bounding box.
+} SE_OSCBoundingBox;
+
+// Modes for interpret Z, Head, Pitch, Roll coordinate value as absolute or relative
+// grouped as bitmask: 0000 => skip/use current, 0001=DEFAULT, 0011=ABS, 0111=REL
+// example: Relative Z, Absolute H, Default R, Current P = SE_Z_REL | SE_H_ABS | SE_R_DEF = 4151 = 0001 0000 0011 0111
+// Must match roadmanager::Position::PositionMode
+typedef enum
+{
+    SE_Z_SET = 1,  // 0001
+    SE_Z_DEF = 1,  // 0001
+    SE_Z_ABS = 3,  // 0011
+    SE_Z_REL = 7,  // 0111
+    SE_H_SET = SE_Z_SET << 4,
+    SE_H_DEF = SE_Z_DEF << 4,
+    SE_H_ABS = SE_Z_ABS << 4,
+    SE_H_REL = SE_Z_REL << 4,
+    SE_P_SET = SE_Z_SET << 8,
+    SE_P_DEF = SE_Z_DEF << 8,
+    SE_P_ABS = SE_Z_ABS << 8,
+    SE_P_REL = SE_Z_REL << 8,
+    SE_R_SET = SE_Z_SET << 12,
+    SE_R_DEF = SE_Z_DEF << 12,
+    SE_R_ABS = SE_Z_ABS << 12,
+    SE_R_REL = SE_Z_REL << 12,
+} SE_PositionMode;
+
+typedef enum
+{
+    SE_SET    = 0,  // Used by explicit set functions
+    SE_UPDATE = 1   // Used by controllers updating the position
+} SE_PositionModeType;
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -641,62 +691,29 @@ extern "C"
     SE_DLL_API void *SE_GetODRManager();
 
     /**
-            Specify if and how position object will align to the road. This version
-            sets same mode for all components: Heading, Pitch, Roll and Z (elevation)
-            @object_id Id of the object
-            @param mode as defined by roadmanager::Position::ALIGN_MODE:
-            0 = ALIGN_NONE // No alignment to road
-            1 = ALIGN_SOFT // Align to road but add relative orientation
-            2 = ALIGN_HARD // Completely align to road, disregard relative orientation
+    Specify if and how position object will align to the road. The setting is done for individual components:
+    Z (elevation), Heading, Pitch, Roll and separately for set- and update operation. Set operations represents
+    when position is affected by API calls, e.g. updateObjectWorldPos(). Update operations represents when the
+    position is updated implicitly by the scenarioengine, e.g. default controller moving a vehicle along the lane.
+    @param object_id Id of the object
+    @param type Type of operations the setting applies to, according to SE_PositionModeType enum
+    @param mode Bitmask combining values from SE_PositionMode enum
+    example: To set relative z and absolute roll: (SE_Z_REL | SE_R_ABS) or (7 | 12288) = (7 + 12288) = 12295
+    according to roadmanager::PosModeType
     */
-    SE_DLL_API void SE_SetAlignMode(int object_id, int mode);
+    SE_DLL_API void SE_SetObjectPositionMode(int object_id, SE_PositionModeType type, int mode);
 
     /**
-            Specify if and how position object will align to the road. This version
-            sets same mode for only heading component.
-            @object_id Id of the object
-            @param mode as defined by roadmanager::Position::ALIGN_MODE:
-            0 = ALIGN_NONE // No alignment to road
-            1 = ALIGN_SOFT // Align to road but add relative orientation
-            2 = ALIGN_HARD // Completely align to road, disregard relative orientation
+    Set default alignment mode for SET or UPDATE operations. See roadmanager::Position::GetModeDefault() to find out
+    what are the default modes.
+    @param object_id Id of the object
+    @param type Type of operations the setting applies to, according to SE_PositionModeType enum
+    according to roadmanager::PosModeType
     */
-    SE_DLL_API void SE_SetAlignModeH(int object_id, int mode);
+    SE_DLL_API void SE_SetObjectPositionModeDefault(int object_id, SE_PositionModeType type);
 
     /**
-            Specify if and how position object will align to the road. This version
-            sets same mode for only pitch component.
-            @object_id Id of the object
-            @param mode as defined by roadmanager::Position::ALIGN_MODE:
-            0 = ALIGN_NONE // No alignment to road
-            1 = ALIGN_SOFT // Align to road but add relative orientation
-            2 = ALIGN_HARD // Completely align to road, disregard relative orientation
-    */
-
-    SE_DLL_API void SE_SetAlignModeP(int object_id, int mode);
-    /**
-            Specify if and how position object will align to the road. This version
-            sets same mode for only roll component.
-            @object_id Id of the object
-            @param mode as defined by roadmanager::Position::ALIGN_MODE:
-            0 = ALIGN_NONE // No alignment to road
-            1 = ALIGN_SOFT // Align to road but add relative orientation
-            2 = ALIGN_HARD // Completely align to road, disregard relative orientation
-    */
-    SE_DLL_API void SE_SetAlignModeR(int object_id, int mode);
-
-    /**
-            Specify if and how position object will align to the road. This version
-            sets same mode for only Z (elevation) component.
-            @object_id Id of the object
-            @param mode as defined by roadmanager::Position::ALIGN_MODE:
-            0 = ALIGN_NONE // No alignment to road
-            1 = ALIGN_SOFT // Align to road but add relative orientation
-            2 = ALIGN_HARD // Completely align to road, disregard relative orientation
-    */
-    SE_DLL_API void SE_SetAlignModeZ(int object_id, int mode);
-
-    /**
-            Add object
+            Add object with bounding box automatically adapted to 3D model (scale mode BB_TO_MODEL)
             Should be followed by one of the SE_Report functions to establish initial state.
             @param object_name Name of the object, preferably be unique
             @param object_type Type of the object. See Entities.hpp::Object::Type. Default=1 (VEHICLE).
@@ -706,6 +723,27 @@ extern "C"
             @return Id [0..inf] of the added object successful, -1 on failure
     */
     SE_DLL_API int SE_AddObject(const char *object_name, int object_type, int object_category, int object_role, int model_id);
+
+    /**
+            Add object with specified bounding box.
+            Should be followed by one of the SE_Report functions to establish initial state.
+            For scale_mode BB_TO_MODEL, set bounding_box to whatever, e.g. {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}}, or use SE_AddObject()
+            @param object_name Name of the object, preferably be unique
+            @param object_type Type of the object. See Entities.hpp::Object::Type. Default=1 (VEHICLE).
+            @param object_category Category of the object. Depends on type, see descendants of Entities.hpp::Object. Set to 0 if not known.
+            @param object_role role of the object. Depends on type, See Entities.hpp::Object::Role. Set to 0 if not known.
+            @param model_id Id of the 3D model to represent the object. See resources/model_ids.txt.
+            @param bounding_box sets the internal bounding box of the model and will also be used to scale 3D model accordingly.
+            @param scale_mode 0=NONE, 1=BB_TO_MODEL, 2=MODEL_TO_BB (recommended). See CommonMini::EntityScaleMode enum for details.
+            @return Id [0..inf] of the added object successful, -1 on failure
+    */
+    SE_DLL_API int SE_AddObjectWithBoundingBox(const char       *object_name,
+                                               int               object_type,
+                                               int               object_category,
+                                               int               object_role,
+                                               int               model_id,
+                                               SE_OSCBoundingBox bounding_box,
+                                               int               scale_mode);
 
     /**
             Delete object
@@ -720,13 +758,28 @@ extern "C"
             @param timestamp Timestamp (not really used yet, OK to set 0)
             @param x X coordinate
             @param y Y coordinate
-            @param z Z coordinate
+            @param z Z coordinate, set std::nanf("") to ignore, i.e. re-use current value (#include <cmath>)
             @param h Heading / yaw
-            @param p Pitch
-            @param r Roll
+            @param p Pitch, set std::nanf("") to ignore, i.e. re-use current value (#include <cmath>)
+            @param r Roll, set std::nanf("") to ignore, i.e. re-use current value (#include <cmath>)
             @return 0 if successful, -1 if not
     */
     SE_DLL_API int SE_ReportObjectPos(int object_id, float timestamp, float x, float y, float z, float h, float p, float r);
+
+    /**
+            Report object position in cartesian coordinates, with detailed control of absolute or relative coordinates
+            @param object_id Id of the object
+            @param timestamp Timestamp (not really used yet, OK to set 0)
+            @param x X coordinate
+            @param y Y coordinate
+            @param z Z coordinate, set std::nanf("") to ignore, i.e. re-use current value (#include <cmath>)
+            @param h Heading / yaw
+            @param p Pitch, set std::nanf("") to ignore, i.e. re-use current value (#include <cmath>)
+            @param r Roll, set std::nanf("") to ignore, i.e. re-use current value (#include <cmath>)
+            @param mode Explicit mode, override current setting. E.g. POS_REL_Z | POS_ABS_H, see SE_PositionMode enum
+            @return 0 if successful, -1 if not
+    */
+    SE_DLL_API int SE_ReportObjectPosMode(int object_id, float timestamp, float x, float y, float z, float h, float p, float r, int mode);
 
     /**
             Report object position in limited set of cartesian coordinates x, y and heading,

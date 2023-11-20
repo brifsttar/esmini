@@ -329,7 +329,7 @@ TEST(GetOSIRoadLaneTest, lane_no_obj)
     SE_StepDT(0.001f);
     SE_FlushOSIFile();
     ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
-    EXPECT_EQ(fileStatus.st_size, 71882);  // initial OSI size, including static content
+    EXPECT_EQ(fileStatus.st_size, 83642);  // initial OSI size, including static content
 
     int road_lane_size;
 
@@ -341,12 +341,12 @@ TEST(GetOSIRoadLaneTest, lane_no_obj)
     SE_StepDT(0.001f);  // Step for write another frame to osi file
     SE_FlushOSIFile();
     ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
-    EXPECT_EQ(fileStatus.st_size, 72567);  // slight growth due to only dynamic updates
+    EXPECT_EQ(fileStatus.st_size, 84327);  // slight growth due to only dynamic updates
 
     SE_StepDT(0.001f);  // Step for write another frame to osi file
     SE_FlushOSIFile();
     ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
-    EXPECT_EQ(fileStatus.st_size, 73253);  // slight growth due to only dynamic updates
+    EXPECT_EQ(fileStatus.st_size, 85013);  // slight growth due to only dynamic updates
 
     SE_Close();
 }
@@ -2572,7 +2572,7 @@ TEST(ParameterTest, SetParameterValuesBeforeInit)
 {
     double positions[3][2] = {
         {5.34382, 186.68216},  // TargetSpeedFactor = 1.1
-        {8.69271, 240.62697},  // TargetSpeedFactor = 1.5
+        {8.83809, 240.62445},  // TargetSpeedFactor = 1.5
         {5.46731, 201.38162}   // TargetSpeedFactor = Default = 1.2
     };
     SE_ScenarioObjectState state;
@@ -2875,7 +2875,7 @@ TEST(ExternalController, TestExternalDriver)
                 else if (abs(SE_GetSimulationTime() - 30.0f) < static_cast<float>(SMALL_NUMBER))
                 {
                     SE_GetObjectState(0, &objectState);
-                    EXPECT_NEAR(objectState.x, 356.184, 1e-3);
+                    EXPECT_NEAR(objectState.x, 356.185, 1e-3);
                     EXPECT_NEAR(objectState.y, 330.082, 1e-3);
                     EXPECT_NEAR(objectState.h, 5.641, 1e-3);
                     EXPECT_NEAR(objectState.p, 0.046, 1e-3);
@@ -2887,31 +2887,31 @@ TEST(ExternalController, TestExternalDriver)
                 if (abs(SE_GetSimulationTime() - 11.0f) < static_cast<float>(SMALL_NUMBER))
                 {
                     SE_GetObjectState(0, &objectState);
-                    EXPECT_NEAR(objectState.x, 202.451, 1e-3);
-                    EXPECT_NEAR(objectState.y, 82.970, 1e-3);
+                    EXPECT_NEAR(objectState.x, 202.453, 1e-3);
+                    EXPECT_NEAR(objectState.y, 82.985, 1e-3);
                     EXPECT_NEAR(objectState.h, 1.134, 1e-3);
                     EXPECT_NEAR(objectState.p, 6.262, 1e-3);
                     if (ghostMode[i] == true)
                     {
                         SE_RoadInfo road_info2;
                         SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed2);
-                        EXPECT_NEAR(road_info2.global_pos_x, 206.696, 1e-3);
-                        EXPECT_NEAR(road_info2.global_pos_y, 92.395, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_x, 206.703, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_y, 92.414, 1e-3);
                     }
                 }
                 else if (abs(SE_GetSimulationTime() - 30.0f) < static_cast<float>(SMALL_NUMBER))
                 {
                     SE_GetObjectState(0, &objectState);
-                    EXPECT_NEAR(objectState.x, 382.066, 1e-3);
-                    EXPECT_NEAR(objectState.y, 301.707, 1e-3);
+                    EXPECT_NEAR(objectState.x, 382.058, 1e-3);
+                    EXPECT_NEAR(objectState.y, 301.720, 1e-3);
                     EXPECT_NEAR(objectState.h, 5.272, 1e-3);
                     EXPECT_NEAR(objectState.p, 0.025, 1e-3);
                     if (ghostMode[i] == true)
                     {
                         SE_RoadInfo road_info3;
                         SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info3, &speed2);
-                        EXPECT_NEAR(road_info3.global_pos_x, 388.244, 1e-3);
-                        EXPECT_NEAR(road_info3.global_pos_y, 291.211, 1e-3);
+                        EXPECT_NEAR(road_info3.global_pos_x, 388.234, 1e-3);
+                        EXPECT_NEAR(road_info3.global_pos_y, 291.231, 1e-3);
                     }
                 }
             }
@@ -2922,29 +2922,29 @@ TEST(ExternalController, TestExternalDriver)
                 if (abs(SE_GetSimulationTime() - 11.0f) < static_cast<float>(SMALL_NUMBER))
                 {
                     SE_GetObjectState(0, &objectState);
-                    EXPECT_NEAR(objectState.x, 203.201, 1e-3);
-                    EXPECT_NEAR(objectState.y, 84.471, 1e-3);
+                    EXPECT_NEAR(objectState.x, 203.204, 1e-3);
+                    EXPECT_NEAR(objectState.y, 84.484, 1e-3);
                     EXPECT_NEAR(objectState.h, 1.142, 1e-3);
                     EXPECT_NEAR(objectState.p, 6.262, 1e-3);
                     if (ghostMode[i] == true)
                     {
                         SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed3);
-                        EXPECT_NEAR(road_info2.global_pos_x, 206.696, 1e-3);
-                        EXPECT_NEAR(road_info2.global_pos_y, 92.395, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_x, 206.703, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_y, 92.414, 1e-3);
                     }
                 }
                 else if (abs(SE_GetSimulationTime() - 30.0f) < static_cast<float>(SMALL_NUMBER))
                 {
                     SE_GetObjectState(0, &objectState);
-                    EXPECT_NEAR(objectState.x, 382.076, 1e-3);
-                    EXPECT_NEAR(objectState.y, 302.530, 1e-3);
+                    EXPECT_NEAR(objectState.x, 382.069, 1e-3);
+                    EXPECT_NEAR(objectState.y, 302.541, 1e-3);
                     EXPECT_NEAR(objectState.h, 5.271, 1e-3);
                     EXPECT_NEAR(objectState.p, 0.026, 1e-3);
                     if (ghostMode[i] == true)
                     {
                         SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed3);
-                        EXPECT_NEAR(road_info2.global_pos_x, 388.244, 1e-3);
-                        EXPECT_NEAR(road_info2.global_pos_y, 291.211, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_x, 388.234, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_y, 291.231, 1e-3);
                     }
                 }
             }
@@ -2961,6 +2961,225 @@ TEST(ExternalController, TestExternalDriver)
         SE_Close();
     }
     SE_RegisterParameterDeclarationCallback(0, 0);
+}
+
+TEST(ExternalController, TestPositionAlignment)
+{
+    void* vehicleHandle = 0;
+
+    SE_SimpleVehicleState  vehicleState = {0, 0, 0, 0, 0, 0, 0, 0};
+    SE_ScenarioObjectState objectState;
+    SE_RoadInfo            roadInfo;
+    const double           throttleWeight = 0.1;
+    const int              n_tests        = 4;
+    int                    test_index     = 0;
+    float                  dt             = 0.05f;
+    float                  z_rel          = 0.0;
+    float                  p_rel          = 0.0;
+    struct
+    {
+        double time;
+        double x;
+        double y;
+        double z;
+        double h;
+        double p;
+        double r;
+    } test[n_tests] = {{6.0000, 101.8704, 98.8925, -1.0125, 1.5589, 0.0006, 0.4948},
+                       {13.5000, 15.2391, 200.7041, 9.7422, 2.9904, 5.9919, 0.0002},
+                       {19.0000, -79.7515, 163.3215, 8.7630, 4.0404, 0.2896, 6.2829},
+                       {20.0000, -90.3175, 147.0343, 3.5332, 4.2312, 0.5000, 0.2000}};
+
+    SE_AddPath("../../../resources/models");
+
+    ASSERT_EQ(SE_Init("../../../EnvironmentSimulator/Unittest/xosc/follow_ghost_align_position.xosc", 0, 0, 0, 0), 0);
+
+    // Lock object to the original lane
+    // If setting to false, the object road position will snap to closest lane
+    SE_SetLockOnLane(0, true);
+
+    // Initialize the vehicle model, fetch initial state from the scenario
+    SE_GetObjectState(0, &objectState);
+    vehicleHandle = SE_SimpleVehicleCreate(objectState.x, objectState.y, objectState.h, 4.0, 0.0);
+    SE_SimpleVehicleSteeringRate(vehicleHandle, 6.0f);
+
+    // show some road features, including road sensor
+    SE_ViewerShowFeature(4 + 8, true);  // NODE_MASK_TRAIL_DOTS (1 << 2) & NODE_MASK_ODR_FEATURES (1 << 3),
+
+    int counter = 0;
+
+    // Run for specified duration or until 'Esc' button is pressed
+    while (SE_GetQuitFlag() != 1)
+    {
+        // Get road information at a point some speed dependent distance ahead
+        double targetSpeed;
+        float  ghost_speed = 0.0f;
+        SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime() + 0.25f, &roadInfo, &ghost_speed);
+
+        targetSpeed = ghost_speed;
+
+        // Steer towards where the point
+        double steerAngle = roadInfo.angle;
+
+        // Accelerate or decelerate towards target speed - THROTTLE_WEIGHT tunes magnitude
+        double throttle = throttleWeight * (targetSpeed - static_cast<double>(vehicleState.speed));
+
+        // Step vehicle model with driver input, but wait until time > 0
+        if (SE_GetSimulationTime() > 0 && !SE_GetPauseFlag())
+        {
+            SE_SimpleVehicleControlAnalog(vehicleHandle, dt, throttle, steerAngle);
+        }
+
+        // Fetch updated state and report to scenario engine
+        SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+
+        // Report updated vehicle position and heading. z, pitch and roll will be aligned to the road
+
+        if (test_index < 3)
+        {
+            SE_SetObjectPositionMode(0,
+                                     SE_PositionModeType::SE_SET,
+                                     SE_PositionMode::SE_H_ABS | SE_PositionMode::SE_Z_REL | SE_PositionMode::SE_P_REL | SE_PositionMode::SE_R_REL);
+            SE_ReportObjectPos(0, 0, vehicleState.x, vehicleState.y, z_rel, vehicleState.h, p_rel, 0.0f);
+        }
+        else
+        {
+            SE_SetObjectPositionMode(0,
+                                     SE_PositionModeType::SE_SET,
+                                     SE_PositionMode::SE_H_ABS | SE_PositionMode::SE_Z_REL | SE_PositionMode::SE_P_ABS | SE_PositionMode::SE_R_REL);
+            SE_ReportObjectPos(0, 0, vehicleState.x, vehicleState.y, 0.0f, vehicleState.h, 0.5f, 0.2f);
+        }
+
+        // wheel status (revolution and steering angles)
+        SE_ReportObjectWheelStatus(0, vehicleState.wheel_rotation, vehicleState.wheel_angle);
+
+        // speed (along vehicle longitudinal (x) axis)
+        SE_ReportObjectSpeed(0, vehicleState.speed);
+
+        // Finally, update scenario using same time step as for vehicle model
+        SE_StepDT(dt);
+
+        if (test_index < n_tests && SE_GetSimulationTime() > static_cast<float>(test[test_index].time - SMALL_NUMBER))
+        {
+            SE_GetObjectState(0, &objectState);
+            EXPECT_NEAR(objectState.x, test[test_index].x, 1e-4);
+            EXPECT_NEAR(objectState.y, test[test_index].y, 1e-4);
+            EXPECT_NEAR(objectState.z, test[test_index].z + static_cast<double>(z_rel), 1e-4);
+            EXPECT_NEAR(objectState.h, test[test_index].h, 1e-4);
+            EXPECT_NEAR(objectState.p, test[test_index].p + static_cast<double>(p_rel), 1e-4);
+            EXPECT_NEAR(objectState.r, test[test_index].r, 1e-4);
+            if (test_index == 1)
+            {
+                z_rel = 2.0f;
+                p_rel = 0.1f;
+            }
+            else if (test_index == 2)
+            {
+                z_rel = 0.0f;
+                p_rel = 0.0f;
+            }
+
+            test_index++;
+        }
+        counter++;
+    }
+    SE_Close();
+}
+
+TEST(PositionMode, TestRoadAlignmentModes)
+{
+    struct
+    {
+        double time;
+        double x;
+        double y;
+        double z;
+        double h;
+        double p;
+        double r;
+    } result[2][4] = {{{10.0, 100.739, 87.310, -0.830, 3.015, 0.000, 0.000},
+                       {10.0, 75.249, 87.375, 33.144, 2.677, 0.067, 0.000},
+                       {10.0, 70.115, 87.356, 7.888, 2.245, 0.070, 5.626},
+                       {10.0, 60.000, 70.000, 2.000, 2.356, 0.152, 0.000}},
+                      {{17.0, 16.145, 200.243, 10.457, 2.982, 0.000, 0.000},
+                       {17.0, -35.413, 98.073, 16.592, 3.265, 0.154, 0.000},
+                       {17.0, -31.555, 100.000, 28.494, 3.142, 6.050, 5.961},
+                       {17.0, -24.000, 70.000, 28.600, 3.142, 5.977, 0.000}}};
+
+    SE_AddPath("../../../EnvironmentSimulator/Unittest/xodr");
+    SE_AddPath("../../../resources/xosc/Catalogs/Pedestrians");
+    SE_AddPath("../../../resources/models");
+
+    float dt = 0.1f;
+
+    ASSERT_EQ(SE_Init("../../../EnvironmentSimulator/code-examples/position-mode/skater.xosc", 0, 0, 0, 0), 0);
+
+    int state        = 0;
+    int result_state = 0;
+    while (SE_GetQuitFlag() == 0)
+    {
+        if (state == 0 && SE_GetSimulationTime() > 5.0f)
+        {
+            SE_ReportObjectPosMode(
+                0,
+                0.0f,
+                std::nanf(""),
+                std::nanf(""),
+                0.0f,
+                1.57f,
+                0.0f,
+                0.0f,
+                SE_PositionMode::SE_H_REL | SE_PositionMode::SE_P_ABS | SE_PositionMode::SE_R_ABS);  // report only (relative) heading
+            SE_SetObjectPositionMode(0,
+                                     SE_PositionModeType::SE_UPDATE,
+                                     SE_PositionMode::SE_H_REL | SE_PositionMode::SE_P_ABS | SE_PositionMode::SE_R_ABS);
+            SE_ReportObjectSpeed(0, 20.0f);
+
+            state++;
+        }
+        else if (state == 1 && SE_GetSimulationTime() > 15.0f)
+        {
+            SE_ReportObjectPosMode(0,
+                                   0.0f,
+                                   std::nanf(""),
+                                   std::nanf(""),
+                                   1.0f,
+                                   0.0f,
+                                   0.0f,
+                                   0.0f,
+                                   SE_PositionMode::SE_Z_REL | SE_PositionMode::SE_H_REL | SE_PositionMode::SE_P_ABS |
+                                       SE_PositionMode::SE_R_ABS);  // report only (relative) heading
+
+            SE_SetObjectPositionMode(0,
+                                     SE_PositionModeType::SE_UPDATE,
+                                     SE_PositionMode::SE_Z_REL | SE_PositionMode::SE_H_REL | SE_PositionMode::SE_P_ABS | SE_PositionMode::SE_R_ABS);
+
+            SE_ReportObjectSpeed(0, 30.0f);
+
+            state++;
+        }
+
+        if (result_state < 2 && static_cast<double>(SE_GetSimulationTime()) > result[result_state][0].time - SMALL_NUMBER)
+        {
+            SE_ScenarioObjectState obj_state;
+            for (int i = 0; i < 4; i++)
+            {
+                SE_GetObjectState(i, &obj_state);
+                EXPECT_NEAR(obj_state.x, result[result_state][i].x, 1e-3);
+                EXPECT_NEAR(obj_state.y, result[result_state][i].y, 1e-3);
+                EXPECT_NEAR(obj_state.z, result[result_state][i].z, 1e-3);
+                EXPECT_NEAR(obj_state.h, result[result_state][i].h, 1e-3);
+                EXPECT_NEAR(obj_state.p, result[result_state][i].p, 1e-3);
+                EXPECT_NEAR(obj_state.r, result[result_state][i].r, 1e-3);
+            }
+            result_state++;
+        }
+
+        SE_StepDT(dt);
+    }
+
+    SE_Close();
+    SE_ClearPaths();
 }
 
 TEST(TestGetAndSet, SeedTest)
@@ -3191,9 +3410,9 @@ TEST(APITest, TestFetchImage)
 
     // Check RGB color values of a random pixel x=222, y=250
     int pixelNr = ((400 - 1) - 250) * 800 + 222;                                      // image stored upside down
-    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 2], 70, max_pixel_deviation);  // R
-    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 1], 88, max_pixel_deviation);  // G
-    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 0], 43, max_pixel_deviation);  // B
+    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 2], 78, max_pixel_deviation);  // R
+    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 1], 96, max_pixel_deviation);  // G
+    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 0], 47, max_pixel_deviation);  // B
 
     // Save file for possible post processing or inspection
     SE_WriteTGA("offscreen0.tga", image.width, image.height, image.data, image.pixelSize, image.pixelFormat, true);
@@ -3211,9 +3430,9 @@ TEST(APITest, TestFetchImage)
     EXPECT_EQ(image.pixelSize, 3);
 
     // Check pixel
-    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 2], 66, max_pixel_deviation);  // R
-    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 1], 81, max_pixel_deviation);  // G
-    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 0], 42, max_pixel_deviation);  // B
+    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 2], 70, max_pixel_deviation);  // R
+    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 1], 83, max_pixel_deviation);  // G
+    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 0], 45, max_pixel_deviation);  // B
 
     SE_StepDT(0.1f);  // And another one
 
@@ -3224,9 +3443,9 @@ TEST(APITest, TestFetchImage)
     EXPECT_EQ(image.pixelSize, 3);
 
     // Check pixel
-    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 2], 66, max_pixel_deviation);  // R
-    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 1], 76, max_pixel_deviation);  // G
-    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 0], 38, max_pixel_deviation);  // B
+    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 2], 75, max_pixel_deviation);  // R
+    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 1], 90, max_pixel_deviation);  // G
+    EXPECT_NEAR(image.data[pixelNr * image.pixelSize + 0], 45, max_pixel_deviation);  // B
 
     // Verify that we can't fetch images when feature disabled
     EXPECT_EQ(SE_SaveImagesToRAM(false), 0);
@@ -3395,16 +3614,16 @@ TEST(ReplayTest, TestMultiReplayDifferentTimeSteps)
         if (k == 0)
         {
             EXPECT_NEAR(replay->data_[2012].state.pos.y, 130.995, 1E-3);
-            EXPECT_NEAR(replay->data_[2015].state.pos.y, 207.385, 1E-3);
-            EXPECT_NEAR(replay->data_[6009].state.info.timeStamp, 19.53, 1E-3);
-            EXPECT_NEAR(replay->data_[6009].state.info.id, 1, 1E-3);
+            EXPECT_NEAR(replay->data_[2015].state.pos.y, 207.378, 1E-3);
+            EXPECT_NEAR(replay->data_[5967].state.info.timeStamp, 19.52, 1E-3);
+            EXPECT_NEAR(replay->data_[5967].state.info.id, 1, 1E-3);
         }
         else
         {
             EXPECT_NEAR(replay->data_[2012].state.pos.y, 130.924, 1E-3);
-            EXPECT_NEAR(replay->data_[2015].state.pos.y, 210.728, 1E-3);
-            EXPECT_NEAR(replay->data_[4213].state.info.timeStamp, 19.8, 1E-3);
-            EXPECT_NEAR(replay->data_[4213].state.info.id, 1, 1E-3);
+            EXPECT_NEAR(replay->data_[2015].state.pos.y, 210.727, 1E-3);
+            EXPECT_NEAR(replay->data_[4203].state.info.timeStamp, 19.7, 1E-3);
+            EXPECT_NEAR(replay->data_[4203].state.info.id, 1, 1E-3);
         }
 
         delete replay;
@@ -3458,10 +3677,10 @@ void StoryBoardElementStateCallbackInstance1(const char* element_name, int type,
         {"slowdown event", 4.5, 5, 3},               // Event, Complete
         {"lane change", 4.5, 6, 2},                  // Action, Running
         {"lanechange event", 4.5, 5, 2},             // Event, Running
-        {"lane change", 8.5, 6, 3},                  // Action, Complete
-        {"lanechange event", 8.5, 5, 3},             // Event, Complete
-        {"maneuver", 8.6, 4, 3},                     // Maneuver, Complete
-        {"maneuvuergroup_maneuver", 8.6, 3, 3},      // ManeuverGroup, Complete
+        {"lane change", 8.4, 6, 3},                  // Action, Complete
+        {"lanechange event", 8.4, 5, 3},             // Event, Complete
+        {"maneuver", 8.5, 4, 3},                     // Maneuver, Complete
+        {"maneuvuergroup_maneuver", 8.5, 3, 3},      // ManeuverGroup, Complete
     };
 
     if (counter < n_runs)

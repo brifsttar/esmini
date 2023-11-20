@@ -60,29 +60,29 @@ namespace roadmanager
         {
             d_ = d;
         }
-        double GetA()
+        double GetA() const
         {
             return a_;
         }
-        double GetB()
+        double GetB() const
         {
             return b_;
         }
-        double GetC()
+        double GetC() const
         {
             return c_;
         }
-        double GetD()
+        double GetD() const
         {
             return d_;
         }
-        double GetPscale()
+        double GetPscale() const
         {
             return p_scale_;
         }
-        double Evaluate(double s);
-        double EvaluatePrim(double s);
-        double EvaluatePrimPrim(double s);
+        double Evaluate(double s) const;
+        double EvaluatePrim(double s) const;
+        double EvaluatePrimPrim(double s) const;
 
     private:
         double a_;
@@ -119,11 +119,11 @@ namespace roadmanager
             return point_;
         }
         PointStruct &GetPoint(int i);
-        double       GetXfromIdx(int i);
-        double       GetYfromIdx(int i);
-        double       GetZfromIdx(int i);
-        int          GetNumOfOSIPoints();
-        double       GetLength();
+        double       GetXfromIdx(int i) const;
+        double       GetYfromIdx(int i) const;
+        double       GetZfromIdx(int i) const;
+        int          GetNumOfOSIPoints() const;
+        double       GetLength() const;
 
     private:
         std::vector<PointStruct> point_;
@@ -163,15 +163,15 @@ namespace roadmanager
         {
         }
 
-        GeometryType GetType()
+        GeometryType GetType() const
         {
             return type_;
         }
-        double GetLength()
+        double GetLength() const
         {
             return length_;
         }
-        virtual double GetX()
+        virtual double GetX() const
         {
             return x_;
         }
@@ -179,7 +179,7 @@ namespace roadmanager
         {
             x_ = x;
         }
-        virtual double GetY()
+        virtual double GetY() const
         {
             return y_;
         }
@@ -187,7 +187,7 @@ namespace roadmanager
         {
             y_ = y;
         }
-        virtual double GetHdg()
+        virtual double GetHdg() const
         {
             return GetAngleInInterval2PI(hdg_);
         }
@@ -195,13 +195,13 @@ namespace roadmanager
         {
             hdg_ = hdg;
         }
-        double GetS()
+        double GetS() const
         {
             return s_;
         }
-        virtual double EvaluateCurvatureDS(double ds) = 0;
-        virtual void   Print();
-        virtual void   EvaluateDS(double ds, double *x, double *y, double *h);
+        virtual double EvaluateCurvatureDS(double ds) const = 0;
+        virtual void   Print() const;
+        virtual void   EvaluateDS(double ds, double *x, double *y, double *h) const;
 
     protected:
         double       s_;
@@ -223,9 +223,9 @@ namespace roadmanager
         }
         ~Line(){};
 
-        void   Print();
-        void   EvaluateDS(double ds, double *x, double *y, double *h);
-        double EvaluateCurvatureDS(double ds)
+        void   Print() const;
+        void   EvaluateDS(double ds, double *x, double *y, double *h) const;
+        double EvaluateCurvatureDS(double ds) const
         {
             (void)ds;
             return 0;
@@ -247,18 +247,18 @@ namespace roadmanager
         {
         }
 
-        double EvaluateCurvatureDS(double ds)
+        double EvaluateCurvatureDS(double ds) const
         {
             (void)ds;
             return curvature_;
         }
-        double GetRadius();
-        double GetCurvature()
+        double GetRadius() const;
+        double GetCurvature() const
         {
             return curvature_;
         }
-        void Print();
-        void EvaluateDS(double ds, double *x, double *y, double *h);
+        void Print() const;
+        void EvaluateDS(double ds, double *x, double *y, double *h) const;
 
     private:
         double curvature_;
@@ -267,48 +267,43 @@ namespace roadmanager
     class Spiral : public Geometry
     {
     public:
-        Spiral() : curv_start_(0.0), curv_end_(0.0), c_dot_(0.0), x0_(0.0), y0_(0.0), h0_(0.0), s0_(0.0), arc_(0), line_(0)
+        enum ClothoidType
+        {
+            CLOTHOID,
+            ARC,
+            LINE
+        };
+
+        Spiral() : curv_start_(0.0), curv_end_(0.0), c_dot_(0.0), x0_(0.0), y0_(0.0), h0_(0.0), s0_(0.0), clothoid_type_(CLOTHOID)
         {
         }
         Spiral(double s, double x, double y, double hdg, double length, double curv_start, double curv_end);
 
-        ~Spiral()
-        {
-            if (arc_)
-            {
-                delete arc_;
-            }
-            if (line_)
-            {
-                delete line_;
-            }
-        };
-
-        double GetCurvStart()
+        double GetCurvStart() const
         {
             return curv_start_;
         }
-        double GetCurvEnd()
+        double GetCurvEnd() const
         {
             return curv_end_;
         }
-        double GetX0()
+        double GetX0() const
         {
             return x0_;
         }
-        double GetY0()
+        double GetY0() const
         {
             return y0_;
         }
-        double GetH0()
+        double GetH0() const
         {
             return h0_;
         }
-        double GetS0()
+        double GetS0() const
         {
             return s0_;
         }
-        double GetCDot()
+        double GetCDot() const
         {
             return c_dot_;
         }
@@ -332,15 +327,16 @@ namespace roadmanager
         {
             c_dot_ = c_dot;
         }
-        void   Print();
-        void   EvaluateDS(double ds, double *x, double *y, double *h);
-        double EvaluateCurvatureDS(double ds);
+        void   Print() const;
+        void   EvaluateDS(double ds, double *x, double *y, double *h) const;
+        double EvaluateCurvatureDS(double ds) const;
         void   SetX(double x);
         void   SetY(double y);
         void   SetHdg(double h);
 
-        Arc  *arc_;
-        Line *line_;
+        ClothoidType clothoid_type_;
+        Arc          arc_;
+        Line         line_;
 
     private:
         double curv_start_;
@@ -365,23 +361,23 @@ namespace roadmanager
         {
             umax_ = umax;
         }
-        double GetUMax()
+        double GetUMax() const
         {
             return umax_;
         }
-        void       Print();
-        Polynomial GetPoly3()
+        void       Print() const;
+        Polynomial GetPoly3() const
         {
             return poly3_;
         }
-        void   EvaluateDS(double ds, double *x, double *y, double *h);
-        double EvaluateCurvatureDS(double ds);
+        void   EvaluateDS(double ds, double *x, double *y, double *h) const;
+        double EvaluateCurvatureDS(double ds) const;
 
         Polynomial poly3_;
 
     private:
         double umax_;
-        void   EvaluateDSLocal(double ds, double &u, double &v);
+        void   EvaluateDSLocal(double ds, double &u, double &v) const;
     };
 
     class ParamPoly3 : public Geometry
@@ -419,20 +415,20 @@ namespace roadmanager
         }
         ~ParamPoly3(){};
 
-        void       Print();
-        Polynomial GetPoly3U()
+        void       Print() const;
+        Polynomial GetPoly3U() const
         {
             return poly3U_;
         }
-        Polynomial GetPoly3V()
+        Polynomial GetPoly3V() const
         {
             return poly3V_;
         }
-        void   EvaluateDS(double ds, double *x, double *y, double *h);
-        double EvaluateCurvatureDS(double ds);
+        void   EvaluateDS(double ds, double *x, double *y, double *h) const;
+        double EvaluateCurvatureDS(double ds) const;
         void   calcS2PMap(PRangeType p_range);
         double s2p_map_[PARAMPOLY3_STEPS + 1][2];
-        double S2P(double s);
+        double S2P(double s) const;
 
         Polynomial poly3U_;
         Polynomial poly3V_;
@@ -450,7 +446,7 @@ namespace roadmanager
         }
         ~Elevation(){};
 
-        double GetS()
+        double GetS() const
         {
             return s_;
         }
@@ -458,11 +454,11 @@ namespace roadmanager
         {
             length_ = length;
         }
-        double GetLength()
+        double GetLength() const
         {
             return length_;
         }
-        void Print();
+        void Print() const;
 
         Polynomial poly3_;
 
@@ -485,15 +481,15 @@ namespace roadmanager
         {
         }
 
-        LinkType GetType()
+        LinkType GetType() const
         {
             return type_;
         }
-        int GetId()
+        int GetId() const
         {
             return id_;
         }
-        void Print();
+        void Print() const;
 
     private:
         LinkType type_;
@@ -508,11 +504,11 @@ namespace roadmanager
             poly3_.Set(a, b, c, d);
         }
 
-        double GetSOffset()
+        double GetSOffset() const
         {
             return s_offset_;
         }
-        void Print();
+        void Print() const;
 
         Polynomial poly3_;
 
@@ -528,7 +524,7 @@ namespace roadmanager
         }
         ~LaneBoundaryOSI(){};
         void SetGlobalId();
-        int  GetGlobalId()
+        int  GetGlobalId() const
         {
             return global_id_;
         }
@@ -587,23 +583,23 @@ namespace roadmanager
         {
         }
         ~LaneRoadMarkTypeLine(){};
-        double GetSOffset()
+        double GetSOffset() const
         {
             return s_offset_;
         }
-        double GetTOffset()
+        double GetTOffset() const
         {
             return t_offset_;
         }
-        double GetLength()
+        double GetLength() const
         {
             return length_;
         }
-        double GetSpace()
+        double GetSpace() const
         {
             return space_;
         }
-        double GetWidth()
+        double GetWidth() const
         {
             return width_;
         }
@@ -613,11 +609,11 @@ namespace roadmanager
         }
         OSIPoints osi_points_;
         void      SetGlobalId();
-        int       GetGlobalId()
+        int       GetGlobalId() const
         {
             return global_id_;
         }
-        RoadMarkColor GetColor()
+        RoadMarkColor GetColor() const
         {
             return color_;
         }
@@ -641,16 +637,16 @@ namespace roadmanager
         }
 
         void        AddLine(std::shared_ptr<LaneRoadMarkTypeLine> lane_roadMarkTypeLine);
-        std::string GetName()
+        std::string GetName() const
         {
             return name_;
         }
-        double GetWidth()
+        double GetWidth() const
         {
             return width_;
         }
-        LaneRoadMarkTypeLine *GetLaneRoadMarkTypeLineByIdx(int idx);
-        int                   GetNumberOfRoadMarkTypeLines()
+        LaneRoadMarkTypeLine *GetLaneRoadMarkTypeLineByIdx(int idx) const;
+        int                   GetNumberOfRoadMarkTypeLines() const
         {
             return (int)lane_roadMarkTypeLine_.size();
         }
@@ -718,44 +714,44 @@ namespace roadmanager
 
         void AddType(std::shared_ptr<LaneRoadMarkType> lane_roadMarkType);
 
-        double GetSOffset()
+        double GetSOffset() const
         {
             return s_offset_;
         }
-        double GetWidth()
+        double GetWidth() const
         {
             return width_;
         }
-        double GetHeight()
+        double GetHeight() const
         {
             return height_;
         }
-        RoadMarkType GetType()
+        RoadMarkType GetType() const
         {
             return type_;
         }
-        RoadMarkWeight GetWeight()
+        RoadMarkWeight GetWeight() const
         {
             return weight_;
         }
-        RoadMarkColor GetColor()
+        RoadMarkColor GetColor() const
         {
             return color_;
         }
-        RoadMarkMaterial GetMaterial()
+        RoadMarkMaterial GetMaterial() const
         {
             return material_;
         }
-        RoadMarkLaneChange GetLaneChange()
+        RoadMarkLaneChange GetLaneChange() const
         {
             return lane_change_;
         }
 
-        int GetNumberOfRoadMarkTypes()
+        int GetNumberOfRoadMarkTypes() const
         {
             return (int)lane_roadMarkType_.size();
         }
-        LaneRoadMarkType *GetLaneRoadMarkTypeByIdx(int idx);
+        LaneRoadMarkType *GetLaneRoadMarkTypeByIdx(int idx) const;
 
         static RoadMarkColor ParseColor(pugi::xml_node node);
         static std::string   RoadMarkColor2Str(RoadMarkColor color);
@@ -795,21 +791,21 @@ namespace roadmanager
         {
             length_ = length;
         }
-        double GetS()
+        double GetS() const
         {
             return s_;
         }
-        Polynomial GetPolynomial()
+        Polynomial GetPolynomial() const
         {
             return polynomial_;
         }
-        double GetLength()
+        double GetLength() const
         {
             return length_;
         }
-        double GetLaneOffset(double s);
-        double GetLaneOffsetPrim(double s);
-        void   Print();
+        double GetLaneOffset(double s) const;
+        double GetLaneOffsetPrim(double s) const;
+        void   Print() const;
 
     private:
         Polynomial polynomial_;
@@ -853,9 +849,10 @@ namespace roadmanager
             LANE_TYPE_CURB            = (1 << 21),
             LANE_TYPE_CONNECTING_RAMP = (1 << 22),
             LANE_TYPE_REFERENCE_LINE  = (1 << 0),
-            LANE_TYPE_ANY_DRIVING     = LANE_TYPE_DRIVING | LANE_TYPE_ENTRY | LANE_TYPE_EXIT | LANE_TYPE_OFF_RAMP | LANE_TYPE_ON_RAMP,
-            LANE_TYPE_ANY_ROAD        = LANE_TYPE_ANY_DRIVING | LANE_TYPE_RESTRICTED | LANE_TYPE_STOP,
-            LANE_TYPE_ANY             = (-1)
+            LANE_TYPE_ANY_DRIVING =
+                LANE_TYPE_DRIVING | LANE_TYPE_ENTRY | LANE_TYPE_EXIT | LANE_TYPE_OFF_RAMP | LANE_TYPE_ON_RAMP | LANE_TYPE_BIDIRECTIONAL,
+            LANE_TYPE_ANY_ROAD = LANE_TYPE_ANY_DRIVING | LANE_TYPE_RESTRICTED | LANE_TYPE_STOP,
+            LANE_TYPE_ANY      = (-1)
         } LaneType;
 
         // Construct & Destruct
@@ -893,15 +890,15 @@ namespace roadmanager
         }
 
         // Base Get Functions
-        int GetId()
+        int GetId() const
         {
             return id_;
         }
-        LaneType GetLaneType()
+        LaneType GetLaneType() const
         {
             return type_;
         }
-        int GetGlobalId()
+        int GetGlobalId() const
         {
             return global_id_;
         }
@@ -915,35 +912,35 @@ namespace roadmanager
         void AddLaneRoadMark(LaneRoadMark *lane_roadMark);
 
         // Get Functions
-        int GetNumberOfRoadMarks()
+        int GetNumberOfRoadMarks() const
         {
             return (int)lane_roadMark_.size();
         }
-        int GetNumberOfLinks()
+        int GetNumberOfLinks() const
         {
             return (int)link_.size();
         }
-        int GetNumberOfLaneWidths()
+        int GetNumberOfLaneWidths() const
         {
             return (int)lane_width_.size();
         }
 
-        LaneLink     *GetLink(LinkType type);
-        LaneWidth    *GetWidthByIndex(int index);
-        LaneWidth    *GetWidthByS(double s);
-        LaneRoadMark *GetLaneRoadMarkByIdx(int idx);
+        LaneLink     *GetLink(LinkType type) const;
+        LaneWidth    *GetWidthByIndex(int index) const;
+        LaneWidth    *GetWidthByS(double s) const;
+        LaneRoadMark *GetLaneRoadMarkByIdx(int idx) const;
 
-        RoadMarkInfo GetRoadMarkInfoByS(int track_id, int lane_id, double s);
+        RoadMarkInfo GetRoadMarkInfoByS(int track_id, int lane_id, double s) const;
         OSIPoints   *GetOSIPoints()
         {
             return &osi_points_;
         }
-        std::vector<int> GetLineGlobalIds();
-        LaneBoundaryOSI *GetLaneBoundary()
+        std::vector<int> GetLineGlobalIds() const;
+        LaneBoundaryOSI *GetLaneBoundary() const
         {
             return lane_boundary_;
         }
-        int GetLaneBoundaryGlobalId();
+        int GetLaneBoundaryGlobalId() const;
 
         // Set Functions
         void SetGlobalId();
@@ -965,13 +962,13 @@ namespace roadmanager
         {
             return osiintersection_;
         }
-        void      Print();
+        void      Print() const;
         OSIPoints osi_points_;
         void      SetRoadEdge(bool value)
         {
             road_edge_ = value;
         }
-        bool IsRoadEdge()
+        bool IsRoadEdge() const
         {
             return road_edge_;
         }
@@ -1004,18 +1001,18 @@ namespace roadmanager
             lane_.clear();
         }
         void   AddLane(Lane *lane);
-        double GetS()
+        double GetS() const
         {
             return s_;
         }
-        Lane  *GetLaneByIdx(int idx);
+        Lane  *GetLaneByIdx(int idx) const;
         Lane  *GetLaneById(int id) const;
-        int    GetLaneIdByIdx(int idx);
-        int    GetLaneIdxById(int id);
-        bool   IsOSILaneById(int id);
-        int    GetLaneGlobalIdByIdx(int idx);
-        int    GetLaneGlobalIdById(int id);
-        double GetOuterOffset(double s, int lane_id);
+        int    GetLaneIdByIdx(int idx) const;
+        int    GetLaneIdxById(int id) const;
+        bool   IsOSILaneById(int id) const;
+        int    GetLaneGlobalIdByIdx(int idx) const;
+        int    GetLaneGlobalIdById(int id) const;
+        double GetOuterOffset(double s, int lane_id) const;
         double GetWidth(double s, int lane_id) const;
 
         /**
@@ -1028,7 +1025,7 @@ namespace roadmanager
                               int     side,
                               double &offset,
                               bool    noZeroWidth,
-                              int     laneTypeMask = Lane::LaneType::LANE_TYPE_ANY_DRIVING);
+                              int     laneTypeMask = Lane::LaneType::LANE_TYPE_ANY_DRIVING) const;
 
         /**
         Get lateral position of lane center, from road reference lane (lane id=0)
@@ -1038,29 +1035,29 @@ namespace roadmanager
         @param lane_id lane specifier, starting from center -1, -2, ... is on the right side, 1, 2... on the left
         @return Lateral position of lane center
         */
-        double GetCenterOffset(double s, int lane_id);
-        double GetOuterOffsetHeading(double s, int lane_id);
-        double GetCenterOffsetHeading(double s, int lane_id);
+        double GetCenterOffset(double s, int lane_id) const;
+        double GetOuterOffsetHeading(double s, int lane_id) const;
+        double GetCenterOffsetHeading(double s, int lane_id) const;
         double GetLength() const
         {
             return length_;
         }
-        int GetNumberOfLanes()
+        int GetNumberOfLanes() const
         {
             return (int)lane_.size();
         }
-        int  GetNumberOfDrivingLanes();
-        int  GetNumberOfDrivingLanesSide(int side);
-        int  GetNUmberOfLanesRight();
-        int  GetNUmberOfLanesLeft();
+        int  GetNumberOfDrivingLanes() const;
+        int  GetNumberOfDrivingLanesSide(int side) const;
+        int  GetNUmberOfLanesRight() const;
+        int  GetNUmberOfLanesLeft() const;
         void SetLength(double length)
         {
             length_ = length;
         }
-        int    GetConnectingLaneId(int incoming_lane_id, LinkType link_type);
-        double GetWidthBetweenLanes(int lane_id1, int lane_id2, double s);
-        double GetOffsetBetweenLanes(int lane_id1, int lane_id2, double s);
-        void   Print();
+        int    GetConnectingLaneId(int incoming_lane_id, LinkType link_type) const;
+        double GetWidthBetweenLanes(int lane_id1, int lane_id2, double s) const;
+        double GetOffsetBetweenLanes(int lane_id1, int lane_id2, double s) const;
+        void   Print() const;
 
     private:
         double              s_;
@@ -1099,24 +1096,24 @@ namespace roadmanager
         RoadLink(LinkType type, pugi::xml_node node);
         bool operator==(RoadLink &rhs);
 
-        int GetElementId()
+        int GetElementId() const
         {
             return element_id_;
         }
-        LinkType GetType()
+        LinkType GetType() const
         {
             return type_;
         }
-        RoadLink::ElementType GetElementType()
+        RoadLink::ElementType GetElementType() const
         {
             return element_type_;
         }
-        ContactPointType GetContactPointType()
+        ContactPointType GetContactPointType() const
         {
             return contact_point_type_;
         }
 
-        void Print();
+        void Print() const;
 
     private:
         LinkType         type_;
@@ -1154,19 +1151,19 @@ namespace roadmanager
         {
         }
 
-        double GetX()
+        double GetX() const
         {
             return x_;
         }  // X coordinate of sign position
-        double GetY()
+        double GetY() const
         {
             return y_;
         }  // Y coordinate of sign position
-        double GetZ()
+        double GetZ() const
         {
             return z_;
         }  // Z coordinate of road level at sign X, Y position
-        double GetH()
+        double GetH() const
         {
             return h_;
         }  // sign yaw rotation including "orientation" (+/-) but excluding h_offset
@@ -1452,19 +1449,19 @@ namespace roadmanager
                double      z,
                double      h);
 
-        std::string GetName()
+        std::string GetName() const
         {
             return name_;
         }
-        int GetId()
+        int GetId() const
         {
             return id_;
         }
-        double GetS()
+        double GetS() const
         {
             return s_;
         }
-        double GetT()
+        double GetT() const
         {
             return t_;
         }
@@ -1472,71 +1469,71 @@ namespace roadmanager
         {
             length_ = length;
         }
-        double GetLength()
+        double GetLength() const
         {
             return length_;
         }
-        double GetHOffset()
+        double GetHOffset() const
         {
             return h_offset_;
         }
-        double GetZOffset()
+        double GetZOffset() const
         {
             return z_offset_;
         }
-        Orientation GetOrientation()
+        Orientation GetOrientation() const
         {
             return orientation_;
         }
-        int GetOSIType()
+        int GetOSIType() const
         {
             return osi_type_;
         }
-        std::string GetType()
+        std::string GetType() const
         {
             return type_;
         }
-        std::string GetSubType()
+        std::string GetSubType() const
         {
             return subtype_;
         }
-        std::string GetCountry()
+        std::string GetCountry() const
         {
             return country_;
         }
-        double GetHeight()
+        double GetHeight() const
         {
             return height_;
         }
-        double GetWidth()
+        double GetWidth() const
         {
             return width_;
         }
-        bool IsDynamic()
+        bool IsDynamic() const
         {
             return dynamic_;
         }
-        double GetPitch()
+        double GetPitch() const
         {
             return pitch_;
         }
-        double GetRoll()
+        double GetRoll() const
         {
             return roll_;
         }
-        double GetValue()
+        double GetValue() const
         {
             return value_;
         }
-        std::string GetValueStr()
+        std::string GetValueStr() const
         {
             return value_str_;
         }
-        std::string GetUnit()
+        std::string GetUnit() const
         {
             return unit_;
         }
-        std::string GetText()
+        std::string GetText() const
         {
             return text_;
         }
@@ -1718,63 +1715,63 @@ namespace roadmanager
         {
             heightEnd_ = heightEnd;
         }
-        double GetS()
+        double GetS() const
         {
             return s_;
         }
-        double GetLength()
+        double GetLength() const
         {
             return length_;
         }
-        double GetDistance()
+        double GetDistance() const
         {
             return distance_;
         }
-        double GetTStart()
+        double GetTStart() const
         {
             return tStart_;
         }
-        double GetTEnd()
+        double GetTEnd() const
         {
             return tEnd_;
         }
-        double GetHeightStart()
+        double GetHeightStart() const
         {
             return heightStart_;
         }
-        double GetHeightEnd()
+        double GetHeightEnd() const
         {
             return heightEnd_;
         }
-        double GetZOffsetStart()
+        double GetZOffsetStart() const
         {
             return zOffsetStart_;
         }
-        double GetZOffsetEnd()
+        double GetZOffsetEnd() const
         {
             return zOffsetEnd_;
         }
-        double GetWidthStart()
+        double GetWidthStart() const
         {
             return widthStart_;
         }
-        double GetWidthEnd()
+        double GetWidthEnd() const
         {
             return widthEnd_;
         }
-        double GetLengthStart()
+        double GetLengthStart() const
         {
             return lengthStart_;
         }
-        double GetLengthEnd()
+        double GetLengthEnd() const
         {
             return lengthEnd_;
         }
-        double GetRadiusStart()
+        double GetRadiusStart() const
         {
             return radiusStart_;
         }
-        double GetRadiusEnd()
+        double GetRadiusEnd() const
         {
             return radiusEnd_;
         }
@@ -1862,55 +1859,59 @@ namespace roadmanager
         static std::string Type2Str(ObjectType type);
         static ObjectType  Str2Type(std::string type);
 
-        std::string GetName()
+        std::string GetName() const
         {
             return name_;
         }
-        std::string GetTypeStr()
+        std::string GetTypeStr() const
         {
             return Type2Str(type_);
         }
-        ObjectType GetType()
+        ObjectType GetType() const
         {
             return type_;
         }
-        int GetId()
+        int GetId() const
         {
             return id_;
         }
-        double GetS()
+        double GetS() const
         {
             return s_;
         }
-        double GetT()
+        void SetS(double s)
+        {
+            s_ = s;
+        }
+        double GetT() const
         {
             return t_;
         }
-        double GetHOffset()
+        double GetHOffset() const
         {
             return heading_;
         }
-        double GetPitch()
+        double GetPitch() const
         {
             return pitch_;
         }
-        double GetRoll()
+        double GetRoll() const
         {
             return roll_;
         }
-        double GetZOffset()
+        double GetZOffset() const
         {
             return z_offset_;
         }
-        double GetHeight()
+        double GetHeight() const
         {
             return height_;
         }
-        double GetLength()
+        double GetLength() const
         {
             return length_;
         }
-        double GetWidth()
+        double GetWidth() const
         {
             return width_;
         }
@@ -1926,7 +1927,7 @@ namespace roadmanager
         {
             width_ = width;
         }
-        Orientation GetOrientation()
+        Orientation GetOrientation() const
         {
             return orientation_;
         }
@@ -1939,25 +1940,25 @@ namespace roadmanager
         {
             repeats_.push_back(repeat);
         };
-        Repeat *GetRepeat()
+        Repeat *GetRepeat() const
         {
             return repeat_;
         }
 
-        int GetNumberOfOutlines()
+        int GetNumberOfOutlines() const
         {
             return (int)outlines_.size();
         }
-        int GetNumberOfRepeats()
+        int GetNumberOfRepeats() const
         {
             return (int)repeats_.size();
         }
 
-        Outline *GetOutline(int i)
+        Outline *GetOutline(int i) const
         {
             return (0 <= i && i < outlines_.size()) ? outlines_[i] : 0;
         }
-        Repeat *GetRepeatByIdx(int i)
+        Repeat *GetRepeatByIdx(int i) const
         {
             return (0 <= i && i < repeats_.size()) ? repeats_[i] : 0;
         }
@@ -2023,7 +2024,7 @@ namespace roadmanager
         }
         ~Road();
 
-        void Print();
+        void Print() const;
         void SetId(int id)
         {
             id_ = id;
@@ -2032,7 +2033,7 @@ namespace roadmanager
         {
             return id_;
         }
-        RoadRule GetRule()
+        RoadRule GetRule() const
         {
             return rule_;
         }
@@ -2040,8 +2041,8 @@ namespace roadmanager
         {
             name_ = name;
         }
-        Geometry *GetGeometry(int idx);
-        int       GetNumberOfGeometries()
+        Geometry *GetGeometry(int idx) const;
+        int       GetNumberOfGeometries() const
         {
             return (int)geometry_.size();
         }
@@ -2079,24 +2080,24 @@ namespace roadmanager
         @param s distance along the road segment
         @param lane_id lane specifier, starting from center -1, -2, ... is on the right side, 1, 2... on the left
         */
-        double GetCenterOffset(double s, int lane_id);
+        double GetCenterOffset(double s, int lane_id) const;
 
         int            GetLaneInfoByS(double    s,
                                       int       start_lane_link_idx,
                                       int       start_lane_id,
                                       LaneInfo &lane_info,
-                                      int       laneTypeMask = Lane::LaneType::LANE_TYPE_ANY_DRIVING);
-        int            GetConnectingLaneId(RoadLink *road_link, int fromLaneId, int connectingRoadId);
-        double         GetLaneWidthByS(double s, int lane_id);
-        Lane::LaneType GetLaneTypeByS(double s, int lane_id);
-        double         GetSpeedByS(double s);
-        bool           GetZAndPitchByS(double s, double *z, double *z_prim, double *z_primPrim, double *pitch, int *index);
+                                      int       laneTypeMask = Lane::LaneType::LANE_TYPE_ANY_DRIVING) const;
+        int            GetConnectingLaneId(RoadLink *road_link, int fromLaneId, int connectingRoadId) const;
+        double         GetLaneWidthByS(double s, int lane_id) const;
+        Lane::LaneType GetLaneTypeByS(double s, int lane_id) const;
+        double         GetSpeedByS(double s) const;
+        bool           GetZAndPitchByS(double s, double *z, double *z_prim, double *z_primPrim, double *pitch, int *index) const;
         bool           UpdateZAndRollBySAndT(double s, double t, double *z, double *roadSuperElevationPrim, double *roll, int *index);
         int            GetNumberOfLaneSections() const
         {
             return (int)lane_section_.size();
         }
-        std::string GetName()
+        std::string GetName() const
         {
             return name_;
         }
@@ -2128,8 +2129,8 @@ namespace roadmanager
         {
             return (int)type_.size();
         }
-        RoadTypeEntry *GetRoadType(int idx);
-        RoadLink      *GetLink(LinkType type);
+        RoadTypeEntry *GetRoadType(int idx) const;
+        RoadLink      *GetLink(LinkType type) const;
         void           AddLine(Line *line);
         void           AddArc(Arc *arc);
         void           AddSpiral(Spiral *spiral);
@@ -2141,31 +2142,31 @@ namespace roadmanager
         void           AddLaneOffset(LaneOffset *lane_offset);
         void           AddSignal(Signal *signal);
         void           AddObject(RMObject *object);
-        Elevation     *GetElevation(int idx);
-        Elevation     *GetSuperElevation(int idx);
-        int            GetNumberOfSignals();
-        Signal        *GetSignal(int idx);
-        int            GetNumberOfObjects()
+        Elevation     *GetElevation(int idx) const;
+        Elevation     *GetSuperElevation(int idx) const;
+        int            GetNumberOfSignals() const;
+        Signal        *GetSignal(int idx) const;
+        int            GetNumberOfObjects() const
         {
             return (int)object_.size();
         }
-        RMObject *GetRoadObject(int idx);
-        int       GetNumberOfElevations()
+        RMObject *GetRoadObject(int idx) const;
+        int       GetNumberOfElevations() const
         {
             return (int)elevation_profile_.size();
         }
-        int GetNumberOfSuperElevations()
+        int GetNumberOfSuperElevations() const
         {
             return (int)super_elevation_profile_.size();
         }
-        double GetLaneOffset(double s);
-        double GetLaneOffsetPrim(double s);
-        int    GetNumberOfLanes(double s);
-        int    GetNumberOfDrivingLanes(double s);
-        Lane  *GetDrivingLaneByIdx(double s, int idx);
-        Lane  *GetDrivingLaneSideByIdx(double s, int side, int idx);
-        Lane  *GetDrivingLaneById(double s, int idx);
-        int    GetNumberOfDrivingLanesSide(double s, int side);  // side = -1 right, 1 left
+        double GetLaneOffset(double s) const;
+        double GetLaneOffsetPrim(double s) const;
+        int    GetNumberOfLanes(double s) const;
+        int    GetNumberOfDrivingLanes(double s) const;
+        Lane  *GetDrivingLaneByIdx(double s, int idx) const;
+        Lane  *GetDrivingLaneSideByIdx(double s, int side, int idx) const;
+        Lane  *GetDrivingLaneById(double s, int idx) const;
+        int    GetNumberOfDrivingLanesSide(double s, int side) const;  // side = -1 right, 1 left
 
         /**
                 Given a lane id, get connected lane id at another longitudinal location at the same road
@@ -2175,7 +2176,7 @@ namespace roadmanager
                 @param s_target Stop at this s value
                 @return connected lane_id if found, else 0
         */
-        int GetConnectedLaneIdAtS(int lane_id, double s_start, double s_target);
+        int GetConnectedLaneIdAtS(int lane_id, double s_start, double s_target) const;
 
         /**
                 Check if specified road is directly connected to at specified end of current one (this)
@@ -2184,7 +2185,7 @@ namespace roadmanager
                 @param fromLaneId If not zero, a connection from this lane must exist on specified road
                 @return true if connection exist, else false
         */
-        bool IsDirectlyConnected(Road *road, LinkType link_type, ContactPointType *contact_point, int fromLaneId = 0);
+        bool IsDirectlyConnected(Road *road, LinkType link_type, ContactPointType *contact_point, int fromLaneId = 0) const;
 
         /**
                 Check if specified road is directly connected, at least in one end of current one (this)
@@ -2193,7 +2194,7 @@ namespace roadmanager
                 @param fromLaneId If not zero, a connection from this lane must exist on specified road
                 @return true if connection exist, else false
         */
-        bool IsDirectlyConnected(Road *road, double *curvature = 0, int fromLaneId = 0);
+        bool IsDirectlyConnected(Road *road, double *curvature = 0, int fromLaneId = 0) const;
 
         /**
                 Check if specified road is directly connected as successor to current one (this)
@@ -2202,7 +2203,7 @@ namespace roadmanager
                 @param fromLaneId If not zero, a connection from this lane must exist on specified road
                 @return true if connection exist, else false
         */
-        bool IsSuccessor(Road *road, ContactPointType *contact_point = 0, int fromLaneId = 0);
+        bool IsSuccessor(Road *road, ContactPointType *contact_point = 0, int fromLaneId = 0) const;
 
         /**
                 Check if specified road is directly connected as predecessor to current one (this)
@@ -2211,7 +2212,7 @@ namespace roadmanager
                 @param fromLaneId If not zero, a connection from this lane must exist on specified road
                 @return true if connection exist, else false
         */
-        bool IsPredecessor(Road *road, ContactPointType *contact_point = 0, int fromLaneId = 0);
+        bool IsPredecessor(Road *road, ContactPointType *contact_point = 0, int fromLaneId = 0) const;
 
         /**
                 Get width of road
@@ -2220,7 +2221,7 @@ namespace roadmanager
                 @param laneTypeMask Bitmask specifying what lane types to consider - see Lane::LaneType
                 @return Width (m)
         */
-        double GetWidth(double s, int side, int laneTypeMask = Lane::LaneType::LANE_TYPE_ANY);  // side: -1=right, 1=left, 0=both
+        double GetWidth(double s, int side, int laneTypeMask = Lane::LaneType::LANE_TYPE_ANY) const;  // side: -1=right, 1=left, 0=both
 
     protected:
         int         id_;
@@ -2269,15 +2270,15 @@ namespace roadmanager
         {
             connecting_lane_id_ = id;
         }
-        int GetLaneId()
+        int GetLaneId() const
         {
             return lane_id_;
         }
-        int GetConnectingRoadId()
+        int GetConnectingRoadId() const
         {
             return connecting_road_id_;
         }
-        int GetConnectinglaneId()
+        int GetConnectinglaneId() const
         {
             return connecting_lane_id_;
         }
@@ -2298,7 +2299,7 @@ namespace roadmanager
         }
         int  from_;
         int  to_;
-        void Print()
+        void Print() const
         {
             printf("JunctionLaneLink: from %d to %d\n", from_, to_);
         }
@@ -2309,29 +2310,29 @@ namespace roadmanager
     public:
         Connection(Road *incoming_road, Road *connecting_road, ContactPointType contact_point);
         ~Connection();
-        int GetNumberOfLaneLinks()
+        int GetNumberOfLaneLinks() const
         {
             return (int)lane_link_.size();
         }
-        JunctionLaneLink *GetLaneLink(int idx)
+        JunctionLaneLink *GetLaneLink(int idx) const
         {
             return lane_link_[idx];
         }
-        int   GetConnectingLaneId(int incoming_lane_id);
-        Road *GetIncomingRoad()
+        int   GetConnectingLaneId(int incoming_lane_id) const;
+        Road *GetIncomingRoad() const
         {
             return incoming_road_;
         }
-        Road *GetConnectingRoad()
+        Road *GetConnectingRoad() const
         {
             return connecting_road_;
         }
-        ContactPointType GetContactPoint()
+        ContactPointType GetContactPoint() const
         {
             return contact_point_;
         }
         void AddJunctionLaneLink(int from, int to);
-        void Print();
+        void Print() const;
 
     private:
         Road                           *incoming_road_;
@@ -2360,7 +2361,7 @@ namespace roadmanager
         {
             control_.push_back(ctrl);
         }
-        int GetNumberOfControls()
+        int GetNumberOfControls() const
         {
             return (int)control_.size();
         }
@@ -2369,15 +2370,15 @@ namespace roadmanager
             return ((index >= 0 && index < control_.size()) ? &control_[index] : nullptr);
         }
 
-        int GetId()
+        int GetId() const
         {
             return id_;
         }
-        std::string GetName()
+        std::string GetName() const
         {
             return name_;
         }
-        int GetSequence()
+        int GetSequence() const
         {
             return sequence_;
         }
@@ -2424,34 +2425,37 @@ namespace roadmanager
         {
             return id_;
         }
-        std::string GetName()
+        std::string GetName() const
         {
             return name_;
         }
-        int GetNumberOfConnections()
+        int GetNumberOfConnections() const
         {
             return (int)connection_.size();
         }
-        int                    GetNumberOfRoadConnections(int roadId, int laneId);
-        LaneRoadLaneConnection GetRoadConnectionByIdx(int roadId, int laneId, int idx, int laneTypeMask = Lane::LaneType::LANE_TYPE_ANY_DRIVING);
+        int                    GetNumberOfRoadConnections(int roadId, int laneId) const;
+        LaneRoadLaneConnection GetRoadConnectionByIdx(int roadId,
+                                                      int laneId,
+                                                      int idx,
+                                                      int laneTypeMask = Lane::LaneType::LANE_TYPE_ANY_DRIVING) const;
         void                   AddConnection(Connection *connection)
         {
             connection_.push_back(connection);
         }
-        int         GetNoConnectionsFromRoadId(int incomingRoadId);
-        Connection *GetConnectionByIdx(int idx)
+        int         GetNoConnectionsFromRoadId(int incomingRoadId) const;
+        Connection *GetConnectionByIdx(int idx) const
         {
             return connection_[idx];
         }
-        int  GetConnectingRoadIdFromIncomingRoadId(int incomingRoadId, int index);
-        void Print();
-        bool IsOsiIntersection();
-        int  GetGlobalId()
+        int  GetConnectingRoadIdFromIncomingRoadId(int incomingRoadId, int index) const;
+        void Print() const;
+        bool IsOsiIntersection() const;
+        int  GetGlobalId() const
         {
             return global_id_;
         }
         void SetGlobalId();
-        int  GetNumberOfControllers()
+        int  GetNumberOfControllers() const
         {
             return (int)controller_.size();
         }
@@ -2460,8 +2464,8 @@ namespace roadmanager
         {
             controller_.push_back(controller);
         }
-        Road        *GetRoadAtOtherEndOfConnectingRoad(Road *connecting_road, Road *incoming_road);
-        JunctionType GetType()
+        Road        *GetRoadAtOtherEndOfConnectingRoad(Road *connecting_road, Road *incoming_road) const;
+        JunctionType GetType() const
         {
             return type_;
         }
@@ -2530,12 +2534,19 @@ namespace roadmanager
 		*/
 		bool LoadOpenDriveContent(const char *content, bool replace = true);
 		bool LoadOpenDrive(const pugi::xml_document &doc, bool replace = true);
+        /**
+                Get the filename of currently loaded OpenDRIVE file
+        */
+        std::string GetOpenDriveFilename() const
+        {
+            return odr_filename_;
+        }
 
         /**
                 Setting information based on the OSI standards for OpenDrive elements
         */
         bool SetRoadOSI();
-        bool CheckLaneOSIRequirement(std::vector<double> x0, std::vector<double> y0, std::vector<double> x1, std::vector<double> y1);
+        bool CheckLaneOSIRequirement(std::vector<double> x0, std::vector<double> y0, std::vector<double> x1, std::vector<double> y1) const;
         void SetLaneOSIPoints();
         void SetRoadMarkOSIPoints();
 
@@ -2549,7 +2560,7 @@ namespace roadmanager
                 Retrieve a road segment specified by road ID
                 @param id road ID as specified in the OpenDRIVE file
         */
-        Road *GetRoadById(int id);
+        Road *GetRoadById(int id) const;
 
         /**
                 Retrieve a road segment specified by road vector element index
@@ -2560,28 +2571,24 @@ namespace roadmanager
                 ...
                 @param idx index into the vector of roads
         */
-        Road     *GetRoadByIdx(int idx);
-        Geometry *GetGeometryByIdx(int road_idx, int geom_idx);
-        int       GetTrackIdxById(int id);
-        int       GetTrackIdByIdx(int idx);
-        int       GetNumOfRoads()
+        Road     *GetRoadByIdx(int idx) const;
+        Geometry *GetGeometryByIdx(int road_idx, int geom_idx) const;
+        int       GetTrackIdxById(int id) const;
+        int       GetTrackIdByIdx(int idx) const;
+        int       GetNumOfRoads() const
         {
             return (int)road_.size();
         }
-        Junction *GetJunctionById(int id);
-        Junction *GetJunctionByIdx(int idx);
+        Junction *GetJunctionById(int id) const;
+        Junction *GetJunctionByIdx(int idx) const;
 
-        int GetNumOfJunctions()
+        int GetNumOfJunctions() const
         {
             return (int)junction_.size();
         }
 
-        bool IsIndirectlyConnected(int   road1_id,
-                                   int   road2_id,
-                                   int *&connecting_road_id,
-                                   int *&connecting_lane_id,
-                                   int   lane1_id = 0,
-                                   int   lane2_id = 0);
+        bool IsIndirectlyConnected(int road1_id, int road2_id, int *&connecting_road_id, int *&connecting_lane_id, int lane1_id = 0, int lane2_id = 0)
+            const;
 
         /**
                 Add any missing connections so that road connectivity is two-ways
@@ -2597,7 +2604,7 @@ namespace roadmanager
         static std::string ElementType2Str(RoadLink::ElementType type);
         static std::string LinkType2Str(LinkType link_type);
 
-        int GetNumberOfControllers()
+        int GetNumberOfControllers() const
         {
             return (int)controller_.size();
         }
@@ -2609,7 +2616,7 @@ namespace roadmanager
         }
 
         GeoReference *GetGeoReference();
-        std::string   GetGeoReferenceAsString();
+        std::string   GetGeoReferenceAsString() const;
         void          ParseGeoLocalization(const std::string &geoLocalization);
 
         bool LoadSignalsByCountry(const std::string &country);
@@ -2622,21 +2629,21 @@ namespace roadmanager
                 Get first specified speed unit (in road type elements). MS is default.
                 @return 0=Undefined, 1=km/h 2=m/s, 3=mph
         */
-        SpeedUnit GetSpeedUnit()
+        SpeedUnit GetSpeedUnit() const
         {
             return speed_unit_;
         }
 
-        int GetVersionMajor()
+        int GetVersionMajor() const
         {
             return versionMajor_;
         }
-        int GetVersionMinor()
+        int GetVersionMinor() const
         {
             return versionMinor_;
         }
 
-        void Print();
+        void Print() const;
 
     private:
         pugi::xml_node                     root_node_;
@@ -2707,6 +2714,31 @@ namespace roadmanager
     class Route;
     class RMTrajectory;
 
+    typedef enum
+    {
+        INTERPOLATE_HEADING = 0x1,
+        INTERPOLATE_PITCH   = 0x2,
+        INTERPOLATE_ROLL    = 0x4
+    } InterpolationComponent;
+
+    struct TrajVertex
+    {
+        double s           = 0;
+        double x           = 0;
+        double y           = 0;
+        double z           = 0;
+        double h           = 0;
+        double pitch       = 0;
+        double r           = 0;
+        int    road_id     = -1;  // -1 indicates no valid road position. Use X, Y instead.
+        double time        = 0;
+        double speed       = 0;  // speed at vertex point/start of segment
+        double acc         = 0;  // acceleration along the segment
+        double param       = 0;
+        int    pos_mode    = 0;  // resolved alignment bitmask after calculation, see Position::PosMode enum
+        int    interpolate = 0;  // interpolation bitmask, see InterpolateComponent enum
+    };
+
     class ROADMANAGER_API Position
     {
     public:
@@ -2770,12 +2802,51 @@ namespace roadmanager
             POS_STATUS_END_OF_ROUTE = (1 << 1)
         };
 
+        // Modes for interpret Z, Head, Pitch, Roll coordinate value as absolute or relative
+        // grouped as bitmask: 0000 => skip/use current, 0001=DEFAULT, 0011=ABS, 0111=REL
+        // example: Relative Z, Absolute H, Default R, Current P = Z_REL | H_ABS | R_DEF = 4151 = 0001 0000 0011 0111
         typedef enum
         {
-            ALIGN_NONE = 0,  // No alignment to road
-            ALIGN_SOFT = 1,  // Align to road but add relative orientation
-            ALIGN_HARD = 2   // Completely align to road, disregard relative orientation
-        } ALIGN_MODE;
+            Z_SET  = 1,   // 0001
+            Z_DEF  = 1,   // 0001
+            Z_ABS  = 3,   // 0011
+            Z_REL  = 7,   // 0111
+            Z_MASK = 15,  // 1111
+            H_SET  = Z_SET << 4,
+            H_DEF  = Z_DEF << 4,
+            H_ABS  = Z_ABS << 4,
+            H_REL  = Z_REL << 4,
+            H_MASK = Z_MASK << 4,
+            P_SET  = Z_SET << 8,
+            P_DEF  = Z_DEF << 8,
+            P_ABS  = Z_ABS << 8,
+            P_REL  = Z_REL << 8,
+            P_MASK = Z_MASK << 8,
+            R_SET  = Z_SET << 12,
+            R_DEF  = Z_DEF << 12,
+            R_ABS  = Z_ABS << 12,
+            R_REL  = Z_REL << 12,
+            R_MASK = Z_MASK << 12,
+        } PosMode;
+
+        // Types of position modes
+        enum class PosModeType
+        {
+            SET    = 0,  // Used by explicit set functions
+            UPDATE = 1,  // Used by controllers updating the position
+            INIT   = 2   // Indicate mode at initialization, i.e. what components were set (ABS) and not (REL)
+        };
+
+        bool CheckBitsEqual(int input, int mask, int bits) const
+        {
+            return (input & mask) == (bits & mask);
+        }
+
+        enum class DirectionMode
+        {
+            ALONG_S,
+            ALONG_LANE
+        };
 
         explicit Position();
         explicit Position(int track_id, double s, double t);
@@ -2791,47 +2862,110 @@ namespace roadmanager
         int               GotoClosestDrivingLaneAtCurrentPosition();
 
         /**
-        Specify position by track coordinate (road_id, s, t)
+        Specify position by track coordinate (road_id, s, t) using current UPDATE mode
         @param track_id Id of the road (track)
         @param s Distance to the position along and from the start of the road (track)
         @param updateXY update world coordinates x, y... as well - or not
         @return Non zero return value indicates error of some kind
         */
         ReturnCode SetTrackPos(int track_id, double s, double t, bool UpdateXY = true);
-        void       ForceLaneId(int lane_id);
-        ReturnCode SetLanePos(int track_id, int lane_id, double s, double offset, int lane_section_idx = -1);
-        void       SetLaneBoundaryPos(int track_id, int lane_id, double s, double offset, int lane_section_idx = -1);
-        void       SetRoadMarkPos(int    track_id,
-                                  int    lane_id,
-                                  int    roadmark_idx,
-                                  int    roadmarktype_idx,
-                                  int    roadmarkline_idx,
-                                  double s,
-                                  double offset,
-                                  int    lane_section_idx = -1);
 
         /**
-        Specify position by cartesian x, y, z and heading, pitch, roll
+        Specify position by lane coordinate (road_id, s, t) with specified mode
+        @param track_id Id of the road (track)
+        @param s Distance to the position along and from the start of the road (track)
+        @param mode Bitmask combining values from roadmanager::PosMode enum
+        example: To set relative z and absolute roll: (Z_REL | R_ABS) or (7 | 12288) = (7 + 12288) = 12295
+        @param updateXY update world coordinates x, y... as well - or not
+        @return Non zero return value indicates error of some kind
+        */
+        ReturnCode SetTrackPosMode(int track_id, double s, double t, int mode, bool UpdateXY = true);
+        void       ForceLaneId(int lane_id);
+
+        /**
+        Specify position by lane coordinate (road_id, lane_id, s, lane offset) using current UPDATE mode
+        @param track_id Id of the road (track)
+        @param lane_id Id of the lane
+        @param s Distance to the position along and from the start of the road (track)
+        @param offset Lateral distance from lane center
+        @param lane_section_idx Optional index of lane section to start search from
+        @return Non zero return value indicates error of some kind
+        */
+        ReturnCode SetLanePos(int track_id, int lane_id, double s, double offset, int lane_section_idx = -1);
+
+        /**
+        Specify position by lane coordinate (road_id, lane_id, s, lane offset) with specified mode
+        @param track_id Id of the road (track)
+        @param lane_id Id of the lane
+        @param s Distance to the position along and from the start of the road (track)
+        @param offset Lateral distance from lane center
+        @param mode Bitmask combining values from roadmanager::PosMode enum
+        example: To set relative z and absolute roll: (Z_REL | R_ABS) or (7 | 12288) = (7 + 12288) = 12295
+        @param lane_section_idx Optional index of lane section to start search from
+        @return Non zero return value indicates error of some kind
+        */
+        ReturnCode SetLanePosMode(int track_id, int lane_id, double s, double offset, int mode, int lane_section_idx = -1);
+
+        void SetLaneBoundaryPos(int track_id, int lane_id, double s, double offset, int lane_section_idx = -1);
+        void SetRoadMarkPos(int    track_id,
+                            int    lane_id,
+                            int    roadmark_idx,
+                            int    roadmarktype_idx,
+                            int    roadmarkline_idx,
+                            double s,
+                            double offset,
+                            int    lane_section_idx = -1);
+
+        /**
+        Specify position by cartesian x, y, z and heading, pitch, roll using current SET mode
         @param x x
         @param y y
-        @param z z (if std::nan("") it will be aligned to road)
+        @param z z (if std::nan("") it will be ignored/no change)
         @param h heading
-        @param p pitch (if std::nan("") it will be aligned to road)
-        @param r roll (if std::nan("") it will be aligned to road)
+        @param p pitch (if std::nan("") it will be ignored/no change)
+        @param r roll (if std::nan("") it will be ignored/no change)
         @param updateTrackPos True: road position will be calculated False: don't update road position
         @return Non zero return value indicates error of some kind
         */
         int SetInertiaPos(double x, double y, double z, double h, double p, double r, bool updateTrackPos = true);
 
         /**
-        Specify position by cartesian x, y and heading. z, pitch and roll will be aligned to road.
+        Specify position by cartesian x, y, z and heading, pitch, roll using specified mode
+        @param x x
+        @param y y
+        @param z z (if std::nan("") it will be aligned to road)
+        @param h heading
+        @param p pitch (if std::nan("") it will be ignored/no change)
+        @param r roll (if std::nan("") it will be ignored/no change)
+        @param mode Bitmask combining values from roadmanager::PosMode enum
+        example: To set relative z and absolute roll: (Z_REL | R_ABS) or (7 | 12288) = (7 + 12288) = 12295
+        @param updateTrackPos True: road position will be calculated False: don't update road position
+        @return Non zero return value indicates error of some kind
+        */
+        int SetInertiaPosMode(double x, double y, double z, double h, double p, double r, int mode, bool updateTrackPos = true);
+
+        /**
+        Specify position by cartesian x, y and heading using current SET mode for heading and UPDATE mode for pitch and roll
         @param x x
         @param y y
         @param h heading
         @param updateTrackPos True: road position will be calculated False: don't update road position
         @return Non zero return value indicates error of some kind
         */
-        int  SetInertiaPos(double x, double y, double h, bool updateTrackPos = true);
+        int SetInertiaPos(double x, double y, double h, bool updateTrackPos = true);
+
+        /**
+        Specify position by cartesian x, y and heading. Z, pitch and roll will be set to zero.
+        Heading, Z, pitch and roll will be aligned to road according to specified mode.
+        @param x x
+        @param y y
+        @param h heading
+        @param mode Bitmask combining values from roadmanager::PosMode enum
+        example: To set relative z and absolute roll: (Z_REL | R_ABS) or (7 | 12288) = (7 + 12288) = 12295
+        @param updateTrackPos True: road position will be calculated False: don't update road position
+        @return Non zero return value indicates error of some kind
+        */
+        int  SetInertiaPosMode(double x, double y, double h, int mode, bool updateTrackPos = true);
         void SetHeading(double heading);
         void SetHeadingRelative(double heading);
         void SetHeadingRelativeRoadDirection(double heading);
@@ -2843,9 +2977,16 @@ namespace roadmanager
         void SetZRelative(double z);
 
         /**
-
+        Call this to resolve orientation alignment wrt road
+        @param mode Bitmask combining values from roadmanager::PosMode enum
+        example: To set relative z and absolute roll: (Z_REL | R_ABS) or (7 | 12288) = (7 + 12288) = 12295
         */
-        void EvaluateOrientation();
+        void EvaluateZHPR(int align_mode_mask);
+
+        /**
+        Call this to resolve orientation alignment wrt road, using current SET mode
+        */
+        void EvaluateZHPR();
 
         /**
         Specify position by cartesian coordinate (x, y, z, h)
@@ -2853,12 +2994,12 @@ namespace roadmanager
         @param y Y-coordinate
         @param z Z-coordinate
         @param h Heading
-        @param conenctedOnly If true only roads that can be reached from current position will be considered, if false all roads will be considered
+        @param connectedOnly If true only roads that can be reached from current position will be considered, if false all roads will be considered
         @param roadId If != -1 only this road will be considered else all roads will be searched
         @param check_overlapping_roads If true all roads ovlerapping the position will be registered (with some performance penalty)
         @return Non zero return value indicates error of some kind
         */
-        ReturnCode XYZH2TrackPos(double x, double y, double z, double h, bool connectedOnly = false, int roadId = -1, bool check_overlapping_roads = false, int hintRoad = -1);
+        ReturnCode XYZ2TrackPos(double x, double y, double z, bool connectedOnly = false, int roadId = -1, bool check_overlapping_roads = false, int hintRoad = -1);
 
         int TeleportTo(Position *pos);
 
@@ -2870,7 +3011,7 @@ namespace roadmanager
             type_    = type;
         }
 
-        Position *GetRelativePosition()
+        Position *GetRelativePosition() const
         {
             return rel_pos_;
         }
@@ -2905,7 +3046,7 @@ namespace roadmanager
         Retrieve the S-value of the current route position. Note: This is the S along the
         complete route, not the actual individual roads.
         */
-        double GetRouteS();
+        double GetRouteS() const;
         /**
         Move current position forward, or backwards, ds meters along the route
         @param ds Distance to move, negative will move backwards
@@ -2947,7 +3088,7 @@ namespace roadmanager
         /**
         Retrieve the S-value of the current trajectory position
         */
-        double GetTrajectoryS()
+        double GetTrajectoryS() const
         {
             return s_trajectory_;
         }
@@ -2965,7 +3106,7 @@ namespace roadmanager
         /**
         Retrieve the T-value of the current trajectory position
         */
-        double GetTrajectoryT()
+        double GetTrajectoryT() const
         {
             return t_trajectory_;
         }
@@ -3006,7 +3147,7 @@ namespace roadmanager
         @param dist Distance (output parameter)
         @return 0 if position found and parameter values are valid, else -1
         */
-        int Distance(Position *pos_b, CoordinateSystem cs, RelativeDistanceType relDistType, double &dist, double maxDist = LARGE_NUMBER);
+        int Distance(Position *pos_b, CoordinateSystem cs, RelativeDistanceType relDistType, double &dist, double maxDist = LARGE_NUMBER) const;
 
         /**
         Find out the distance, on specified system and type, to a world x, y position
@@ -3015,7 +3156,7 @@ namespace roadmanager
         @param dist Distance (output parameter)
         @return 0 if position found and parameter values are valid, else -1
         */
-        int Distance(double x, double y, CoordinateSystem cs, RelativeDistanceType relDistType, double &dist, double maxDist = LARGE_NUMBER);
+        int Distance(double x, double y, CoordinateSystem cs, RelativeDistanceType relDistType, double &dist, double maxDist = LARGE_NUMBER) const;
 
         /**
         Is the current position ahead of the one specified in argument
@@ -3023,7 +3164,7 @@ namespace roadmanager
         @param target_position The position to compare the current to.
         @return true of false
         */
-        bool IsAheadOf(Position target_position);
+        bool IsAheadOf(Position target_position) const;
 
         /**
         Get information suitable for driver modeling of a point at a specified distance from object along the road ahead
@@ -3033,7 +3174,7 @@ namespace roadmanager
         enum
         @return 0 if successful, other codes see Position::ErrorCode
         */
-        ReturnCode GetProbeInfo(double lookahead_distance, RoadProbeInfo *data, LookAheadMode lookAheadMode);
+        ReturnCode GetProbeInfo(double lookahead_distance, RoadProbeInfo *data, LookAheadMode lookAheadMode) const;
 
         /**
         Get information suitable for driver modeling of a point at a specified distance from object along the road ahead
@@ -3041,7 +3182,7 @@ namespace roadmanager
         @param data Struct to fill in calculated values, see typdef for details
         @return 0 if successful, other codes see Position::ErrorCode
         */
-        ReturnCode GetProbeInfo(Position *target_pos, RoadProbeInfo *data);
+        ReturnCode GetProbeInfo(Position *target_pos, RoadProbeInfo *data) const;
 
         /**
         Get information of current lane at a specified distance from object along the road ahead
@@ -3051,8 +3192,8 @@ namespace roadmanager
         enum
         @return 0 if successful, -1 if not
         */
-        int GetRoadLaneInfo(double lookahead_distance, RoadLaneInfo *data, LookAheadMode lookAheadMode);
-        int GetRoadLaneInfo(RoadLaneInfo *data);
+        int GetRoadLaneInfo(double lookahead_distance, RoadLaneInfo *data, LookAheadMode lookAheadMode) const;
+        int GetRoadLaneInfo(RoadLaneInfo *data) const;
 
         /**
         Get information of current lane at a specified distance from object along the road ahead
@@ -3060,7 +3201,7 @@ namespace roadmanager
         @param data Struct to fill in calculated values, see typdef for details
         @return 0 if successful, -1 if not
         */
-        int CalcProbeTarget(Position *target, RoadProbeInfo *data);
+        int CalcProbeTarget(Position *target, RoadProbeInfo *data) const;
 
         double DistanceToDS(double ds);
 
@@ -3109,7 +3250,7 @@ namespace roadmanager
         Retrieve the global lane ID from the position object
         @return lane ID
         */
-        int GetLaneGlobalId();
+        int GetLaneGlobalId() const;
 		/**
 		Retrieve the road from the position object
 		@return road
@@ -3144,7 +3285,7 @@ namespace roadmanager
         /**
         Retrieve the offset from current lane
         */
-        double GetOffset();
+        double GetOffset() const;
 
         /**
         Retrieve the world coordinate X-value
@@ -3271,12 +3412,17 @@ namespace roadmanager
         /**
         Retrieve the road curvature at current position
         */
-        double GetCurvature();
+        double GetCurvature() const;
 
         /**
         Retrieve the speed limit at current position
         */
-        double GetSpeedLimit();
+        double GetSpeedLimit() const;
+
+        /**
+        Retrieve the road heading at current position
+        */
+        double GetRoadH() const;
 
         /**
         Retrieve the road heading/direction at current position, and in the direction given by current lane
@@ -3347,15 +3493,15 @@ namespace roadmanager
         {
             h_acc_ = h_acc, p_acc_ = p_acc, r_acc_ = r_acc;
         }
-        double GetVelX()
+        double GetVelX() const
         {
             return velX_;
         }
-        double GetVelY()
+        double GetVelY() const
         {
             return velY_;
         }
-        double GetVelZ()
+        double GetVelZ() const
         {
             return velZ_;
         }
@@ -3363,12 +3509,12 @@ namespace roadmanager
         /**
         Get lateral component of velocity in vehicle local coordinate system
         */
-        double GetVelLat();
+        double GetVelLat() const;
 
         /**
         Get longitudinal component of velocity in vehicle local coordinate system
         */
-        double GetVelLong();
+        double GetVelLong() const;
 
         /**
         Get lateral and longitudinal component of velocity in vehicle local coordinate system
@@ -3377,17 +3523,17 @@ namespace roadmanager
         @param vlong reference parameter returning longitudinal velocity
         @return -
         */
-        void GetVelLatLong(double &vlat, double &vlong);
+        void GetVelLatLong(double &vlat, double &vlong) const;
 
         /**
         Get lateral component of acceleration in vehicle local coordinate system
         */
-        double GetAccLat();
+        double GetAccLat() const;
 
         /**
         Get longitudinal component of acceleration in vehicle local coordinate system
         */
-        double GetAccLong();
+        double GetAccLong() const;
 
         /**
         Get lateral and longitudinal component of acceleration in vehicle local coordinate system
@@ -3396,17 +3542,17 @@ namespace roadmanager
         @param along reference parameter returning longitudinal acceleration
         @return -
         */
-        void GetAccLatLong(double &alat, double &along);
+        void GetAccLatLong(double &alat, double &along) const;
 
         /**
         Get lateral component of velocity in road coordinate system
         */
-        double GetVelT();
+        double GetVelT() const;
 
         /**
         Get longitudinal component of velocity in road coordinate system
         */
-        double GetVelS();
+        double GetVelS() const;
 
         /**
         Get lateral and longitudinal component of velocity in road coordinate system
@@ -3415,22 +3561,22 @@ namespace roadmanager
         @param vs reference parameter returning longitudinal velocity
         @return -
         */
-        void GetVelTS(double &vt, double &vs);
+        void GetVelTS(double &vt, double &vs) const;
 
         /**
         Get lateral component of acceleration in road coordinate system
         */
-        double GetAccT();
+        double GetAccT() const;
 
         /**
         Get longitudinal component of acceleration in road coordinate system
         */
-        double GetAccS();
+        double GetAccS() const;
 
         /**
         Get magnitude of acceleration. Sign indicating direction, accelerating (+) or decelerating (-)
         */
-        double GetAcc();
+        double GetAcc() const;
 
         /**
         Get lateral and longitudinal component of acceleration in road coordinate system
@@ -3439,46 +3585,46 @@ namespace roadmanager
         @param as reference parameter returning longitudinal acceleration
         @return -
         */
-        void GetAccTS(double &at, double &as);
+        void GetAccTS(double &at, double &as) const;
 
-        double GetAccX()
+        double GetAccX() const
         {
             return accX_;
         }
-        double GetAccY()
+        double GetAccY() const
         {
             return accY_;
         }
-        double GetAccZ()
+        double GetAccZ() const
         {
             return accZ_;
         }
-        double GetHRate()
+        double GetHRate() const
         {
             return h_rate_;
         }
-        double GetPRate()
+        double GetPRate() const
         {
             return p_rate_;
         }
-        double GetRRate()
+        double GetRRate() const
         {
             return r_rate_;
         }
-        double GetHAcc()
+        double GetHAcc() const
         {
             return h_acc_;
         }
-        double GetPAcc()
+        double GetPAcc() const
         {
             return p_acc_;
         }
-        double GetRAcc()
+        double GetRAcc() const
         {
             return r_acc_;
         }
 
-        int GetStatusBitMask()
+        int GetStatusBitMask() const
         {
             return status_;
         }
@@ -3487,47 +3633,57 @@ namespace roadmanager
         {
             orientation_type_ = type;
         }
-        OrientationType GetOrientationType()
+
+        OrientationType GetOrientationType() const
         {
             return orientation_type_;
         }
-        void SetAlignModeH(ALIGN_MODE mode)
+
+        /**
+        Set default road alignment for object
+        @param type 0=Set (for all explicit set-functions), 1=Update (when object is updated by any controller)
+        */
+        void SetModeDefault(PosModeType type)
         {
-            align_h_ = mode;
-        }
-        void SetAlignModeP(ALIGN_MODE mode)
-        {
-            align_p_ = mode;
-        }
-        void SetAlignModeR(ALIGN_MODE mode)
-        {
-            align_r_ = mode;
-        }
-        void SetAlignModeZ(ALIGN_MODE mode)
-        {
-            align_z_ = mode;
-        }
-        void SetAlignMode(ALIGN_MODE mode)
-        {
-            align_h_ = align_p_ = align_r_ = align_z_ = mode;
+            SetMode(type, GetModeDefault(type));
         }
 
-        ALIGN_MODE GetAlignModeH()
+        /**
+        Get default road alignment for object
+        @param type 0=Set (for all explicit set-functions), 1=Update (when object is updated by any controller)
+        */
+        static const int GetModeDefault(PosModeType type)
         {
-            return align_h_;
+            if (type == PosModeType::SET)
+            {
+                return PosMode::Z_REL | PosMode::H_ABS | PosMode::P_REL | PosMode::R_REL;
+            }
+            else if (type == PosModeType::UPDATE)
+            {
+                return PosMode::Z_REL | PosMode::H_REL | PosMode::P_REL | PosMode::R_REL;
+            }
+            else if (type == PosModeType::INIT)
+            {
+                return PosMode::Z_REL | PosMode::H_ABS | PosMode::P_REL | PosMode::R_REL;
+            }
+            else
+            {
+                LOG("Unexpected position mode type: %d", type);
+                return 0;
+            }
         }
-        ALIGN_MODE GetAlignModeP()
-        {
-            return align_p_;
-        }
-        ALIGN_MODE GetAlignModeR()
-        {
-            return align_r_;
-        }
-        ALIGN_MODE GetAlignModeZ()
-        {
-            return align_z_;
-        }
+
+        /**
+        Specify if and how position object will align to the road. This version
+        sets same mode for all components: Heading, Pitch, Roll and Z (elevation)
+        @param id Id of the object
+        @param mode Bitmask combining values from roadmanager::PosMode enum
+        example: To set relative z and absolute roll: (Z_REL | R_ABS) or (7 | 12288) = (7 + 12288) = 12295
+        @param type 0=Set (for all explicit set-functions), 1=Update (when object is updated by any controller)
+        */
+        void SetMode(PosModeType type, int mode);
+
+        int GetMode(PosModeType type);
 
         /**
         Specify which lane types the position object snaps to (is aware of)
@@ -3539,22 +3695,22 @@ namespace roadmanager
             snapToLaneTypes_ = laneTypeMask;
         }
 
-        int GetSnapLaneTypes()
+        int GetSnapLaneTypes() const
         {
             return snapToLaneTypes_;
         }
 
         void CopyRMPos(Position *from);
 
-        void PrintTrackPos();
-        void PrintLanePos();
-        void PrintInertialPos();
+        void PrintTrackPos() const;
+        void PrintLanePos() const;
+        void PrintInertialPos() const;
 
-        void Print();
-        void PrintXY();
+        void Print() const;
+        void PrintXY() const;
 
-        bool IsOffRoad();
-        bool IsInJunction();
+        bool IsOffRoad() const;
+        bool IsInJunction() const;
 
         /**
         Get the number of roads overlapping the position
@@ -3567,7 +3723,7 @@ namespace roadmanager
         @parameter index Index of the total returned by GetNumberOfRoadsOverlapping()
         @return Id of specified overlapping road
         */
-        int GetOverlappingRoadId(int index);
+        int GetOverlappingRoadId(int index) const;
 
         void ReplaceObjectRefs(Position *pos1, Position *pos2)
         {
@@ -3586,40 +3742,23 @@ namespace roadmanager
             lockOnLane_ = mode;
         }
 
-        int GetOrientationSetMask()
-        {
-            return orientationSetMask;
-        }
-        bool IsOrientationTypeSet(OrientationSetMask bit)
-        {
-            return static_cast<int>(bit) & orientationSetMask;
-        }
-        void SetOrientationTypeSetBitmask(int mask)
-        {
-            orientationSetMask = mask;
-        }
-        void SetOrientationTypeSetBit(OrientationSetMask bit, bool value)
-        {
-            orientationSetMask = (orientationSetMask & ~static_cast<int>(bit)) | static_cast<int>(value);
-        }
-
-        void SetZSet(bool value)
-        {
-            zSet = value;
-        }
-
-        bool GetZSet()
-        {
-            return zSet;
-        }
-
-        RouteStrategy GetRouteStrategy()
+        RouteStrategy GetRouteStrategy() const
         {
             return routeStrategy_;
         }
         void SetRouteStrategy(RouteStrategy rs)
         {
             routeStrategy_ = rs;
+        }
+
+        void SetDirectionMode(DirectionMode direction_mode)
+        {
+            direction_mode_ = direction_mode;
+        }
+
+        DirectionMode GetDirectionMode() const
+        {
+            return direction_mode_;
         }
 
     protected:
@@ -3633,7 +3772,14 @@ namespace roadmanager
         void       LaneBoundary2Track();
         void       XYZ2Track();
         ReturnCode SetLongitudinalTrackPos(int track_id, double s);
-        bool       EvaluateRoadZPitchRoll();
+        bool       EvaluateRoadZHPR();
+
+        /**
+        Update trajectory position
+        @param v Trajectory vertex
+        @return Non zero return value indicates error of some kind
+        */
+        int UpdateTrajectoryPos(TrajVertex v);
 
         // Control lane belonging
         bool lockOnLane_;  // if true then keep logical lane regardless of lateral position, default false
@@ -3645,27 +3791,28 @@ namespace roadmanager
         RMTrajectory *trajectory_;  // if pointer set, the position corresponds to a point along (s) the trajectory
 
         // track reference
-        int        track_id_;
-        double     s_;             // longitudinal point/distance along the track
-        double     t_;             // lateral position relative reference line (geometry)
-        int        lane_id_;       // lane reference
-        double     offset_;        // lateral position relative lane given by lane_id
-        double     h_road_;        // heading of the road
-        double     h_offset_;      // local heading offset given by lane width and offset
-        double     h_relative_;    // heading relative to the road (h_ = h_road_ + h_relative_)
-        double     z_relative_;    // z relative to the road
-        double     s_trajectory_;  // longitudinal point/distance along the trajectory
-        double     t_trajectory_;  // longitudinal point/distance along the trajectory
-        double     curvature_;
-        double     p_relative_;  // pitch relative to the road (h_ = h_road_ + h_relative_)
-        double     r_relative_;  // roll relative to the road (h_ = h_road_ + h_relative_)
-        ALIGN_MODE align_h_;     // Align to road: None, Soft or Hard
-        ALIGN_MODE align_p_;     // Align to road: None, Soft or Hard
-        ALIGN_MODE align_r_;     // Align to road: None, Soft or Hard
-        ALIGN_MODE align_z_;     // Align elevation (Z) to road: None, Soft or Hard
+        int    track_id_;
+        double s_;             // longitudinal point/distance along the track
+        double t_;             // lateral position relative reference line (geometry)
+        int    lane_id_;       // lane reference
+        double offset_;        // lateral position relative lane given by lane_id
+        double h_road_;        // heading of the road
+        double h_offset_;      // local heading offset given by lane width and offset
+        double h_relative_;    // heading relative to the road (h_ = h_road_ + h_relative_)
+        double z_relative_;    // z relative to the road
+        double s_trajectory_;  // longitudinal point/distance along the trajectory
+        double t_trajectory_;  // longitudinal point/distance along the trajectory
+        double curvature_;
+        double p_relative_;   // pitch relative to the road (h_ = h_road_ + h_relative_)
+        double r_relative_;   // roll relative to the road (h_ = h_road_ + h_relative_)
+        int    mode_update_;  // bitmask controlling alignment to road surface and orientation, update operations. See PositionMode enum.
+        int    mode_set_;     // bitmask controlling alignment to road surface and orientation, set operations. See PositionMode enum.
+        int    mode_init_;    // bitmask controlling alignment to road surface and orientation, initialization. See PositionMode enum.
 
-        Position       *rel_pos_;
-        PositionType    type_;
+        Position     *rel_pos_;
+        PositionType  type_;
+        DirectionMode direction_mode_;
+
         OrientationType orientation_type_;  // Applicable for relative positions
         int             snapToLaneTypes_;   // Bitmask of lane types that the position will snap to
         int             status_;            // Bitmask of various states, e.g. off_road, end_of_road
@@ -3711,8 +3858,8 @@ namespace roadmanager
         // RouteStrategy for a position, used for waypoints
         RouteStrategy routeStrategy_ = RouteStrategy::SHORTEST;
 
-        // Store roads overlapping position, updated by XYZH2TrackPos()
-        std::vector<int> overlapping_roads;  // road ids overlapping position evaluated by XYZH2TrackPos()
+        // Store roads overlapping position, updated by XYZ2TrackPos()
+        std::vector<int> overlapping_roads;  // road ids overlapping position evaluated by XYZ2TrackPos()
 
         int  orientationSetMask;  // use values from OrientationSetMask
         bool zSet;                // indicates whether z was explicitly set
@@ -3735,37 +3882,37 @@ namespace roadmanager
         int GetWayPointDirection(int index);
 
         void        setName(std::string name);
-        std::string getName();
-        double      GetLength()
+        std::string getName() const;
+        double      GetLength() const
         {
             return length_;
         }
         void CheckValid();
-        bool IsValid()
+        bool IsValid() const
         {
             return !invalid_route_;
         }
 
         // Current route position data
         // Actual object position might differ, e.g. laneId or even trackId in junctions
-        double GetTrackS()
+        double GetTrackS() const
         {
             return currentPos_.GetS();
         }
-        double GetPathS()
+        double GetPathS() const
         {
             return path_s_;
         }
-        int GetLaneId()
+        int GetLaneId() const
         {
             return currentPos_.GetLaneId();
         }
-        int GetTrackId()
+        int GetTrackId() const
         {
             return currentPos_.GetTrackId();
         }
         Position *GetWaypoint(int index = -1);  // -1 means current
-        Road     *GetRoadAtOtherEndOfConnectingRoad(Road *incoming_road);
+        Road     *GetRoadAtOtherEndOfConnectingRoad(Road *incoming_road) const;
         Position *GetCurrentPosition()
         {
             return &currentPos_;
@@ -3853,50 +4000,18 @@ namespace roadmanager
         bool CheckRoad(Road *checkRoad, RoadPath::PathNode *srcNode, Road *fromRoad, int fromLaneId);
     };
 
-    struct TrajVertex
-    {
-        double s           = 0;
-        double x           = 0;
-        double y           = 0;
-        double z           = 0;
-        double h           = 0;
-        double time        = 0;
-        double speed       = 0;  // speed at vertex point/start of segment
-        double acc         = 0;  // acceleration along the segment
-        double p           = 0;
-        bool   calcHeading = 0;
-    };
-
     class PolyLineBase
     {
     public:
-        PolyLineBase() : length_(0), current_index_(0), current_s_(0.0), interpolateHeading_(false)
+        PolyLineBase() : length_(0), current_index_(0), current_s_(0.0)
         {
         }
-        TrajVertex *AddVertex(TrajVertex p);
-        TrajVertex *AddVertex(double x, double y, double z, double h);
-        TrajVertex *AddVertex(double x, double y, double z);
 
         /**
-         * Update vertex position and recalculate dependent values, e.g. length and heading
-         * NOTE: Need to be called in order, starting from i=0
-         * @param i Index of vertex to update
-         * @param x X coordinate of new position
-         * @param y Y coordinate of new position
-         * @param z Z coordinate of new position
-         * @param h Heading
+         * Add vertex
+         * @param v Vertex to add. Set s=std::nan("") to have s value automatically calculated.
          */
-        TrajVertex *UpdateVertex(int i, double x, double y, double z, double h);
-
-        /**
-         * Update vertex position and recalculate dependent values, e.g. length and heading
-         * NOTE: Need to be called in order, starting from i=0
-         * @param i Index of vertex to update
-         * @param x X coordinate of new position
-         * @param y Y coordinate of new position
-         * @param z Z coordinate of new position
-         */
-        TrajVertex *UpdateVertex(int i, double x, double y, double z);
+        void AddVertex(TrajVertex v);
 
         void reset()
         {
@@ -3927,20 +4042,19 @@ namespace roadmanager
          */
         int FindPointAtTimeRelative(double time, TrajVertex &pos, int &index, int startAtIndex = 0);
 
-        int GetNumberOfVertices()
+        int GetNumberOfVertices() const
         {
             return (int)vertex_.size();
         }
         TrajVertex *GetVertex(int index);
         TrajVertex *GetCurrentVertex();
-        void        Reset();
+        void        Reset(bool clear_vertices);
         int         Time2S(double time, double &s);
 
         std::vector<TrajVertex> vertex_;
         int                     current_index_;
         double                  current_s_;
         double                  length_;
-        bool                    interpolateHeading_;
 
     protected:
         int EvaluateSegmentByLocalS(int i, double local_s, double cornerRadius, TrajVertex &pos);
@@ -3954,6 +4068,7 @@ namespace roadmanager
         {
             POLYLINE,
             CLOTHOID,
+            CLOTHOID_SPLINE,
             NURBS,
             SHAPE_TYPE_UNDEFINED
         } ShapeType;
@@ -3972,6 +4087,10 @@ namespace roadmanager
         {
             return -1;
         };
+
+        virtual void CalculatePolyLine()
+        {
+        }
 
         /**
                 Find point on shape closest to provided point
@@ -3998,9 +4117,10 @@ namespace roadmanager
         {
             return 0.0;
         }
-        ShapeType type_;
-
-        PolyLineBase pline_;  // approximation of shape, used for calculations and visualization
+        ShapeType     type_;
+        FollowingMode following_mode_;
+        double        initial_speed_;
+        PolyLineBase  pline_;  // approximation of shape, used for calculations and visualization
     };
 
     class PolyLineShape : public Shape
@@ -4009,17 +4129,19 @@ namespace roadmanager
         class Vertex
         {
         public:
-            Vertex(const Position &pos) : pos_(pos)
+            Vertex(const Position &pos, double time) : pos_(pos), time_(time)
             {
             }
             Position pos_;
+            double   time_;
         };
 
         PolyLineShape() : Shape(ShapeType::POLYLINE)
         {
         }
-        void   AddVertex(Position pos, double time, bool calculateHeading);
+        void   AddVertex(Position pos, double time);
         int    Evaluate(double p, TrajectoryParamType ptype, TrajVertex &pos);
+        void   CalculatePolyLine() override;
         double GetLength()
         {
             return pline_.length_;
@@ -4037,7 +4159,7 @@ namespace roadmanager
 
         int    Evaluate(double p, TrajectoryParamType ptype, TrajVertex &pos);
         int    EvaluateInternal(double s, TrajVertex &pos);
-        void   CalculatePolyLine();
+        void   CalculatePolyLine() override;
         double GetLength()
         {
             return spiral_.GetLength();
@@ -4049,6 +4171,65 @@ namespace roadmanager
         roadmanager::Spiral spiral_;  // make use of the OpenDRIVE clothoid definition
         double              t_start_;
         double              t_end_;
+    };
+
+    class ClothoidSplineShape : public Shape
+    {
+    public:
+        class Segment
+        {
+        public:
+            Segment(Position *posStart, double curvStart, double curvEnd, double length, double h_offset, double time)
+                : curvStart_(curvStart),
+                  curvEnd_(curvEnd),
+                  length_(length),
+                  h_offset_(h_offset),
+                  time_(time)
+            {
+                if (posStart != nullptr)
+                {
+                    posStart_ = new Position(*posStart);
+                }
+                else
+                {
+                    posStart_ = nullptr;
+                }
+            }
+
+            Position *posStart_;
+            Position  posEnd_;
+            double    curvStart_;
+            double    curvEnd_;
+            double    length_;
+            double    h_offset_;
+            double    time_;
+        };
+
+        ClothoidSplineShape() : Shape(ShapeType::CLOTHOID_SPLINE)
+        {
+        }
+        ~ClothoidSplineShape();
+
+        void   AddSegment(Position *posStart, double curvStart, double curvEnd, double length, double h_offset, double time);
+        int    Evaluate(double p, TrajectoryParamType ptype, TrajVertex &pos);
+        int    EvaluateInternal(double s, int segment_idx, TrajVertex &pos);
+        void   CalculatePolyLine();
+        double GetLength()
+        {
+            return length_;
+        }
+        double GetStartTime();
+        double GetDuration();
+        void   Freeze(Position *ref_pos);
+        int    GetNumberOfSegments()
+        {
+            return static_cast<int>(segments_.size());
+        }
+
+    private:
+        std::vector<Segment>             segments_;
+        std::vector<roadmanager::Spiral> spirals_;  // make use of the OpenDRIVE clothoid definition
+        double                           length_ = 0.0;
     };
 
     /**
@@ -4064,36 +4245,30 @@ namespace roadmanager
             double   time_;
             double   weight_;
             double   t_;
-            bool     calcHeading_;
 
-            ControlPoint(Position pos, double time, double weight, bool calcHeading)
-                : pos_(pos),
-                  time_(time),
-                  weight_(weight),
-                  calcHeading_(calcHeading)
+            ControlPoint(Position pos, double time, double weight) : pos_(pos), time_(time), weight_(weight)
             {
             }
         };
 
     public:
-        NurbsShape(int order) : order_(order), Shape(ShapeType::NURBS), length_(0)
+        NurbsShape(unsigned int order) : order_(order), Shape(ShapeType::NURBS), length_(0)
         {
-            pline_.interpolateHeading_ = true;
         }
 
-        void AddControlPoint(Position pos, double time, double weight, bool calcHeading);
+        void AddControlPoint(Position pos, double time, double weight);
         void AddKnots(std::vector<double> knots);
         int  Evaluate(double p, TrajectoryParamType ptype, TrajVertex &pos);
         int  EvaluateInternal(double s, TrajVertex &pos);
 
-        int                       order_;
+        unsigned int              order_;
         std::vector<ControlPoint> ctrlPoint_;
         std::vector<double>       knot_;
         std::vector<double>       d_;           // used for temporary storage of CoxDeBoor weigthed control points
         std::vector<double>       dPeakT_;      // used for storage of at what t value the corresponding ctrlPoint contribution peaks
         std::vector<double>       dPeakValue_;  // used for storage of at what t value the corresponding ctrlPoint contribution peaks
 
-        void   CalculatePolyLine();
+        void   CalculatePolyLine() override;
         double GetLength()
         {
             return length_;
@@ -4118,7 +4293,7 @@ namespace roadmanager
         {
         }
 
-        void   Freeze(FollowingMode following_mode, double current_speed);
+        void   Freeze(FollowingMode following_mode, double current_speed, Position *ref_pos = nullptr);
         double GetLength()
         {
             return shape_ ? shape_->GetLength() : 0.0;

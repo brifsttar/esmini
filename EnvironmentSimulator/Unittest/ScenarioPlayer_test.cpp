@@ -30,9 +30,9 @@ TEST(CustomCameraTest, TestCustomCameraVariants)
 
     osg::Vec3 pos, rot;
     player->viewer_->GetCameraPosAndRot(pos, rot);
-    EXPECT_NEAR(pos[0], 125.200, 1E-3);
-    EXPECT_NEAR(pos[1], 12.626, 1E-3);
-    EXPECT_NEAR(pos[2], 2.987, 1E-3);
+    EXPECT_NEAR(pos[0], 125.153, 1E-3);
+    EXPECT_NEAR(pos[1], 12.595, 1E-3);
+    EXPECT_NEAR(pos[2], 2.937, 1E-3);
     EXPECT_NEAR(rot[0], 0.280, 1E-3);
     EXPECT_NEAR(rot[1], 0.227, 1E-3);
     EXPECT_NEAR(rot[2], 0.000, 1E-3);
@@ -74,9 +74,9 @@ TEST(CustomCameraTest, TestCustomCameraVariants)
     player->viewer_->SetCameraMode(osgGA::RubberbandManipulator::CAMERA_MODE::RB_MODE_CUSTOM + 0);
     player->Frame(0.0);
     player->viewer_->GetCameraPosAndRot(pos, rot);
-    EXPECT_NEAR(pos[0], 217.639, 1E-3);
-    EXPECT_NEAR(pos[1], 128.953, 1E-3);
-    EXPECT_NEAR(pos[2], 0.906, 1E-3);
+    EXPECT_NEAR(pos[0], 217.634, 1E-3);
+    EXPECT_NEAR(pos[1], 128.856, 1E-3);
+    EXPECT_NEAR(pos[2], 1.601, 1E-3);
     EXPECT_NEAR(rot[0], 1.487, 1E-3);
     EXPECT_NEAR(rot[1], 6.228, 1E-3);
     EXPECT_NEAR(rot[2], 0.000, 1E-3);
@@ -126,7 +126,9 @@ TEST(AlignmentTest, TestPositionAlignmentVariants)
     int retval = player->Init();
     ASSERT_EQ(retval, 0);
 
-    EXPECT_EQ(player->scenarioEngine->entities_.object_[0]->pos_.GetAlignModeZ(), roadmanager::Position::ALIGN_MODE::ALIGN_SOFT);
+    EXPECT_EQ(player->scenarioEngine->entities_.object_[0]->pos_.GetMode(roadmanager::Position::PosModeType::UPDATE) &
+                  roadmanager::Position::PosMode::Z_MASK,
+              roadmanager::Position::PosMode::Z_REL);
     EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetZ(), 0.0, 1E-3);
 
     player->scenarioGateway->updateObjectWorldPos(0, 0.0, 164.65, -4.63, 10.0, 6.14, 0.0, 0.0);
@@ -141,26 +143,54 @@ TEST(AlignmentTest, TestPositionAlignmentVariants)
     EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetZ(), 11.822, 1E-3);
 
     // Ignore road, no alignment
-    player->scenarioGateway->setObjectAlignModeZ(0, roadmanager::Position::ALIGN_MODE::ALIGN_NONE);
-    player->scenarioGateway->updateObjectWorldPos(0, 0.0, 221.381, -22.974, 5.0, 5.575, 0.0, 0.0);
+    EXPECT_EQ(player->scenarioEngine->entities_.object_[0]->pos_.GetMode(roadmanager::Position::PosModeType::UPDATE) &
+                  roadmanager::Position::PosMode::Z_MASK,
+              roadmanager::Position::PosMode::Z_REL);
+    // use default z mode = relative
+    player->scenarioGateway->updateObjectWorldPos(0, 0.0, 221.381, -22.974, 1.0, 5.575, 0.0, 0.0);
+    player->scenarioGateway->updateObjectSpeed(0, 0.0, 15.0);
+    player->Frame(0.1);
+    EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetX(), 221.381, 1E-3);
+    EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetY(), -22.974, 1E-3);
+    EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetZ(), 2.822, 1E-3);
+    EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetZ() - player->scenarioEngine->entities_.object_[0]->pos_.GetZRoad(), 1.0, 1E-3);
+    player->Frame(1.0);
+    // z should not have changed, same offset to road
+    EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetX(), 233.808, 1E-3);
+    EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetY(), -31.333, 1E-3);
+    EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetZ(), 4.741, 1E-3);
+    EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetZ() - player->scenarioEngine->entities_.object_[0]->pos_.GetZRoad(), 1.0, 1E-3);
+
+    // Update with z mode = absolute, ignore road
+    player->scenarioGateway->updateObjectWorldPosMode(0, 0.0, 221.381, -22.974, 5.0, 5.575, 0.0, 0.0, Position::PosMode::Z_ABS);
     player->scenarioGateway->updateObjectSpeed(0, 0.0, 15.0);
     player->Frame(0.1);
     EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetZ(), 5.0, 1E-3);
+    player->Frame(1.0);
+    // z should now have changed, due to underlying PositionMode = relative
+    EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetZ(), 6.919, 1E-3);
 
-    // Keep same relative height from road
-    player->scenarioGateway->setObjectAlignModeZ(0, roadmanager::Position::ALIGN_MODE::ALIGN_SOFT);
-    player->scenarioGateway->updateObjectWorldPos(0, 0.0, 221.381, -22.974, 3.0, 5.575, 0.0, 0.0);
+    // Ensure absolute update mode preserves z level
+    player->scenarioEngine->entities_.object_[0]->pos_.SetMode(roadmanager::Position::PosModeType::UPDATE, roadmanager::Position::PosMode::Z_ABS);
+    EXPECT_EQ(player->scenarioEngine->entities_.object_[0]->pos_.GetMode(roadmanager::Position::PosModeType::UPDATE) &
+                  roadmanager::Position::PosMode::Z_MASK,
+              roadmanager::Position::PosMode::Z_ABS);
+    player->Frame(0.0);
+    player->scenarioGateway->updateObjectWorldPosMode(0, 0.0, 221.381, -22.974, 3.0, 5.575, 0.0, 0.0, roadmanager::Position::PosMode::Z_ABS);
     player->scenarioGateway->updateObjectSpeed(0, 0.0, 15.0);
-    for (int i = 0; i < 2; i++)  // step twice to move
-    {
-        player->Frame(0.1);
-    }
-    EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetZ(), 3.184, 1E-3);
+    player->Frame(0.1);
+    EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetZ(), 3.0, 1E-3);
+    player->Frame(0.1);
+    EXPECT_NEAR(player->scenarioEngine->entities_.object_[0]->pos_.GetZ(), 3.0, 1E-3);
 
     // Align to road surface
-    player->scenarioGateway->setObjectAlignModeZ(0, roadmanager::Position::ALIGN_MODE::ALIGN_HARD);
-    player->scenarioGateway->updateObjectWorldPos(0, 0.0, 221.381, -22.974, 3.0, 5.575, 0.0, 0.0);
+    player->scenarioGateway->updateObjectWorldPosMode(0, 0.0, 221.381, -22.974, 0.0, 0.0, 0.0, 0.0, roadmanager::Position::PosMode::Z_REL);
+    player->scenarioGateway->setObjectPositionMode(0,
+
+                                                   static_cast<int>(roadmanager::Position::PosModeType::UPDATE),
+                                                   roadmanager::Position::PosMode::Z_REL);
     player->scenarioGateway->updateObjectSpeed(0, 0.0, 15.0);
+
     for (int i = 0; i < 2; i++)  // step twice to move
     {
         player->Frame(0.1);

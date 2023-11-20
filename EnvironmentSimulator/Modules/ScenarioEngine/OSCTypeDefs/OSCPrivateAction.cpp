@@ -278,12 +278,6 @@ void AssignRouteAction::Start(double simTime, double dt)
     object_->SetDirtyBits(Object::DirtyBit::ROUTE);
 
     OSCAction::Start(simTime, dt);
-
-    if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE && object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
-    {
-        // lateral motion controlled elsewhere
-        return;
-    }
 }
 
 void AssignRouteAction::Step(double simTime, double dt)
@@ -318,17 +312,11 @@ void FollowTrajectoryAction::Start(double simTime, double dt)
 
     reverse_ = (object_->GetSpeed() < 0.0);
 
-    traj_->Freeze(following_mode_, object_->GetSpeed());
+    traj_->Freeze(following_mode_, object_->GetSpeed(), &object_->pos_);
     object_->pos_.SetTrajectory(traj_.get());
 
     object_->pos_.SetTrajectoryS(initialDistanceOffset_);
     time_ = traj_->GetTimeAtS(initialDistanceOffset_);
-
-    // We want the trajectory to be projected on road surface.
-    object_->pos_.SetAlignMode(roadmanager::Position::ALIGN_MODE::ALIGN_HARD);
-
-    // But totally decouple trajectory positioning from road heading
-    object_->pos_.SetAlignModeH(roadmanager::Position::ALIGN_MODE::ALIGN_SOFT);
 }
 
 void FollowTrajectoryAction::End(double simTime)
@@ -342,9 +330,6 @@ void FollowTrajectoryAction::End(double simTime)
 
     // Disconnect trajectory
     object_->pos_.SetTrajectory(0);
-
-    // And reset align mode
-    object_->pos_.SetAlignMode(roadmanager::Position::ALIGN_MODE::ALIGN_SOFT);
 }
 
 void FollowTrajectoryAction::Step(double simTime, double dt)
@@ -428,7 +413,7 @@ void FollowTrajectoryAction::Step(double simTime, double dt)
     {
         // Reached end of trajectory
         // Calculate road coordinates from final inertia (X, Y) coordinates
-        object_->pos_.XYZH2TrackPos(object_->pos_.GetX(), object_->pos_.GetY(), object_->pos_.GetZ(), object_->pos_.GetH());
+        object_->pos_.XYZ2TrackPos(object_->pos_.GetX(), object_->pos_.GetY(), object_->pos_.GetZ());
 
         double remaningDistance = 0.0;
         if (timing_domain_ == TimingDomain::NONE && !traj_->closed_ && object_->pos_.GetTrajectoryS() > (traj_->GetLength() - SMALL_NUMBER))
@@ -447,7 +432,10 @@ void FollowTrajectoryAction::Step(double simTime, double dt)
         double dx = remaningDistance * cos(object_->pos_.GetH());
         double dy = remaningDistance * sin(object_->pos_.GetH());
 
-        object_->pos_.SetInertiaPos(object_->pos_.GetX() + dx, object_->pos_.GetY() + dy, object_->pos_.GetH());
+        object_->pos_.SetInertiaPosMode(object_->pos_.GetX() + dx,
+                                        object_->pos_.GetY() + dy,
+                                        object_->pos_.GetH(),
+                                        roadmanager::Position::GetModeDefault(roadmanager::Position::PosModeType::SET));
 
         End(simTime);
     }
@@ -531,17 +519,21 @@ void AssignControllerAction::Start(double simTime, double dt)
         {
             if (!object_->controller_->Active())
             {
-                if (domainMask_ != ControlDomains::DOMAIN_NONE)
+                if (lateral_ != Controller::DomainActivation::UNDEFINED || longitudinal_ != Controller::DomainActivation::UNDEFINED)
                 {
-                    object_->controller_->Activate(domainMask_);
-                    LOG("Controller %s activated, domain mask=0x%X", object_->controller_->GetName().c_str(), domainMask_);
+                    object_->controller_->Activate(lateral_, longitudinal_);
+                    LOG("Controller %s activated (lat %s, long %s), domain mask=0x%X",
+                        object_->controller_->GetName().c_str(),
+                        DomainActivation2Str(lateral_).c_str(),
+                        DomainActivation2Str(longitudinal_).c_str(),
+                        object_->controller_->GetDomain());
                 }
             }
             else
             {
                 LOG("Controller %s already active (domainmask 0x%X), should not happen when just assigned!",
                     object_->controller_->GetName().c_str(),
-                    domainMask_);
+                    object_->controller_->GetDomain());
             }
         }
     }
@@ -569,13 +561,20 @@ void LatLaneChangeAction::Start(double simTime, double dt)
     else if (target_->type_ == Target::Type::RELATIVE_LANE)
     {
         // Find out target lane relative referred vehicle
-        target_lane_id_ = (static_cast<TargetRelative*>(target_.get()))->object_->pos_.GetLaneId() +
-                          target_->value_ * (IsAngleForward(object_->pos_.GetHRelative()) ? 1 : -1);
-
-        if (target_lane_id_ == 0 || SIGN((static_cast<TargetRelative*>(target_.get()))->object_->pos_.GetLaneId()) != SIGN(target_lane_id_))
+        Object* ref_entity = (static_cast<TargetRelative*>(target_.get()))->object_;
+        if (ref_entity != nullptr)
         {
-            // Skip reference lane (id == 0)
-            target_lane_id_ = SIGN(target_lane_id_ - object_->pos_.GetLaneId()) * (abs(target_lane_id_) + 1);
+            target_lane_id_ = ref_entity->pos_.GetLaneId() + target_->value_ * (IsAngleForward(ref_entity->pos_.GetHRelative()) ? 1 : -1);
+
+            if (target_lane_id_ == 0 || SIGN(ref_entity->pos_.GetLaneId()) != SIGN(target_lane_id_))
+            {
+                // Skip reference lane (id == 0)
+                target_lane_id_ = SIGN(target_lane_id_ - ref_entity->pos_.GetLaneId()) * (abs(target_lane_id_) + 1);
+            }
+        }
+        else
+        {
+            LOG("LaneChange RelativeTarget ref entity not found!");
         }
     }
 
@@ -583,7 +582,6 @@ void LatLaneChangeAction::Start(double simTime, double dt)
     object_->pos_.SetHeadingRelativeRoadDirection(0.0);
     object_->pos_.SetPitchRelative(0.0);
     object_->pos_.SetRollRelative(0.0);
-    object_->pos_.EvaluateOrientation();
 
     // Set initial state
     object_->pos_.ForceLaneId(target_lane_id_);
@@ -617,6 +615,15 @@ void LatLaneChangeAction::Step(double simTime, double dt)
     if (abs(object_->GetSpeed()) < SMALL_NUMBER)
     {
         return;
+    }
+
+    if (transition_.dimension_ == DynamicsDimension::DISTANCE)
+    {
+        transition_.Step(dt * object_->GetSpeed());
+    }
+    else
+    {
+        transition_.Step(dt);
     }
 
     // Add a constraint that lateral speed may not exceed longitudinal
@@ -686,16 +693,7 @@ void LatLaneChangeAction::Step(double simTime, double dt)
         object_->pos_.SetHeadingRelativeRoadDirection((IsAngleForward(object_->pos_.GetHRelative()) ? 1 : -1) * SIGN(object_->pos_.GetLaneId()) *
                                                       angle);
     }
-    object_->pos_.EvaluateOrientation();
-
-    if (transition_.dimension_ == DynamicsDimension::DISTANCE)
-    {
-        transition_.Step(dt * object_->GetSpeed());
-    }
-    else
-    {
-        transition_.Step(dt);
-    }
+    object_->pos_.EvaluateZHPR(object_->pos_.GetMode(roadmanager::Position::PosModeType::UPDATE));
 
     if (retval == roadmanager::Position::ReturnCode::ERROR_END_OF_ROAD)
     {
@@ -705,7 +703,7 @@ void LatLaneChangeAction::Step(double simTime, double dt)
     if (!(object_->pos_.GetRoute() && object_->pos_.GetRoute()->IsValid()))
     {
         // Attach object position to closest road and lane, look up via inertial coordinates
-        object_->pos_.XYZH2TrackPos(object_->pos_.GetX(), object_->pos_.GetY(), object_->pos_.GetZ(), object_->pos_.GetH());
+        object_->pos_.XYZ2TrackPos(object_->pos_.GetX(), object_->pos_.GetY(), object_->pos_.GetZ());
     }
 
     object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL | Object::DirtyBit::SPEED);
@@ -747,14 +745,14 @@ void LatLaneOffsetAction::Start(double simTime, double dt)
         // Register what lane action object belongs to
         int lane_id = object_->pos_.GetLaneId();
 
-        // Find out referred object track position
+        // Find out target position based on the referred object
         roadmanager::Position refpos = (static_cast<TargetRelative*>(target_.get()))->object_->pos_;
-        refpos.SetTrackPos(refpos.GetTrackId(),
-                           refpos.GetS(),
-                           refpos.GetT() + target_->value_ * (IsAngleForward(object_->pos_.GetHRelative()) ? 1 : -1));
+        refpos.SetTrackPos(refpos.GetTrackId(), refpos.GetS(), refpos.GetT() + target_->value_ * (IsAngleForward(refpos.GetHRelative()) ? 1 : -1));
+
+        // Transform target position into lane position based on current lane id
         refpos.ForceLaneId(lane_id);
 
-        // Target lane offset = t value of requested lane + offset relative t value of current lane without offset
+        // Target lane offset = target t value - t value of current lane (which is current t - current offset)
         transition_.SetTargetVal(SIGN(object_->pos_.GetLaneId()) * (refpos.GetT() - (object_->pos_.GetT() - object_->pos_.GetOffset())));
     }
 
@@ -1611,7 +1609,7 @@ void TeleportAction::Start(double simTime, double dt)
     {
         scenarioEngine_->SetGhostRestart();
 
-        object_->trail_.Reset();
+        object_->trail_.Reset(true);
 
         // The following code will copy speed from the Ego that ghost relates to
         if (object_->ghost_Ego_ != nullptr)
@@ -1659,6 +1657,59 @@ void TeleportAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
     }
 
     position_->ReplaceObjectRefs(&obj1->pos_, &obj2->pos_);
+}
+
+void ConnectTrailerAction::Start(double simTime, double dt)
+{
+    OSCAction::Start(simTime, dt);
+
+    if (trailer_object_)
+    {
+        if (object_->TrailerVehicle())
+        {
+            if (object_->TrailerVehicle() == trailer_object_)
+            {
+                LOG("Trailer %s already connected to %s - keep connection", trailer_object_->GetName().c_str(), object_->GetName().c_str());
+            }
+            else
+            {
+                LOG("Disconnecting currently connected trailer: %s", object_->TrailerVehicle()->GetName().c_str());
+                reinterpret_cast<Vehicle*>(object_)->DisconnectTrailer();
+            }
+        }
+
+        if (trailer_object_ != object_->TrailerVehicle())
+        {
+            LOG("Connect trailer %s", reinterpret_cast<Vehicle*>(trailer_object_)->GetName().c_str());
+            reinterpret_cast<Vehicle*>(object_)->ConnectTrailer(reinterpret_cast<Vehicle*>(trailer_object_));
+        }
+    }
+    else
+    {
+        if (object_->TrailerVehicle())
+        {
+            LOG("Disconnecting currently connected trailer %s from %s", object_->TrailerVehicle()->GetName().c_str(), object_->GetName().c_str());
+            reinterpret_cast<Vehicle*>(object_)->DisconnectTrailer();
+        }
+        else
+        {
+            LOG("No trailer to disconnect from %s", object_->GetName().c_str());
+        }
+    }
+}
+
+void ConnectTrailerAction::Step(double simTime, double dt)
+{
+    (void)dt;
+    OSCAction::End(simTime);
+}
+
+void ConnectTrailerAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
+{
+    if (object_ == obj1)
+    {
+        object_ = obj2;
+    }
 }
 
 double SynchronizeAction::CalcSpeedForLinearProfile(double v_final, double time, double dist)

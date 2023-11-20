@@ -48,8 +48,8 @@ namespace ESMini
         public float width;
         public float length;
         public float height;
-        public int   objectType;     // Main type according to entities.hpp / Object / Type (NONE=0, VEHICLE=1, PEDESTRIAN=2, MISC_OBJECT=3)
-        public int   objectCategory; // Sub category within type, according to entities.hpp / Vehicle, Pedestrian, MiscObject / Category
+        public int objectType;     // Main type according to entities.hpp / Object / Type (NONE=0, VEHICLE=1, PEDESTRIAN=2, MISC_OBJECT=3)
+        public int objectCategory; // Sub category within type, according to entities.hpp / Vehicle, Pedestrian, MiscObject / Category
         public float wheel_angle;
         public float wheel_rotation;
     };
@@ -111,8 +111,31 @@ namespace ESMini
         public bool opposite_lanes; // true if the two position objects are in opposite sides of reference lane
     };
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Center
+    {
+        public float x_;            // Center offset in x direction.
+        public float y_;            // Center offset in y direction.
+        public float z_;            // Center offset in z direction.
+    };
 
-public static class ESMiniLib
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Dimensions
+    {
+        public float width_;            // Width of the entity's bounding box. Unit: m; Range: [0..inf[.
+        public float length_;           // Length of the entity's bounding box. Unit: m; Range: [0..inf[.
+        public float height_;           // Height of the entity's bounding box. Unit: m; Range: [0..inf[.
+    };
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OSCBoundingBox
+    {
+        public Center center_;           // Represents the geometrical center of the bounding box
+        public Dimensions dimensions_;   // Width, length and height of the bounding box.
+    };
+
+
+    public static class ESMiniLib
     {
         private const string LIB_NAME = "esminiLib";
 
@@ -227,7 +250,8 @@ public static class ESMiniLib
         public static extern int SE_GetId(int index);
 
         [DllImport(LIB_NAME, EntryPoint = "SE_AddObject")]
-        /// <summary>Add object. Should be followed by one of the SE_Report functions to establish initial state.</summary>
+        /// <summary>Add object with bounding box automatically adapted to 3D model (scale mode BB_TO_MODEL).
+        /// Should be followed by one of the SE_Report functions to establish initial state.</summary>
         /// <param name="object_name">Name of the object, preferably be unique</param>
         /// <param name="object_type">Type of the object. See Entities.hpp::Object::Type. Default=1 (VEHICLE).</param>
         /// <param name="object_category">Category of the object. Depends on type, see descendants of Entities.hpp::Object. Set to 0 if not known.</param>
@@ -235,6 +259,19 @@ public static class ESMiniLib
         /// <param name="model_id">Id of the 3D model to represent the object. See resources/model_ids.txt.</param>
         /// <returns> @return Id [0..inf] of the added object successful, -1 on failure</returns>
         public static extern int SE_AddObject(string object_name, int object_type, int object_category, int object_role, int model_id);
+
+        [DllImport(LIB_NAME, EntryPoint = "SE_AddObjectWithBoundingBox")]
+        /// <summary>Add object with specified bounding box. Should be followed by one of the SE_Report functions to establish initial state.
+        /// For scale_mode BB_TO_MODEL, set bounding_box to whatever, e.g. {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}}, or use SE_AddObject()</summary>
+        /// <param name="object_name">Name of the object, preferably be unique</param>
+        /// <param name="object_type">Type of the object. See Entities.hpp::Object::Type. Default=1 (VEHICLE).</param>
+        /// <param name="object_category">Category of the object. Depends on type, see descendants of Entities.hpp::Object. Set to 0 if not known.</param>
+        /// <param name="object_role"> role of the object. Depends on type, See Entities.hpp::Object::Role. Set to 0 if not known.</param>
+        /// <param name="model_id">Id of the 3D model to represent the object. See resources/model_ids.txt.</param>
+        /// <param name="bounding_box">sets the internal bounding box of the model and will also be used to scale 3D model accordingly.</param>
+        /// <param name="scale_mode">0=NONE, 1=BB_TO_MODEL, 2=MODEL_TO_BB (recommended). See CommonMini::EntityScaleMode enum for details.</param>
+        /// <returns> @return Id [0..inf] of the added object successful, -1 on failure</returns>
+        public static extern int SE_AddObjectWithBoundingBox(string object_name, int object_type, int object_category, int object_role, int model_id, ref OSCBoundingBox bounding_box, int scale_mode);
 
         [DllImport(LIB_NAME, EntryPoint = "SE_DeleteObject")]
         /// <summary>Delete object</summary>
@@ -346,7 +383,7 @@ public static class ESMiniLib
         /// <returns> Number of identified objects, i.e.length of list. -1 on failure</returns>
         public static extern int SE_FetchSensorObjectList(int object_id, int[] list);
 
-		[DllImport(LIB_NAME, EntryPoint = "SE_GetRoadInfoAtDistance")]
+        [DllImport(LIB_NAME, EntryPoint = "SE_GetRoadInfoAtDistance")]
         /// <summary>Get information suitable for driver modeling of a point at a specified distance from object along the road ahead</summary>
         /// <param name="object_id">Handle to the position object from which to measure</param>
         /// <param name="lookahead_distance">The distance, along the road, to the point</param>
@@ -529,6 +566,12 @@ public static class ESMiniLib
         /// <param name="max_lateral_deviation">Control resolution w.r.t. curvature default=0.05(m)</param>
         /// <returns>0 if successful, -1 if not</returns>
         public static extern int SE_SetOSITolerances(double maxLongitudinalDistance, double maxLateralDeviation);
+
+        [DllImport(LIB_NAME, EntryPoint = "SE_OpenOSISocket")]
+        /// <summary>Send OSI packages over UDP to specified IP address</summary>
+        /// <param name="ipaddr">ip address, e.g. "127.0.0.1" (local host)</param>
+        /// <returns>0 if successful, -1 if not</returns>
+        public static extern int SE_OpenOSISocket(string ipaddr);
 
         [DllImport(LIB_NAME, EntryPoint = "SE_DisableOSIFile")]
         /// <summary>Switch off logging to OSI file(s)</summary>

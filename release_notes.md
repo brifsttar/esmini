@@ -1,11 +1,142 @@
 ## esmini release notes
 
+### 2023-11-17 Version 2.33.2
+
+New feature:
+- Add clothoid spline trajectory shape
+  - Enables sequence of clothoids in one trajectory
+  - Prototype implementation of OpenSCENARIO 1.3 feature candidate
+  - Example scenario: [lane-change_clothoid_spline_based_trajectory.xosc](https://github.com/esmini/esmini/blob/dev/resources/xosc/lane-change_clothoid_spline_based_trajectory.xosc)
+
+Improvements and fixes:
+- Fix graphics flickering of overlapping road, sidewalk, and grass areas
+- Identify bidirectional lane type as drivable
+- Fix wrong position mode setting in [Hello World external Ego example](https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/code-examples/hello_world/hw4_external_ego_control.cpp)
+
+
+### 2023-11-10 Version 2.33.1
+
+Updated behaviors:
+- Fix wrong t axis for offset in RelativeLanePosition with dsLane
+  - ds will alight s/t to road direction, dsLane will align s/t to lane direction
+  - for dsLane, negative offset will be right in lane direction and positive left
+
+Improvements and fixes:
+- Fix missing polyline length causing unintended trajectory loop
+- Improve continuous road objects ([issue #489](https://github.com/esmini/esmini/issues/489))
+  - model as 3D outline object instead of individual bounding boxes
+  - when 3D model is provided, individual objects are still populated
+  - OSI populated accordingly, as polygon vertices or bounding box
+- Add Python examples on how to initialize esmini with launch arguments
+  - [Initialize esmini by flexible argument list](https://esmini.github.io/#_initialize_esmini_by_flexible_argument_list)
+  - [Forward command line arguments](https://esmini.github.io/#_forward_command_line_arguments)
+- Add info on how to change fps with ffmpeg ([here](https://esmini.github.io/#_create_video_clip_of_a_scenario))
+- Add OSI UDP socket API to C# wrapper
+
+### 2023-10-27 Version 2.33.0
+
+New features:
+- Report parking spot on OSI
+- Add support for RelativeLanePosition dsLane mode
+- Add flexible interpolation and positioning modes
+  - introduce mode which can be RELATIVE or ABSOLUTE
+  - mode can be set per position component Z (elevation), heading, pitch and roll
+  - trajectory orientation interpolation
+  - see info in [User guide - Positioning](https://esmini.github.io/#_positioning)
+
+Updated behaviors:
+
+- Camera focus on OSC object bounding box center
+  - instead of bounding sphere of object 3D geometry
+- Accept zero stories as introduced in OSC 1.2
+- Output also relative camera position on 'K' key event
+
+Improvements and fixes:
+- Add some more details to the version string
+  - most recent tag
+  - nr builds from tag
+  - indicate local changes (dirty)
+  - based on `git describe`
+- Fix superelevation calculation
+  - project along Z instead of rotating road boundaries
+  - harmonizing with object orientation and positioning
+- Fix dashed road mark visualization bug
+- Fix condition delay issue preventing looped storyboard elements to trigger
+- Fix bug in cmake contibuting to sanitizer run failure
+- Update recent dropbox links for new policy ([issue #482](https://github.com/esmini/esmini/issues/482))
+
+### 2023-09-29 Version 2.32.1
+
+New features:
+- Support UserDefinedAction as wait/noop action
+  - see example in [user_defined_action.xosc](https://github.com/esmini/esmini/blob/2af9304767d8b196bb00c6ecc7cb0cb725123b31/EnvironmentSimulator/Unittest/xosc/user_defined_action.xosc#L74)
+- Add ConnectTrailerAction prototype
+  - action for connecting/disconnecting trailer
+  - see [video clip](https://youtu.be/0NOX1we5dZ0) and example scenario [trailer_connect.xosc](https://github.com/esmini/esmini/blob/dev/resources/xosc/trailer_connect.xosc)
+
+Updated behaviors:
+- Support activating controller on several domains in mulitple activation steps
+  - see example in [distance_test.xosc](https://github.com/esmini/esmini/blob/2af9304767d8b196bb00c6ecc7cb0cb725123b31/resources/xosc/distance_test.xosc#L52)
+  - previvious behavior was to reset all domains for each activation
+
+Improvements and fixes:
+- Add esmini, OSI and OSMP version to OSMP_FMU modelDescription.xml ([PR #476](https://github.com/esmini/esmini/pull/476))
+- Ensure synchronized route position in junctions (scenariogeneration #[179](https://github.com/pyoscx/scenariogeneration/issues/179))
+  - solves intermittent intersection border issue leading to wrong road ID and route failure
+- Avoid additional step after scenario termination
+- Fix plot window crash on added objects
+- Add trailer rotating front axle example
+  - see [video clip](https://youtu.be/5yud-oiO5AI) and find links in description
+- Document optional parameters in [ReportObjectPos](https://github.com/esmini/esmini/blob/2af9304767d8b196bb00c6ecc7cb0cb725123b31/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp#L759)
+  - z, p, r can be set to NAN for road alignment (temporary solution)
+
+### 2023-09-07 Version 2.32.0
+
+New features:
+- Runtime plotting feature based on imgui/implot
+  - see brief info in [User guide - Runtime plotting](https://esmini.github.io/#_runtime_plotting)
+- osi3::TrafficUpdate input to the esmini OSMP FMU ([PR #463](https://github.com/esmini/esmini/pull/463))
+  - esmini can now be used in a closed-loop co-simulation with a traffic participant model
+- UDP action server ([issue #465](https://github.com/esmini/esmini/issues/465))
+  - Inject actions via UDP messages
+  - Only a few actions supported so far
+  - See [issue](https://github.com/esmini/esmini/issues/465#issuecomment-1693377535) and example [inject_actions.py](https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/code-examples/hello_world/inject_actions.py) for more info
+
+Updated behaviors:
+- Relative lane-change/offset direction now based on the referenced entity orientation
+- Add road ID to trajectory vertices
+  - purpose is to preserve road ID for trajectory lookup functions, e.g. follow ghost
+  - especially useful in intersections where road id is ambiguous due to overlapping roads
+- Reduce lane change jitter
+  - apply lateral movement with delta-time of current frame, not previous
+
+Improvements and fixes:
+
+- Code quality improved by const correctness on class methods ([PR #466](https://github.com/esmini/esmini/pull/466))
+- Set SUMO vehicles role = CIVIL and category = CAR (previously undefined)
+- Add missing road info for esminiLib road lookahead functions
+  - junctionId, roadId, laneId, laneOffset, s and t
+- Update info how to install clang v15 on Linux in [User guide - Formatting](https://esmini.github.io/#_formatting)
+- Fix execution flow bug in the experimental [fix_dae_materials.py](https://github.com/esmini/esmini/blob/dev/scripts/fix_dae_materials.py) script
+
+### 2023-08-04 Version 2.31.10
+
+- Add [SE_AddObjectWithBoundingBox()](https://github.com/esmini/esmini/blob/e76b4cf90f0bf7827617eff587bd41e7388c4dc8/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp#L741) method to lib API ([PR #460](https://github.com/esmini/esmini/pull/460))
+- Fix wrong expected swarm central object attribute name ([issue #459](https://github.com/esmini/esmini/issues/459))
+  - correct attribute name is CentralObject
+  - previous expected name, CentralSwarmObject, is accepted as well
+- Add combined type and vehicle class to osi2csv
+- Add missing OSI VAN class
+- Add missing fence 3D model to demo package
+- For TTC, calc rel speed along triggering entity velocity vector ([issue #445](https://github.com/esmini/esmini/issues/445))
+
+
 ### 2023-07-04 Version 2.31.9
 
 New behaviours:
 - Calculate omitted WorldPosition headings also when trajectory following mode is "position"
   - previously omitted heading was set to "0.0" (default according to standard)
-  
+
 Improvements and fixes:
 - Expose functions to control snappable lanes ([issue #448](https://github.com/esmini/esmini/issues/448))
   - both in [esminiLib](https://github.com/esmini/esmini/blob/d2f00135a2c43bd6a4430d07caa3d841d9100721/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp#L841) and [esminiRMLib](https://github.com/esmini/esmini/blob/d2f00135a2c43bd6a4430d07caa3d841d9100721/EnvironmentSimulator/Libraries/esminiRMLib/esminiRMLib.hpp#L229)

@@ -109,7 +109,7 @@ void ControllerInteractive::Step(double timeStep)
     Controller::Step(timeStep);
 }
 
-void ControllerInteractive::Activate(ControlDomains domainMask)
+void ControllerInteractive::Activate(DomainActivation lateral, DomainActivation longitudinal)
 {
     if (object_)
     {
@@ -125,13 +125,10 @@ void ControllerInteractive::Activate(ControlDomains domainMask)
     steer      = vehicle::STEERING_NONE;
     accelerate = vehicle::THROTTLE_NONE;
 
-    object_->pos_.SetAlignModeZ(roadmanager::Position::ALIGN_MODE::ALIGN_HARD);
-    object_->pos_.SetAlignModeP(roadmanager::Position::ALIGN_MODE::ALIGN_HARD);
-
     object_->SetJunctionSelectorStrategy(roadmanager::Junction::JunctionStrategyType::SELECTOR_ANGLE);
     object_->SetJunctionSelectorAngle(0.0);
 
-    Controller::Activate(domainMask);
+    Controller::Activate(lateral, longitudinal);
 }
 
 void ControllerInteractive::ReportKeyEvent(int key, bool down)

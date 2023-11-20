@@ -1157,21 +1157,20 @@ roadmanager::RMTrajectory *ScenarioReader::parseTrajectory(pugi::xml_node node)
                     }
                     std::unique_ptr<OSCPosition> pos  = std::unique_ptr<OSCPosition>{parseOSCPosition(posNode)};
                     double                       time = strtod(parameters.ReadAttribute(vertexNode, "time"));
-
-                    bool calculateHeading = false;
-                    if (pos->type_ == OSCPosition::PositionType::WORLD)
+#if 0
+                    if (pos->type_ != OSCPosition::PositionType::WORLD)
                     {
-                        if (!pos->GetRMPos()->IsOrientationTypeSet(roadmanager::Position::OrientationSetMask::H))
+                        if (!posNode.first_child().child("Orientation"))
                         {
-                            calculateHeading = true;
+                            pos->GetRMPos()->SetMode(roadmanager::Position::PosModeType::INIT, roadmanager::Position::PosMode::H_REL);
+                        }
+                        else
+                        {
+                            pos->GetRMPos()->SetMode(roadmanager::Position::PosModeType::INIT, roadmanager::Position::PosMode::H_ABS);
                         }
                     }
-                    else if (!posNode.first_child().child("Orientation"))
-                    {
-                        calculateHeading = true;
-                    }
-
-                    pline->AddVertex(*pos->GetRMPos(), time, calculateHeading);
+#endif
+                    pline->AddVertex(*pos->GetRMPos(), time);
                 }
                 shape = pline;
             }
@@ -1213,9 +1212,45 @@ roadmanager::RMTrajectory *ScenarioReader::parseTrajectory(pugi::xml_node node)
 
                 shape = clothoid;
             }
+            else if (shapeType == "ClothoidSpline")
+            {
+                roadmanager::ClothoidSplineShape *clothoidspline = new roadmanager::ClothoidSplineShape();
+
+                for (pugi::xml_node segmentNode = shapeNode.child("Segment"); segmentNode; segmentNode = segmentNode.next_sibling("Segment"))
+                {
+                    pugi::xml_node               posNode = segmentNode.child("PositionStart");
+                    std::unique_ptr<OSCPosition> pos;
+                    roadmanager::Position       *rm_pos = nullptr;
+
+                    if (posNode)
+                    {
+                        pos    = std::unique_ptr<OSCPosition>(parseOSCPosition(posNode));
+                        rm_pos = pos->GetRMPos();
+                    }
+
+                    double curvStart = std::nan("");  // default is to use end curvature of previous segment
+                    double curvEnd   = std::nan("");  // default is to use start curvature of current segment
+                    double length    = strtod(parameters.ReadAttribute(segmentNode, "length"));
+                    double h_offset  = strtod(parameters.ReadAttribute(segmentNode, "hOffset"));
+                    double time      = strtod(parameters.ReadAttribute(segmentNode, "time"));
+
+                    if (!segmentNode.attribute("curvStart").empty())
+                    {
+                        curvStart = strtod(parameters.ReadAttribute(segmentNode, "curvStart"));
+                    }
+
+                    if (!segmentNode.attribute("curvEnd").empty())
+                    {
+                        curvEnd = strtod(parameters.ReadAttribute(segmentNode, "curvEnd"));
+                    }
+
+                    clothoidspline->AddSegment(rm_pos, curvStart, curvEnd, length, h_offset, time);
+                }
+                shape = clothoidspline;
+            }
             else if (shapeType == "Nurbs")
             {
-                int order = strtoi(parameters.ReadAttribute(shapeNode, "order"));
+                unsigned int order = static_cast<unsigned int>(strtoi(parameters.ReadAttribute(shapeNode, "order")));
 
                 roadmanager::NurbsShape *nurbs = new roadmanager::NurbsShape(order);
                 std::vector<double>      knots;
@@ -1235,8 +1270,17 @@ roadmanager::RMTrajectory *ScenarioReader::parseTrajectory(pugi::xml_node node)
                         {
                             weight = strtod(parameters.ReadAttribute(nurbsChild, "weight"));
                         }
-                        bool calcHeading = posNode.first_child().child("Orientation") ? false : true;
-                        nurbs->AddControlPoint(*pos->GetRMPos(), time, weight, calcHeading);
+#if 1
+                        if (posNode.first_child().child("Orientation"))
+                        {
+                            pos->GetRMPos()->SetMode(roadmanager::Position::PosModeType::SET, roadmanager::Position::PosMode::H_ABS);
+                        }
+                        else
+                        {
+                            pos->GetRMPos()->SetMode(roadmanager::Position::PosModeType::SET, roadmanager::Position::PosMode::H_REL);
+                        }
+#endif
+                        nurbs->AddControlPoint(*pos->GetRMPos(), time, weight);
                     }
                     else if (nurbsChildName == "Knot")
                     {
@@ -1246,6 +1290,25 @@ roadmanager::RMTrajectory *ScenarioReader::parseTrajectory(pugi::xml_node node)
                     else
                     {
                         throw std::runtime_error(std::string("Unsupported Nurbs child element: ") + nurbsChildName);
+                    }
+                }
+                if (knots.size() == 0)
+                {
+                    LOG("No knot vector provided. Creating a simple one.");
+                    for (size_t i = 0; i < nurbs->ctrlPoint_.size() + order; i++)
+                    {
+                        if (i < order)
+                        {
+                            knots.push_back(0.0);
+                        }
+                        else if (i > nurbs->ctrlPoint_.size() - 1)
+                        {
+                            knots.push_back(1.0);
+                        }
+                        else
+                        {
+                            knots.push_back(static_cast<double>(i + 1 - order) / static_cast<double>(nurbs->ctrlPoint_.size() + 1 - order));
+                        }
                     }
                 }
                 nurbs->AddKnots(knots);
@@ -1455,7 +1518,7 @@ int ScenarioReader::parseEntities()
                     obj->id_ = -1;
 
                     // SUMO controller is special in the sense that it is always active
-                    ctrl->Activate(ControlDomains::DOMAIN_BOTH);
+                    ctrl->Activate(Controller::DomainActivation::ON, Controller::DomainActivation::ON);
 
                     // SUMO controller is not assigned to any scenario vehicle
                 }
@@ -1599,18 +1662,10 @@ OSCPosition *ScenarioReader::parseOSCPosition(pugi::xml_node positionNode, OSCPo
     }
     else if (positionChildName == "RelativeLanePosition")
     {
-        int    dLane;
-        double ds, offset;
-
-        if (positionChild.attribute("dsLane").empty())
-        {
-            ds = strtod(parameters.ReadAttribute(positionChild, "ds"));
-        }
-        else
-        {
-            LOG("RelativeLanePosition:dsLane not supported yet, using it as ds");
-            ds = strtod(parameters.ReadAttribute(positionChild, "dsLane"));
-        }
+        int                                  dLane          = 0;
+        double                               ds             = 0.0;
+        double                               offset         = 0.0;
+        roadmanager::Position::DirectionMode direction_mode = roadmanager::Position::DirectionMode::ALONG_S;
 
         dLane          = strtoi(parameters.ReadAttribute(positionChild, "dLane"));
         offset         = strtod(parameters.ReadAttribute(positionChild, "offset"));
@@ -1629,7 +1684,18 @@ OSCPosition *ScenarioReader::parseOSCPosition(pugi::xml_node positionNode, OSCPo
             orientation.type_ = roadmanager::Position::OrientationType::ORIENTATION_RELATIVE;
         }
 
-        OSCPositionRelativeLane *pos = new OSCPositionRelativeLane(object, dLane, ds, offset, orientation);
+        if (!positionChild.attribute("ds").empty())
+        {
+            ds             = strtod(parameters.ReadAttribute(positionChild, "ds"));
+            direction_mode = roadmanager::Position::DirectionMode::ALONG_S;
+        }
+        else if (!positionChild.attribute("dsLane").empty())
+        {
+            ds             = strtod(parameters.ReadAttribute(positionChild, "dsLane"));
+            direction_mode = roadmanager::Position::DirectionMode::ALONG_LANE;
+        }
+
+        OSCPositionRelativeLane *pos = new OSCPositionRelativeLane(object, dLane, ds, offset, orientation, direction_mode);
 
         pos_return = reinterpret_cast<OSCPosition *>(pos);
     }
@@ -1991,7 +2057,20 @@ OSCGlobalAction *ScenarioReader::parseOSCGlobalAction(pugi::xml_node actionNode)
             {
                 SwarmTrafficAction *trafficSwarmAction = new SwarmTrafficAction();
 
-                pugi::xml_node childNode = trafficChild.child("CentralSwarmObject");
+                pugi::xml_node childNode = trafficChild.child("CentralObject");
+                if (childNode.empty())
+                {
+                    childNode = trafficChild.child("CentralSwarmObject");
+                    if (!childNode.empty())
+                    {
+                        LOG("Expected \"CentralObject\", found \"CentralSwarmObject\". Accepted.");
+                    }
+                }
+                if (childNode.empty())
+                {
+                    LOG("Warning: Missing swarm CentralObject!");
+                }
+
                 trafficSwarmAction->SetCentralObject(entities_->GetObjectByName(parameters.ReadAttribute(childNode, "entityRef")));
                 // childNode = trafficChild.child("")
 
@@ -2081,22 +2160,56 @@ OSCGlobalAction *ScenarioReader::parseOSCGlobalAction(pugi::xml_node actionNode)
     return action;
 }
 
+OSCUserDefinedAction *ScenarioReader::parseOSCUserDefinedAction(pugi::xml_node actionNode)
+{
+    OSCUserDefinedAction *action = nullptr;
+
+    pugi::xml_node actionChild = actionNode.first_child();
+    if (actionChild && actionChild.name() == std::string("CustomCommandAction"))
+    {
+        action           = new OSCUserDefinedAction();
+        action->type_    = parameters.ReadAttribute(actionChild, "type");
+        action->content_ = actionChild.first_child().value();
+    }
+
+    if (action && actionNode.parent().attribute("name"))
+    {
+        action->name_ = parameters.ReadAttribute(actionNode.parent(), "name");
+    }
+    else
+    {
+        action->name_ = "no name";
+    }
+
+    return action;
+}
+
 ActivateControllerAction *ScenarioReader::parseActivateControllerAction(pugi::xml_node node)
 {
-    bool domain_longitudinal = parameters.ReadAttribute(node, "longitudinal") == "true";
-    bool domain_lateral      = parameters.ReadAttribute(node, "lateral") == "true";
+    Controller::DomainActivation lateral      = Controller::DomainActivation::UNDEFINED;
+    Controller::DomainActivation longitudinal = Controller::DomainActivation::UNDEFINED;
+    std::string                  lat_str      = parameters.ReadAttribute(node, "lateral");
+    std::string                  long_str     = parameters.ReadAttribute(node, "longitudinal");
 
-    int domainMask = 0;
-    if (domain_longitudinal)
+    if (lat_str == "false")
     {
-        domainMask |= static_cast<int>(ControlDomains::DOMAIN_LONG);
+        lateral = Controller::DomainActivation::OFF;
     }
-    if (domain_lateral)
+    else if (lat_str == "true")
     {
-        domainMask |= static_cast<int>(ControlDomains::DOMAIN_LAT);
+        lateral = Controller::DomainActivation::ON;
     }
 
-    ActivateControllerAction *activateControllerAction = new ActivateControllerAction(static_cast<ControlDomains>(domainMask));
+    if (long_str == "false")
+    {
+        longitudinal = Controller::DomainActivation::OFF;
+    }
+    else if (long_str == "true")
+    {
+        longitudinal = Controller::DomainActivation::ON;
+    }
+
+    ActivateControllerAction *activateControllerAction = new ActivateControllerAction(lateral, longitudinal);
 
     return activateControllerAction;
 }
@@ -2615,6 +2728,18 @@ OSCPrivateAction *ScenarioReader::parseOSCPrivateAction(pugi::xml_node actionNod
             action_pos->position_ = action_pos->position_OSCPosition_->GetRMPos();
             action                = action_pos;
         }
+        else if (actionChild.name() == std::string("ConnectTrailerAction"))
+        {
+            ConnectTrailerAction *action_trailer = new ConnectTrailerAction;
+            std::string           trailer_ref    = parameters.ReadAttribute(actionChild, "trailer");
+
+            if (!trailer_ref.empty())
+            {
+                action_trailer->trailer_object_ = ResolveObjectReference(parameters.ReadAttribute(actionChild, "trailer"));
+            }
+
+            action = action_trailer;
+        }
         else if (actionChild.name() == std::string("RoutingAction"))
         {
             for (pugi::xml_node routingChild = actionChild.first_child(); routingChild; routingChild = routingChild.next_sibling())
@@ -2755,7 +2880,7 @@ OSCPrivateAction *ScenarioReader::parseOSCPrivateAction(pugi::xml_node actionNod
                             }
                             else
                             {
-                                LOG("Unexpected TimeReference element: %s, fallback to NONE", timingNode.name());
+                                LOG("Missing TimeReference child element, set to None");
                                 action_follow_trajectory->timing_domain_ = FollowTrajectoryAction::TimingDomain::NONE;
                             }
                         }
@@ -2860,22 +2985,31 @@ OSCPrivateAction *ScenarioReader::parseOSCPrivateAction(pugi::xml_node actionNod
                         {
                             controller_.push_back(controller);
                         }
-                        AssignControllerAction *assignControllerAction = new AssignControllerAction(controller);
 
-                        bool domain_lateral      = parameters.ReadAttribute(controllerDefNode, "activateLateral") == "true";
-                        bool domain_longitudinal = parameters.ReadAttribute(controllerDefNode, "activateLongitudinal") == "true";
+                        Controller::DomainActivation lateral      = Controller::DomainActivation::UNDEFINED;
+                        Controller::DomainActivation longitudinal = Controller::DomainActivation::UNDEFINED;
+                        std::string                  lat_str      = parameters.ReadAttribute(controllerDefNode, "lateral");
+                        std::string                  long_str     = parameters.ReadAttribute(controllerDefNode, "longitudinal");
 
-                        int domainMask = 0;
-                        if (domain_lateral)
+                        if (lat_str == "false")
                         {
-                            domainMask |= static_cast<int>(ControlDomains::DOMAIN_LAT);
+                            lateral = Controller::DomainActivation::OFF;
                         }
-                        if (domain_longitudinal)
+                        else if (lat_str == "true")
                         {
-                            domainMask |= static_cast<int>(ControlDomains::DOMAIN_LONG);
+                            lateral = Controller::DomainActivation::ON;
                         }
 
-                        assignControllerAction->domainMask_ = static_cast<ControlDomains>(domainMask);
+                        if (long_str == "false")
+                        {
+                            longitudinal = Controller::DomainActivation::OFF;
+                        }
+                        else if (long_str == "true")
+                        {
+                            longitudinal = Controller::DomainActivation::ON;
+                        }
+
+                        AssignControllerAction *assignControllerAction = new AssignControllerAction(controller, lateral, longitudinal);
 
                         action = assignControllerAction;
                     }
@@ -4115,7 +4249,11 @@ void ScenarioReader::parseOSCManeuver(Maneuver *maneuver, pugi::xml_node maneuve
                         }
                         else if (actionChildName == "UserDefinedAction")
                         {
-                            LOG("%s is not implemented", actionChildName.c_str());
+                            OSCUserDefinedAction *action = parseOSCUserDefinedAction(actionChild);
+                            if (action != nullptr)
+                            {
+                                event->action_.push_back(static_cast<OSCAction *>(action));
+                            }
                         }
                         else if (actionChildName == "PrivateAction")
                         {

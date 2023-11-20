@@ -64,6 +64,11 @@ set(DYN_PROTOBUF
     CACHE BOOL
           "Set for dynamic linking of protobuf library (.so/.dll)")
 
+set(USE_IMPLOT
+    ON
+    CACHE BOOL
+          "If implot for real-time plotting should be compiled.")
+
 set(ESMINI_BUILD_VERSION
     "N/A - client build"
     CACHE STRING
@@ -181,6 +186,11 @@ endif()
 if(USE_SUMO)
     include(${CMAKE_CURRENT_SOURCE_DIR}/support/cmake/external/sumo.cmake)
     set_sumo_libs()
+endif()
+
+if(USE_IMPLOT)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/support/cmake/external/implot.cmake)
+    set_implot_libs()
 endif()
 
 # ############################### Compiling targets ##################################################################

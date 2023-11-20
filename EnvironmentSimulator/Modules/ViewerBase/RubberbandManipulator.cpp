@@ -26,7 +26,7 @@ using namespace osgGA;
 
 #define NODE_CENTER_OFFSET_X 0.0
 #define NODE_CENTER_OFFSET_Y 0.0
-#define NODE_CENTER_OFFSET_Z 1.0
+#define NODE_CENTER_OFFSET_Z 0.25
 
 #define DRIVER_CENTER_OFFSET_X 1.32
 #define DRIVER_CENTER_OFFSET_Y 0.0
@@ -45,7 +45,8 @@ RubberbandManipulator::RubberbandManipulator(unsigned int mode)
     _cameraAngle    = orbitCameraAngle;
     _cameraDistance = orbitCameraDistance;
     _cameraRotation = orbitCameraRotation;
-    _trackNode      = nullptr;
+    track_node_     = nullptr;
+    track_tx_       = nullptr;
     setMode(mode);
 }
 
@@ -108,14 +109,14 @@ void RubberbandManipulator::setMode(unsigned int mode)
     }
 }
 
-void RubberbandManipulator::setTrackNode(osg::Node* node, bool calcDistance)
+void RubberbandManipulator::setTrackNode(osg::ref_ptr<osg::Node> node, bool calcDistance)
 {
     if (!node)
     {
-        osg::notify(osg::NOTICE) << "RubberbandManipulator::setTrackNode(Node*):  Unable to set tracked node due to null Node*" << std::endl;
+        osg::notify(osg::NOTICE) << "RubberbandManipulator::setTrackBB(bb):  Unable to set tracked bounding box due to null Node" << std::endl;
         return;
     }
-    _trackNode = node;
+    track_node_ = node;
 
     if (calcDistance)
     {
@@ -123,11 +124,21 @@ void RubberbandManipulator::setTrackNode(osg::Node* node, bool calcDistance)
     }
 }
 
+void RubberbandManipulator::setTrackTransform(osg::ref_ptr<osg::PositionAttitudeTransform> tx)
+{
+    if (!tx)
+    {
+        osg::notify(osg::NOTICE) << "RubberbandManipulator::setTrackTX(tx):  Unable to set tracked transofmration node due to null Node" << std::endl;
+        return;
+    }
+    track_tx_ = tx;
+}
+
 void RubberbandManipulator::calculateCameraDistance()
 {
-    const osg::MatrixList&    m = _trackNode->getWorldMatrices();
+    const osg::MatrixList&    m = track_node_->getWorldMatrices();
     osg::ComputeBoundsVisitor cbv;
-    _trackNode->accept(cbv);
+    track_node_->accept(cbv);
     osg::BoundingBox bb   = cbv.getBoundingBox();
     osg::Vec3        minV = bb._min * m.front();
     osg::Vec3        maxV = bb._max * m.front();
@@ -269,10 +280,24 @@ bool RubberbandManipulator::handle(const GUIEventAdapter& ea, GUIActionAdapter& 
 
 void RubberbandManipulator::computeNodeCenterAndRotation(osg::Vec3d& nodeCenter, osg::Quat& nodeRotation) const
 {
-    if (_trackNode)
+    if (track_tx_ != nullptr)
     {
-        nodeCenter   = _trackNode->getBound().center() * osg::computeLocalToWorld(_trackNode->getParentalNodePaths()[0]);
-        nodeRotation = osg::computeLocalToWorld(_trackNode->getParentalNodePaths()[0]).getRotate();
+        nodeRotation = track_tx_->getAttitude();
+        if (track_node_ != nullptr)
+        {
+            nodeCenter = track_tx_->getPosition() + nodeRotation * track_node_->getBound().center();
+        }
+        else
+        {
+            nodeCenter = track_tx_->getPosition();
+        }
+    }
+    else
+    {
+        if (track_node_ != nullptr)
+        {
+            nodeCenter = track_node_->getBound().center();
+        }
     }
 }
 
@@ -310,11 +335,12 @@ bool RubberbandManipulator::calcMovement(double dt, bool reset)
     osg::Quat     nodeRotation;
     osg::Matrix   cameraTargetRotation;
     float         springDC;
-    osg::Vec3     cameraOffset(0, 0, 0);
     osg::Vec3     cameraTargetPosition(0, 0, 0);
     osg::Vec3     cameraToTarget(0, 0, 0);
     float         x, y, z;
     CustomCamera* custom_cam = GetCurrentCustomCamera();
+
+    relative_pos_.set(0.0, 0.0, 0.0);
 
     computeNodeCenterAndRotation(nodeCenter, nodeRotation);
     osg::Matrix nodeRot;
@@ -327,17 +353,17 @@ bool RubberbandManipulator::calcMovement(double dt, bool reset)
         _cameraAngle    = 90;
         x               = -_cameraDistance * (cosf(_cameraRotation * 0.0174533f) * cosf(_cameraAngle * 0.0174533f));
         y               = -_cameraDistance * (sinf(_cameraRotation * 0.0174533f) * cosf(_cameraAngle * 0.0174533f));
-        cameraOffset.set(x, y, _cameraDistance);  // Put a small number to prevent undefined camera angle
+        relative_pos_.set(x, y, _cameraDistance);  // Put a small number to prevent undefined camera angle
     }
     else if (_mode == RB_MODE_RUBBER_BAND)
     {
-        cameraOffset.set(-_cameraDistance, 0.0, _cameraDistance * atan(_cameraAngle * 0.0174533f));
+        relative_pos_.set(-_cameraDistance, 0.0, _cameraDistance * atan(_cameraAngle * 0.0174533f));
     }
     else if (_mode == RB_MODE_DRIVER)
     {
         _cameraRotation = 0;
         _cameraAngle    = 0;
-        cameraOffset.set(1.0, 0.0, 0.0);
+        relative_pos_.set(1.0, 0.0, 0.0);
     }
     else if (_mode >= RB_MODE_CUSTOM)
     {
@@ -345,11 +371,11 @@ bool RubberbandManipulator::calcMovement(double dt, bool reset)
         _cameraAngle    = 0;
         if (custom_cam && !custom_cam->GetFixPos() && !custom_cam->GetFixRot())
         {
-            cameraOffset.set(custom_cam->GetPos());
+            relative_pos_.set(custom_cam->GetPos());
         }
         else
         {
-            cameraOffset.set(0.0, 0.0, 0.0);
+            relative_pos_.set(0.0, 0.0, 0.0);
         }
     }
     else
@@ -362,7 +388,7 @@ bool RubberbandManipulator::calcMovement(double dt, bool reset)
         y = -_cameraDistance * (sinf(_cameraRotation * 0.0174533f) * cosf(_cameraAngle * 0.0174533f));
         z = _cameraDistance * sinf(_cameraAngle * 0.0174533f);
 
-        cameraOffset.set(x, y, z);
+        relative_pos_.set(x, y, z);
     }
 
     // Transform the camera target offset position
@@ -373,7 +399,7 @@ bool RubberbandManipulator::calcMovement(double dt, bool reset)
     cameraTargetRotation.setRotate(nodeRotation);
 #endif
 
-    cameraTargetPosition = cameraTargetRotation.preMult(cameraOffset);
+    cameraTargetPosition = cameraTargetRotation.preMult(relative_pos_);
 
     if (reset)
     {

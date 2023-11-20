@@ -1,7 +1,7 @@
 # Credit: https://www.mattkeeter.com/blog/2018-01-06-versioning/
 #
 execute_process(
-    COMMAND git log --pretty=format:'%h' -n 1
+    COMMAND git describe --long --dirty --broken
     OUTPUT_VARIABLE GIT_REV
     ERROR_QUIET)
 
@@ -11,23 +11,11 @@ if("${GIT_REV}"
    "")
     set(GIT_REV
         "N/A")
-    set(GIT_DIFF
-        "")
     set(GIT_TAG
         "N/A")
     set(GIT_BRANCH
         "N/A")
 else()
-    execute_process(
-        COMMAND git diff --quiet --exit-code
-        RESULT_VARIABLE exit_code)
-    if(NOT
-       exit_code
-       EQUAL
-       "0")
-        set(GIT_DIFF
-            "+")
-    endif()
     execute_process(
         COMMAND git describe --exact-match --tags
         OUTPUT_VARIABLE GIT_TAG
@@ -36,17 +24,14 @@ else()
         COMMAND git name-rev --name-only HEAD
         OUTPUT_VARIABLE GIT_BRANCH)
 
+    # Remove "g" prefix to get the pure commit id
     string(
-        STRIP "${GIT_REV}"
-              GIT_REV)
-    string(
-        SUBSTRING "${GIT_REV}"
-                  1
-                  7
-                  GIT_REV)
-    string(
-        STRIP "${GIT_DIFF}"
-              GIT_DIFF)
+        REGEX
+        REPLACE "^(v.*)-g(.*)\n$"
+                "\\1-\\2"
+                GIT_REV
+                "${GIT_REV}")
+
     string(
         STRIP "${GIT_TAG}"
               GIT_TAG)
@@ -56,7 +41,7 @@ else()
 endif()
 
 set(VERSION_TO_TXT_FILE
-    "ESMINI_GIT_REV=\"${GIT_REV}${GIT_DIFF}\"\nESMINI_GIT_TAG=\"${GIT_TAG}\"\nESMINI_GIT_BRANCH=\"${GIT_BRANCH}\"\nESMINI_BUILD_VERSION=\"${ESMINI_BUILD_VERSION}\""
+    "ESMINI_GIT_REV=\"${GIT_REV}\"\nESMINI_GIT_TAG=\"${GIT_TAG}\"\nESMINI_GIT_BRANCH=\"${GIT_BRANCH}\"\nESMINI_BUILD_VERSION=\"${ESMINI_BUILD_VERSION}\""
 )
 
 configure_file(

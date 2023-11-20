@@ -495,10 +495,19 @@ int OSIReporter::UpdateOSIStationaryObjectODR(int road_id, roadmanager::RMObject
         obj_osi_internal.sobj->mutable_classification()->set_type(
             osi3::StationaryObject_Classification_Type::StationaryObject_Classification_Type_TYPE_BUILDING);
     }
-    else if (object->GetType() == roadmanager::RMObject::ObjectType::OBSTACLE ||
-             object->GetType() == roadmanager::RMObject::ObjectType::PARKINGSPACE ||
-             object->GetType() == roadmanager::RMObject::ObjectType::RAILING || object->GetType() == roadmanager::RMObject::ObjectType::PATCH ||
-             object->GetType() == roadmanager::RMObject::ObjectType::TRAFFICISLAND ||
+    else if (object->GetType() == roadmanager::RMObject::ObjectType::PARKINGSPACE)
+    {
+        obj_osi_internal.sobj->mutable_classification()->set_type(
+            osi3::StationaryObject_Classification_Type::StationaryObject_Classification_Type_TYPE_OTHER);
+        obj_osi_internal.sobj->mutable_classification()->set_material(
+            osi3::StationaryObject_Classification_Material::StationaryObject_Classification_Material_MATERIAL_CONCRETE);
+        obj_osi_internal.sobj->mutable_classification()->set_density(
+            osi3::StationaryObject_Classification_Density::StationaryObject_Classification_Density_DENSITY_SOLID);
+        obj_osi_internal.sobj->mutable_classification()->set_color(
+            osi3::StationaryObject_Classification_Color::StationaryObject_Classification_Color_COLOR_GREY);
+    }
+    else if (object->GetType() == roadmanager::RMObject::ObjectType::OBSTACLE || object->GetType() == roadmanager::RMObject::ObjectType::RAILING ||
+             object->GetType() == roadmanager::RMObject::ObjectType::PATCH || object->GetType() == roadmanager::RMObject::ObjectType::TRAFFICISLAND ||
              object->GetType() == roadmanager::RMObject::ObjectType::CROSSWALK ||
              object->GetType() == roadmanager::RMObject::ObjectType::STREETLAMP || object->GetType() == roadmanager::RMObject::ObjectType::GANTRY ||
              object->GetType() == roadmanager::RMObject::ObjectType::SOUNDBARRIER || object->GetType() == roadmanager::RMObject::ObjectType::WIND ||
@@ -696,10 +705,16 @@ int OSIReporter::UpdateOSIMovingObject(ObjectState *objectState)
         {
             obj_osi_internal.mobj->mutable_vehicle_classification()->set_type(osi3::MovingObject_VehicleClassification::TYPE_TRAILER);
         }
+        else if (objectState->state_.info.obj_category == static_cast<int>(Vehicle::Category::VAN))
+        {
+            obj_osi_internal.mobj->mutable_vehicle_classification()->set_type(osi3::MovingObject_VehicleClassification::TYPE_DELIVERY_VAN);
+        }
         else
         {
+            LOG("OSIReporter::UpdateOSIMovingObject -> Unsupported moving object vehicle category: %d (%s). Set to UNKNOWN.",
+                objectState->state_.info.obj_category,
+                Vehicle::Category2String(objectState->state_.info.obj_category).c_str());
             obj_osi_internal.mobj->mutable_vehicle_classification()->set_type(osi3::MovingObject_VehicleClassification::TYPE_UNKNOWN);
-            LOG("OSIReporter::UpdateOSIMovingObject -> Unsupported moving object category");
         }
 
 #ifdef _OSI_VERSION_3_3_1
@@ -733,8 +748,15 @@ int OSIReporter::UpdateOSIMovingObject(ObjectState *objectState)
         {
             obj_osi_internal.mobj->mutable_vehicle_classification()->set_role(osi3::MovingObject_VehicleClassification::ROLE_ROAD_ASSISTANCE);
         }
+        else if (objectState->state_.info.obj_role == Vehicle::Role::NONE)
+        {
+            obj_osi_internal.mobj->mutable_vehicle_classification()->set_role(osi3::MovingObject_VehicleClassification::ROLE_UNKNOWN);
+        }
         else
         {
+            LOG("OSIReporter::UpdateOSIMovingObject -> Unsupported moving object vehicle role: %d (%s). Set classification UNKNOWN.",
+                objectState->state_.info.obj_role,
+                Vehicle::Role2String(objectState->state_.info.obj_role).c_str());
             obj_osi_internal.mobj->mutable_vehicle_classification()->set_role(osi3::MovingObject_VehicleClassification::ROLE_UNKNOWN);
         }
 #endif
@@ -755,13 +777,18 @@ int OSIReporter::UpdateOSIMovingObject(ObjectState *objectState)
         }
         else
         {
+            LOG("OSIReporter::UpdateOSIMovingObject -> Unsupported moving object pedestrian category: %d (%s). Set type UNKNOWN.",
+                objectState->state_.info.obj_category,
+                Pedestrian::Category2String(objectState->state_.info.obj_category).c_str());
             obj_osi_internal.mobj->set_type(osi3::MovingObject::Type::MovingObject_Type_TYPE_UNKNOWN);
-            LOG("OSIReporter::UpdateOSIMovingObject -> Unsupported moving object category");
         }
     }
     else
     {
-        LOG("OSIReporter::UpdateOSIMovingObject -> Unsupported moving object type");
+        LOG("OSIReporter::UpdateOSIMovingObject -> Unsupported moving object type: %d (%s). Set UNKNOWN.",
+            objectState->state_.info.obj_type,
+            Object::Type2String(objectState->state_.info.obj_type).c_str());
+        obj_osi_internal.mobj->set_type(osi3::MovingObject::Type::MovingObject_Type_TYPE_UNKNOWN);
     }
 
     // Set OSI Moving Object Control Type
@@ -1104,11 +1131,12 @@ int OSIReporter::UpdateOSIIntersection()
                             static_cast<unsigned int>(incomming_road->GetDrivingLaneById(incomming_s_value, junctionlanelink->from_)->GetGlobalId()));
 
                         roadmanager::Lane *lane = connecting_road->GetDrivingLaneById(connecting_outgoing_s_value, junctionlanelink->to_);
-                        if (lane != nullptr)
+                        roadmanager::Lane *successor_lane =
+                            lane != nullptr ? outgoing_road->GetDrivingLaneById(outgoing_s_value, lane->GetLink(connecting_road_link_type)->GetId())
+                                            : nullptr;
+                        if (lane != nullptr && successor_lane != nullptr)
                         {
-                            laneparing->mutable_successor_lane_id()->set_value(static_cast<unsigned int>(
-                                outgoing_road->GetDrivingLaneById(outgoing_s_value, lane->GetLink(connecting_road_link_type)->GetId())
-                                    ->GetGlobalId()));
+                            laneparing->mutable_successor_lane_id()->set_value(static_cast<unsigned int>(successor_lane->GetGlobalId()));
                         }
                         else
                         {
