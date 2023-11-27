@@ -916,7 +916,7 @@ void R0R12EulerAngles(double h0, double p0, double r0, double h1, double p1, dou
         R2[2][2] = SIGN(R2[2][2]) * SMALL_NUMBER;
 
     h = GetAngleInInterval2PI(atan2(R2[1][0], R2[0][0]));
-    p = GetAngleInInterval2PI(atan2(-R2[2][0], sqrt(R2[2][1] * R2[2][1] + R2[2][2] * R2[2][2])));
+    p = GetAngleInInterval2PI(asin(R2[2][0]));
     r = GetAngleInInterval2PI(atan2(R2[2][1], R2[2][2]));
 }
 
