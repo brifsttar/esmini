@@ -159,7 +159,7 @@
                      </Action>
                      <StartTrigger>
                         <ConditionGroup>
-                           <Condition name="BrakeCondition" delay="0" conditionEdge="rising">
+                           <Condition name="${BrakeCondition_HWT + _ + $HeadwayTime_Brake}" delay="0" conditionEdge="rising">
                               <ByEntityCondition>
                                  <TriggeringEntities triggeringEntitiesRule="any">
                                     <EntityRef entityRef="Ego"/>
@@ -188,19 +188,18 @@
                   </Condition>
                </ConditionGroup>
             </StartTrigger>
-            <StopTrigger>
-                <ConditionGroup>
-                   <Condition name="ActStopCondition" delay="5" conditionEdge="rising">
-                      <ByValueCondition>
-                         <StoryboardElementStateCondition storyboardElementType="maneuver"
-                                                          storyboardElementRef="CutInManeuver"
-                                                          state="endTransition"/>
-                      </ByValueCondition>
-                   </Condition>
-                </ConditionGroup>
-            </StopTrigger>
          </Act>
       </Story>
-      <StopTrigger/>
+      <StopTrigger>
+          <ConditionGroup>
+             <Condition name="StopCondition" delay="5" conditionEdge="rising">
+                <ByValueCondition>
+                   <StoryboardElementStateCondition storyboardElementType="maneuver"
+                                                    storyboardElementRef="CutInManeuver"
+                                                    state="endTransition"/>
+                </ByValueCondition>
+             </Condition>
+          </ConditionGroup>
+      </StopTrigger>
    </Storyboard>
 </OpenSCENARIO>

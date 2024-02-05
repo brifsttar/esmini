@@ -322,11 +322,13 @@ TEST(GetOSIRoadLaneTest, lane_no_obj)
     const char* Scenario_file = scenario_file.c_str();
 
     SE_Init(Scenario_file, 0, 0, 0, 0);
-    SE_OSIFileOpen("gt.osi");
+    SE_EnableOSIFile("gt.osi");
+
     ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
     EXPECT_EQ(fileStatus.st_size, 0);  // so far, nothing has been saved
 
     SE_StepDT(0.001f);
+    SE_UpdateOSIGroundTruth();
     SE_FlushOSIFile();
     ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
     EXPECT_EQ(fileStatus.st_size, 83642);  // initial OSI size, including static content
@@ -339,15 +341,18 @@ TEST(GetOSIRoadLaneTest, lane_no_obj)
     EXPECT_EQ(road_lane, nullptr);
 
     SE_StepDT(0.001f);  // Step for write another frame to osi file
+    SE_UpdateOSIGroundTruth();
     SE_FlushOSIFile();
     ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
     EXPECT_EQ(fileStatus.st_size, 84327);  // slight growth due to only dynamic updates
 
     SE_StepDT(0.001f);  // Step for write another frame to osi file
+    SE_UpdateOSIGroundTruth();
     SE_FlushOSIFile();
     ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
     EXPECT_EQ(fileStatus.st_size, 85013);  // slight growth due to only dynamic updates
 
+    SE_DisableOSIFile();
     SE_Close();
 }
 
@@ -688,12 +693,12 @@ TEST(OSIFile, writeosifile_two_step)
     const char*    Scenario_file = scenario_file.c_str();
     std::streamoff file_size1, file_size2;
 
+    SE_EnableOSIFile("");
     SE_Init(Scenario_file, 0, 0, 0, 0);
 
     SE_StepDT(0.001f);
     SE_UpdateOSIGroundTruth();
-    SE_OSIFileOpen(0);
-    SE_OSIFileWrite(true);
+    SE_FlushOSIFile();
 
     std::ifstream in_file("ground_truth.osi", std::ios::binary);
     in_file.seekg(0, std::ios::end);
@@ -702,24 +707,26 @@ TEST(OSIFile, writeosifile_two_step)
 
     SE_StepDT(0.001f);
     SE_UpdateOSIGroundTruth();
-    SE_OSIFileWrite(true);
+    SE_FlushOSIFile();
 
     in_file.seekg(0, std::ios::end);
     file_size2 = in_file.tellg();
     // std::cout <<"Size of the file at second step "<< file_size2 << " bytes" << std::endl;
 
     SE_Close();
+    SE_DisableOSIFile();
 
     EXPECT_LT(file_size1, file_size2);
+    EXPECT_GT(file_size1, file_size2 - file_size1);  // first package larger since including static stuff
 }
 
-TEST(OSIFile, writeosifile_no_init)
+TEST(OSIFile, updateosi_no_init)
 {
-    bool open  = SE_OSIFileOpen(0);
-    bool write = SE_OSIFileWrite();
+    SE_EnableOSIFile(0);
 
-    EXPECT_EQ(open, false);
-    EXPECT_EQ(write, false);
+    EXPECT_EQ(SE_UpdateOSIGroundTruth(), false);
+
+    SE_DisableOSIFile();
 }
 
 typedef struct
@@ -823,8 +830,8 @@ TEST(GroundTruthTests, check_GroundTruth_including_init_state)
     double                   x_vals[]      = {51.400, 51.600, 51.800};
     double                   time_stamps[] = {0.00, 0.01, 0.02};
 
+    SE_EnableOSIFile("gt.osi");
     ASSERT_EQ(SE_Init("../../../resources/xosc/cut-in_simple.xosc", 0, 0, 0, 0), 0);
-    SE_OSIFileOpen("gt.osi");
     SE_UpdateOSIGroundTruth();
 
     osi_gt_ptr = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
@@ -845,16 +852,163 @@ TEST(GroundTruthTests, check_GroundTruth_including_init_state)
         if (i < 2)  // skip step of the last round
         {
             SE_StepDT(0.01f);
+            SE_UpdateOSIGroundTruth();
+        }
+    }
+
+    SE_Close();
+    SE_DisableOSIFile();
+
+    ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
+    EXPECT_EQ(fileStatus.st_size, 7642);
+
+    // Read OSI file
+    FILE* file = FileOpen("gt.osi", "rb");
+    ASSERT_NE(file, nullptr);
+
+    const int max_msg_size = 10000;
+    int       msg_size;
+    char      msg_buf[max_msg_size];
+
+    for (int i = 0; i < 3; i++)
+    {
+        ASSERT_EQ(fread(reinterpret_cast<char*>(&msg_size), 1, sizeof(msg_size), file), sizeof(msg_size));
+
+        ASSERT_LE(msg_size, max_msg_size);
+        EXPECT_EQ(fread(msg_buf, 1, static_cast<size_t>(msg_size), file), msg_size);
+        osi_gt.ParseFromArray(msg_buf, msg_size);
+
+        EXPECT_EQ(osi_gt.mutable_moving_object()->size(), 2);
+        seconds = static_cast<double>(osi_gt.mutable_timestamp()->seconds()) + 1E-9 * static_cast<double>(osi_gt.mutable_timestamp()->nanos());
+        EXPECT_NEAR(seconds, time_stamps[i], 1E-5);
+        obj_x = osi_gt.mutable_moving_object(0)->mutable_base()->mutable_position()->x();
+        obj_y = osi_gt.mutable_moving_object(0)->mutable_base()->mutable_position()->y();
+        obj_z = osi_gt.mutable_moving_object(0)->mutable_base()->mutable_position()->z();
+        EXPECT_NEAR(obj_x, x_vals[i], 1E-5);
+        EXPECT_NEAR(obj_y, -1.535, 1E-5);
+        EXPECT_NEAR(obj_z, 0.75, 1E-5);
+    }
+
+    fclose(file);
+}
+
+TEST(GroundTruthTests, check_frequency_implicit)
+{
+    const osi3::GroundTruth* osi_gt_ptr;
+    osi3::GroundTruth        osi_gt;
+    struct stat              fileStatus;
+    double                   seconds       = 0.0, obj_x, obj_y, obj_z;
+    double                   x_vals[]      = {51.400, 51.800, 52.200};
+    double                   time_stamps[] = {0.00, 0.02, 0.04};
+
+    SE_EnableOSIFile("gt_implicit.osi");
+    ASSERT_EQ(SE_Init("../../../resources/xosc/cut-in_simple.xosc", 0, 0, 0, 0), 0);
+    SE_UpdateOSIGroundTruth();
+
+    osi_gt_ptr = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
+
+    for (int i = 0; i < 6; i++)
+    {
+        // Read OSI message, should be identical every two pair of frames - i/2 will result in 0, 0, 1, 1, 2, 2 and so on
+        EXPECT_EQ(osi_gt_ptr->moving_object().size(), 2);
+        seconds = static_cast<double>(osi_gt_ptr->timestamp().seconds()) + 1E-9 * static_cast<double>(osi_gt_ptr->timestamp().nanos());
+        EXPECT_NEAR(seconds, time_stamps[i / 2], 1E-5);
+        obj_x = osi_gt_ptr->moving_object(0).base().position().x();
+        obj_y = osi_gt_ptr->moving_object(0).base().position().y();
+        obj_z = osi_gt_ptr->moving_object(0).base().position().z();
+        EXPECT_NEAR(obj_x, x_vals[i / 2], 1E-5);
+        EXPECT_NEAR(obj_y, -1.535, 1E-5);
+        EXPECT_NEAR(obj_z, 0.75, 1E-5);
+        EXPECT_NEAR(osi_gt_ptr->moving_object(0).vehicle_attributes().bbcenter_to_rear().z(), -0.35, 1E-5);
+
+        if (i < 5)  // skip step of the last round
+        {
+            SE_StepDT(0.01f);
+            if ((i % 2) == 1)  // Update OSI every second time
+            {
+                SE_UpdateOSIGroundTruth();
+            }
+        }
+    }
+
+    SE_DisableOSIFile();
+    SE_Close();
+
+    ASSERT_EQ(stat("gt_implicit.osi", &fileStatus), 0);
+    EXPECT_EQ(fileStatus.st_size, 7642);
+
+    // Read OSI file
+    FILE* file = FileOpen("gt_implicit.osi", "rb");
+    ASSERT_NE(file, nullptr);
+
+    const int max_msg_size = 10000;
+    int       msg_size;
+    char      msg_buf[max_msg_size];
+
+    for (int i = 0; i < 3; i++)
+    {
+        ASSERT_EQ(fread(reinterpret_cast<char*>(&msg_size), 1, sizeof(msg_size), file), sizeof(msg_size));
+
+        ASSERT_LE(msg_size, max_msg_size);
+        EXPECT_EQ(fread(msg_buf, 1, static_cast<size_t>(msg_size), file), msg_size);
+        osi_gt.ParseFromArray(msg_buf, msg_size);
+
+        EXPECT_EQ(osi_gt.mutable_moving_object()->size(), 2);
+        seconds = static_cast<double>(osi_gt.mutable_timestamp()->seconds()) + 1E-9 * static_cast<double>(osi_gt.mutable_timestamp()->nanos());
+        EXPECT_NEAR(seconds, time_stamps[i], 1E-5);
+        obj_x = osi_gt.mutable_moving_object(0)->mutable_base()->mutable_position()->x();
+        obj_y = osi_gt.mutable_moving_object(0)->mutable_base()->mutable_position()->y();
+        obj_z = osi_gt.mutable_moving_object(0)->mutable_base()->mutable_position()->z();
+        EXPECT_NEAR(obj_x, x_vals[i], 1E-5);
+        EXPECT_NEAR(obj_y, -1.535, 1E-5);
+        EXPECT_NEAR(obj_z, 0.75, 1E-5);
+    }
+
+    fclose(file);
+}
+
+TEST(GroundTruthTests, check_frequency_explicit)
+{
+    const osi3::GroundTruth* osi_gt_ptr;
+    osi3::GroundTruth        osi_gt;
+    struct stat              fileStatus;
+    double                   seconds       = 0.0, obj_x, obj_y, obj_z;
+    double                   x_vals[]      = {51.400, 51.800, 52.200};
+    double                   time_stamps[] = {0.00, 0.02, 0.04};
+
+    const char* args[] = {"--osc", "../../../resources/xosc/cut-in_simple.xosc", "--headless", "--osi_file", "gt_explicit.osi", "--osi_freq", "2"};
+
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+
+    osi_gt_ptr = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
+
+    for (int i = 0; i < 6; i++)
+    {
+        // Read OSI message, should be identical every two pair of frames - i/2 will result in 0, 0, 1, 1, 2, 2 and so on
+        EXPECT_EQ(osi_gt_ptr->moving_object().size(), 2);
+        seconds = static_cast<double>(osi_gt_ptr->timestamp().seconds()) + 1E-9 * static_cast<double>(osi_gt_ptr->timestamp().nanos());
+        EXPECT_NEAR(seconds, time_stamps[i / 2], 1E-5);
+        obj_x = osi_gt_ptr->moving_object(0).base().position().x();
+        obj_y = osi_gt_ptr->moving_object(0).base().position().y();
+        obj_z = osi_gt_ptr->moving_object(0).base().position().z();
+        EXPECT_NEAR(obj_x, x_vals[i / 2], 1E-5);
+        EXPECT_NEAR(obj_y, -1.535, 1E-5);
+        EXPECT_NEAR(obj_z, 0.75, 1E-5);
+        EXPECT_NEAR(osi_gt_ptr->moving_object(0).vehicle_attributes().bbcenter_to_rear().z(), -0.35, 1E-5);
+
+        if (i < 5)  // skip step of the last round
+        {
+            SE_StepDT(0.01f);
         }
     }
 
     SE_Close();
 
-    ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
-    EXPECT_EQ(fileStatus.st_size, 19870);
+    ASSERT_EQ(stat("gt_explicit.osi", &fileStatus), 0);
+    EXPECT_EQ(fileStatus.st_size, 7642);
 
     // Read OSI file
-    FILE* file = FileOpen("gt.osi", "rb");
+    FILE* file = FileOpen("gt_explicit.osi", "rb");
     ASSERT_NE(file, nullptr);
 
     const int max_msg_size = 10000;
@@ -882,6 +1036,40 @@ TEST(GroundTruthTests, check_GroundTruth_including_init_state)
     }
 
     fclose(file);
+}
+
+TEST(GroundTruthTests, check_teleport_not_affecting_vel_and_acc)
+{
+    const osi3::GroundTruth* osi_gt_ptr;
+    osi3::GroundTruth        osi_gt;
+    double                   seconds = 0.0;
+
+    const char* args[] = {"--osc",
+                          "../../../EnvironmentSimulator/Unittest/xosc/sudden_teleport.xosc",
+                          "--headless",
+                          "--osi_file",
+                          "gt_sudden_teleport.osi"};
+
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+
+    osi_gt_ptr = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
+
+    // Read OSI message, should be identical every two pair of frames - i/2 will result in 0, 0, 1, 1, 2, 2 and so on
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 1);
+    seconds = static_cast<double>(osi_gt_ptr->timestamp().seconds()) + 1E-9 * static_cast<double>(osi_gt_ptr->timestamp().nanos());
+    EXPECT_NEAR(seconds, 0.0, 1e-5);
+    EXPECT_NEAR(osi_gt_ptr->moving_object(0).base().position().x(), 21.4, 1e-5);  // OSI center is center of entity bounding box
+    EXPECT_NEAR(osi_gt_ptr->moving_object(0).base().velocity().x(), 10.0, 1e-5);
+    EXPECT_NEAR(osi_gt_ptr->moving_object(0).base().acceleration().x(), 0.0, 1e-5);
+
+    while (SE_GetSimulationTime() < 1.5f)
+    {
+        SE_StepDT(0.1f);
+        EXPECT_NEAR(osi_gt_ptr->moving_object(0).base().velocity().x(), 10.0, 1e-5);
+        EXPECT_NEAR(osi_gt_ptr->moving_object(0).base().acceleration().x(), 0.0, 1e-5);
+    }
+
+    SE_Close();
 }
 
 TEST(GetMiscObjFromGroundTruth, receive_miscobj)
@@ -2572,7 +2760,7 @@ TEST(ParameterTest, SetParameterValuesBeforeInit)
 {
     double positions[3][2] = {
         {5.34382, 186.68216},  // TargetSpeedFactor = 1.1
-        {8.83809, 240.62445},  // TargetSpeedFactor = 1.5
+        {8.83780, 240.59726},  // TargetSpeedFactor = 1.5
         {5.46731, 201.38162}   // TargetSpeedFactor = Default = 1.2
     };
     SE_ScenarioObjectState state;
@@ -2887,31 +3075,31 @@ TEST(ExternalController, TestExternalDriver)
                 if (abs(SE_GetSimulationTime() - 11.0f) < static_cast<float>(SMALL_NUMBER))
                 {
                     SE_GetObjectState(0, &objectState);
-                    EXPECT_NEAR(objectState.x, 202.453, 1e-3);
-                    EXPECT_NEAR(objectState.y, 82.985, 1e-3);
+                    EXPECT_NEAR(objectState.x, 202.472, 1e-3);
+                    EXPECT_NEAR(objectState.y, 83.024, 1e-3);
                     EXPECT_NEAR(objectState.h, 1.134, 1e-3);
                     EXPECT_NEAR(objectState.p, 6.262, 1e-3);
                     if (ghostMode[i] == true)
                     {
                         SE_RoadInfo road_info2;
                         SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed2);
-                        EXPECT_NEAR(road_info2.global_pos_x, 206.703, 1e-3);
-                        EXPECT_NEAR(road_info2.global_pos_y, 92.414, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_x, 206.716, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_y, 92.448, 1e-3);
                     }
                 }
                 else if (abs(SE_GetSimulationTime() - 30.0f) < static_cast<float>(SMALL_NUMBER))
                 {
                     SE_GetObjectState(0, &objectState);
-                    EXPECT_NEAR(objectState.x, 382.058, 1e-3);
-                    EXPECT_NEAR(objectState.y, 301.720, 1e-3);
+                    EXPECT_NEAR(objectState.x, 382.111, 1e-3);
+                    EXPECT_NEAR(objectState.y, 301.634, 1e-3);
                     EXPECT_NEAR(objectState.h, 5.272, 1e-3);
                     EXPECT_NEAR(objectState.p, 0.025, 1e-3);
                     if (ghostMode[i] == true)
                     {
                         SE_RoadInfo road_info3;
                         SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info3, &speed2);
-                        EXPECT_NEAR(road_info3.global_pos_x, 388.234, 1e-3);
-                        EXPECT_NEAR(road_info3.global_pos_y, 291.231, 1e-3);
+                        EXPECT_NEAR(road_info3.global_pos_x, 388.217, 1e-3);
+                        EXPECT_NEAR(road_info3.global_pos_y, 291.263, 1e-3);
                     }
                 }
             }
@@ -2922,29 +3110,29 @@ TEST(ExternalController, TestExternalDriver)
                 if (abs(SE_GetSimulationTime() - 11.0f) < static_cast<float>(SMALL_NUMBER))
                 {
                     SE_GetObjectState(0, &objectState);
-                    EXPECT_NEAR(objectState.x, 203.204, 1e-3);
+                    EXPECT_NEAR(objectState.x, 203.203, 1e-3);
                     EXPECT_NEAR(objectState.y, 84.484, 1e-3);
                     EXPECT_NEAR(objectState.h, 1.142, 1e-3);
                     EXPECT_NEAR(objectState.p, 6.262, 1e-3);
                     if (ghostMode[i] == true)
                     {
                         SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed3);
-                        EXPECT_NEAR(road_info2.global_pos_x, 206.703, 1e-3);
-                        EXPECT_NEAR(road_info2.global_pos_y, 92.414, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_x, 206.716, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_y, 92.448, 1e-3);
                     }
                 }
                 else if (abs(SE_GetSimulationTime() - 30.0f) < static_cast<float>(SMALL_NUMBER))
                 {
                     SE_GetObjectState(0, &objectState);
-                    EXPECT_NEAR(objectState.x, 382.069, 1e-3);
-                    EXPECT_NEAR(objectState.y, 302.541, 1e-3);
+                    EXPECT_NEAR(objectState.x, 382.065, 1e-3);
+                    EXPECT_NEAR(objectState.y, 302.552, 1e-3);
                     EXPECT_NEAR(objectState.h, 5.271, 1e-3);
                     EXPECT_NEAR(objectState.p, 0.026, 1e-3);
                     if (ghostMode[i] == true)
                     {
                         SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed3);
-                        EXPECT_NEAR(road_info2.global_pos_x, 388.234, 1e-3);
-                        EXPECT_NEAR(road_info2.global_pos_y, 291.231, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_x, 388.217, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_y, 291.263, 1e-3);
                     }
                 }
             }
@@ -3100,11 +3288,11 @@ TEST(PositionMode, TestRoadAlignmentModes)
     } result[2][4] = {{{10.0, 100.739, 87.310, -0.830, 3.015, 0.000, 0.000},
                        {10.0, 75.249, 87.375, 33.144, 2.677, 0.067, 0.000},
                        {10.0, 70.115, 87.356, 7.888, 2.245, 0.070, 5.626},
-                       {10.0, 60.000, 70.000, 2.000, 2.356, 0.152, 0.000}},
+                       {10.0, 60.000, 70.000, 2.000, 2.356, 0.152, 6.083}},
                       {{17.0, 16.145, 200.243, 10.457, 2.982, 0.000, 0.000},
                        {17.0, -35.413, 98.073, 16.592, 3.265, 0.154, 0.000},
-                       {17.0, -31.555, 100.000, 28.494, 3.142, 6.050, 5.961},
-                       {17.0, -24.000, 70.000, 28.600, 3.142, 5.977, 0.000}}};
+                       {17.0, -31.555, 100.000, 28.494, 3.142, 6.050, 5.962},
+                       {17.0, -24.000, 70.000, 28.600, 3.142, 5.977, 6.083}}};
 
     SE_AddPath("../../../EnvironmentSimulator/Unittest/xodr");
     SE_AddPath("../../../resources/xosc/Catalogs/Pedestrians");
@@ -3359,6 +3547,8 @@ TEST(APITest, TestGetRoute)
     SE_Close();
 }
 
+#ifdef _USE_OSG
+
 static bool CheckFileExists(std::string filename, long long timestamp)
 {
     struct stat fileStatus;
@@ -3395,8 +3585,8 @@ TEST(APITest, TestFetchImage)
     const char* args[] =
         {"--osc", "../../../resources/xosc/cut-in_simple.xosc", "--window", "60", "60", "800", "400", "--aa_mode", "4", "--headless"};
 
-    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
     SE_SaveImagesToRAM(true);
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
 
     ASSERT_EQ(SE_GetNumberOfObjects(), 2);
 
@@ -3483,7 +3673,10 @@ TEST(APITest, TestFetchImage)
     EXPECT_EQ(CheckFileExists(screenshotFilename5, oldModTime - 1), false);
 
     SE_Close();
+    SE_SaveImagesToRAM(false);
 }
+
+#endif  // _USE_OSG
 
 static void paramDeclCallbackSetRoute(void* args)
 {
@@ -3613,17 +3806,17 @@ TEST(ReplayTest, TestMultiReplayDifferentTimeSteps)
 
         if (k == 0)
         {
-            EXPECT_NEAR(replay->data_[2012].state.pos.y, 130.995, 1E-3);
-            EXPECT_NEAR(replay->data_[2015].state.pos.y, 207.378, 1E-3);
-            EXPECT_NEAR(replay->data_[5967].state.info.timeStamp, 19.52, 1E-3);
-            EXPECT_NEAR(replay->data_[5967].state.info.id, 1, 1E-3);
+            EXPECT_NEAR(replay->data_[2012].state.pos.y, 130.994, 1E-3);
+            EXPECT_NEAR(replay->data_[2015].state.pos.y, 207.387, 1E-3);
+            EXPECT_NEAR(replay->data_[5965].state.info.timeStamp, 19.51, 1E-3);
+            EXPECT_NEAR(replay->data_[5965].state.info.id, 1, 1E-3);
         }
         else
         {
-            EXPECT_NEAR(replay->data_[2012].state.pos.y, 130.924, 1E-3);
-            EXPECT_NEAR(replay->data_[2015].state.pos.y, 210.727, 1E-3);
-            EXPECT_NEAR(replay->data_[4203].state.info.timeStamp, 19.7, 1E-3);
-            EXPECT_NEAR(replay->data_[4203].state.info.id, 1, 1E-3);
+            EXPECT_NEAR(replay->data_[2012].state.pos.y, 130.913, 1E-3);
+            EXPECT_NEAR(replay->data_[2015].state.pos.y, 210.738, 1E-3);
+            EXPECT_NEAR(replay->data_[4201].state.info.timeStamp, 19.6, 1E-3);
+            EXPECT_NEAR(replay->data_[4201].state.info.id, 1, 1E-3);
         }
 
         delete replay;
@@ -3632,7 +3825,7 @@ TEST(ReplayTest, TestMultiReplayDifferentTimeSteps)
 
 void ConditionCallbackInstance1(const char* element_name, double timestamp)
 {
-    EXPECT_STREQ(element_name, "act_start");
+    EXPECT_STREQ(element_name, "act_start_condition");
     EXPECT_NEAR(timestamp, 0.1, 1E-4);
     EXPECT_NEAR(static_cast<float>(timestamp), SE_GetSimulationTime(), 1E-4);
 }
@@ -3657,30 +3850,36 @@ TEST(EventCallbackTest, TestConditionCallback)
     SE_Close();
 }
 
-void StoryBoardElementStateCallbackInstance1(const char* element_name, int type, int state)
+void StoryBoardElementStateCallbackInstance1(const char* element_name, int type, int state, const char* full_path)
 {
     static int counter = 0;
-    const int  n_runs  = 13;
+    const int  n_runs  = 18;
     struct
     {
         const char* name;
         double      time;
         int         type;
         int         state;
+        const char* full_path;
     } state_target[n_runs] = {
-        {"maneuver", 0.1, 4, 2},                     // Maneuver, Running
-        {"maneuvuergroup_maneuver", 0.1, 3, 2},      // ManeuverGroup, Running
-        {"act_maneuvuergroup_maneuver", 0.1, 2, 2},  // Act, Running
-        {"slowdown", 3.5, 6, 2},                     // Action, Running
-        {"slowdown event", 3.5, 5, 2},               // Event, Running
-        {"slowdown", 4.5, 6, 3},                     // Action, Complete
-        {"slowdown event", 4.5, 5, 3},               // Event, Complete
-        {"lane change", 4.5, 6, 2},                  // Action, Running
-        {"lanechange event", 4.5, 5, 2},             // Event, Running
-        {"lane change", 8.4, 6, 3},                  // Action, Complete
-        {"lanechange event", 8.4, 5, 3},             // Event, Complete
-        {"maneuver", 8.5, 4, 3},                     // Maneuver, Complete
-        {"maneuvuergroup_maneuver", 8.5, 3, 3},      // ManeuverGroup, Complete
+        {"hwe_act", 0.1, 3, 2, "/hwe_story/hwe_act"},                                                                  // Act, Running
+        {"hwe_maneuvergroup", 0.1, 4, 2, "/hwe_story/hwe_act/hwe_maneuvergroup"},                                      // ManeuverGroup, Running
+        {"hwe_maneuver", 0.1, 5, 2, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver"},                              // Maneuver, Running
+        {"slowdown event", 0.1, 6, 1, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/slowdown event"},             // Event, Standby
+        {"lanechange event", 0.1, 6, 1, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/lanechange event"},         // Event, Standby
+        {"slowdown event", 3.4, 6, 2, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/slowdown event"},             // Event, Running
+        {"slowdown", 3.4, 7, 2, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/slowdown event/slowdown"},          // Action, Running
+        {"slowdown", 4.4, 7, 3, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/slowdown event/slowdown"},          // Action, Complete
+        {"slowdown event", 4.4, 6, 3, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/slowdown event"},             // Event, Complete
+        {"lanechange event", 4.4, 6, 2, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/lanechange event"},         // Event, Running
+        {"lane change", 4.4, 7, 2, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/lanechange event/lane change"},  // Action, Running
+        {"lane change", 8.3, 7, 3, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/lanechange event/lane change"},  // Action, Complete
+        {"lanechange event", 8.3, 6, 3, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/lanechange event"},         // Event, Complete
+        {"hwe_maneuver", 8.3, 5, 3, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver"},                              // Maneuver, Complete
+        {"hwe_maneuvergroup", 8.3, 4, 3, "/hwe_story/hwe_act/hwe_maneuvergroup"},                                      // ManeuverGroup, Complete
+        {"hwe_act", 8.3, 3, 3, "/hwe_story/hwe_act"},                                                                  // Act, Complete
+        {"hwe_story", 8.3, 2, 3, "/hwe_story"},                                                                        // Story, Complete
+        {"storyBoard", 12.1, 1, 3, "/"},                                                                               // StoryBoard, Complete
     };
 
     if (counter < n_runs)
@@ -3689,6 +3888,7 @@ void StoryBoardElementStateCallbackInstance1(const char* element_name, int type,
         EXPECT_NEAR(SE_GetSimulationTime(), state_target[counter].time, 1E-4);
         EXPECT_EQ(type, state_target[counter].type);
         EXPECT_EQ(state, state_target[counter].state);
+        EXPECT_STREQ(full_path, state_target[counter].full_path);
     }
 
     counter++;
@@ -3884,13 +4084,17 @@ TEST(ParamDistTest, TestRunAll)
         SE_Init(scenario_file.c_str(), 0, 0, 0, 1);
 
 #ifdef _USE_OSI
-        SE_OSIFileOpen("gt.osi");
+        SE_EnableOSIFile("gt.osi");
 #endif  // _USE_OSI
 
         for (int j = 0; j < 50 && SE_GetQuitFlag() == 0; j++)
         {
             SE_StepDT(0.1f);
         }
+
+#ifdef _USE_OSI
+        SE_DisableOSIFile();
+#endif  // _USE_OSI
 
         SE_Close();
     }
@@ -3928,16 +4132,14 @@ TEST(ParamDistTest, TestRunAll)
     do
     {
         SE_Init(scenario_file.c_str(), 0, 0, 0, 1);
-
-#ifdef _USE_OSI
-        SE_OSIFileOpen("gt.osi");
-#endif  // _USE_OSI
+        SE_EnableOSIFile("gt.osi");
 
         for (int j = 0; j < 50 && SE_GetQuitFlag() == 0; j++)
         {
             SE_StepDT(0.1f);
         }
 
+        SE_DisableOSIFile();
         SE_Close();
 
     } while (SE_GetPermutationIndex() < SE_GetNumberOfPermutations() - 1);

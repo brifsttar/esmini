@@ -19,12 +19,10 @@
 
 #include "Catalogs.hpp"
 #include "Entities.hpp"
-#include "Init.hpp"
-#include "Story.hpp"
+#include "Storyboard.hpp"
 #include "ScenarioGateway.hpp"
 #include "ScenarioReader.hpp"
 #include "RoadNetwork.hpp"
-#include "ActionServer.hpp"
 
 namespace scenarioengine
 {
@@ -44,19 +42,12 @@ namespace scenarioengine
         Object *object1;
     } CollisionPair;
 
-    enum class GhostMode
-    {
-        NORMAL,
-        RESTART,    // the frame ghost is requested to restart
-        RESTARTING  // ghost restart is ongoing, including the final restart timestep
-    };
-
     class ScenarioEngine
     {
     public:
-        Entities                    entities_;
-        std::vector<CollisionPair>  collision_pair_;
-        actionserver::ServerActions serverActions_;
+        Entities                   entities_;
+        std::vector<CollisionPair> collision_pair_;
+        std::vector<OSCAction *>  *injected_actions_;
 
         ScenarioEngine(std::string oscFilename, bool disable_controllers = false);
         ScenarioEngine(const pugi::xml_document &xml_doc, bool disable_controllers = false);
@@ -65,6 +56,10 @@ namespace scenarioengine
         void InitScenarioCommon(bool disable_controllers);
         int  InitScenario(std::string oscFilename, bool disable_controllers = false);
         int  InitScenario(const pugi::xml_document &xml_doc, bool disable_controllers = false);
+        void SetInjectedActionsPtr(std::vector<OSCAction *> *injected_actions)
+        {
+            injected_actions_ = injected_actions;
+        }
 
         /**
         Step scenario, i.e. evaluate conditions and step actions
@@ -99,26 +94,18 @@ namespace scenarioengine
         }
 
         ScenarioGateway *getScenarioGateway();
-        double           getSimulationTime()
+        double           getSimulationTime() const
         {
             return simulationTime_;
         }
         bool GetQuitFlag()
         {
-            return quit_flag;
+            return storyBoard.GetCurrentState() == StoryBoard::State::COMPLETE;
         }
         ScenarioReader *scenarioReader;
         ScenarioReader *GetScenarioReader()
         {
             return scenarioReader;
-        }
-        void SetHeadstartTime(double headstartTime)
-        {
-            headstart_time_ = headstartTime;
-        }
-        double GetHeadstartTime()
-        {
-            return headstart_time_;
         }
         void SetSimulationTime(double time)
         {
@@ -142,42 +129,38 @@ namespace scenarioengine
             return &trueTime_;
         }
         void CreateGhostTeleport(Object *obj1, Object *obj2, Event *event);
-        void SetGhostRestart()
-        {
-            ghost_mode_ = GhostMode::RESTART;
-        }
-        GhostMode GetGhostMode()
-        {
-            return ghost_mode_;
-        }
+
         void UpdateGhostMode();
         int  GetInitStatus()
         {
             return init_status_;
         }
 
+        void SetOSIReporter(OSIReporter *osi_reporter)
+        {
+            storyBoard.SetOSIReporter(osi_reporter);
+        }
+
         double   trueTime_;
         bool     doOnce = true;
         SE_Mutex mutex_;
 
+        StoryBoard storyBoard;
+
     private:
         // OpenSCENARIO parameters
         Catalogs                catalogs;
-        Init                    init;
-        StoryBoard              storyBoard;
         RoadNetwork             roadNetwork;
         roadmanager::OpenDrive *odrManager;
         bool                    disable_controllers_;
 
         // Simulation parameters
         double          simulationTime_;
-        double          headstart_time_;
-        GhostMode       ghost_mode_;
         Vehicle         sumotemplate;
         ScenarioGateway scenarioGateway;
+        Object         *ghost_;
 
         // execution control flags
-        bool         quit_flag;
         unsigned int frame_nr_;
         int          init_status_;
 

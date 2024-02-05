@@ -14,14 +14,15 @@
 #include <string>
 #include <random>
 
+#include "PlayerServer.hpp"
 #include "ScenarioEngine.hpp"
 #include "RoadManager.hpp"
 #include "CommonMini.hpp"
 #include "Server.hpp"
-#include "ActionServer.hpp"
 #include "playerbase.hpp"
 #include "helpText.hpp"
 #include "OSCParameterDistribution.hpp"
+
 #ifdef _USE_OSG
 #include "viewer.hpp"
 #endif
@@ -57,10 +58,10 @@ ScenarioPlayer::ScenarioPlayer(int argc, char* argv[])
     quit_request         = false;
     threads              = false;
     launch_server        = false;
-    launch_action_server = false;
     fixed_timestep_      = -1.0;
     osi_receiver_addr    = "";
-    osi_freq_            = 1;
+    osi_freq_            = 0;
+    osi_updated_         = false;
     CSV_Log              = NULL;
     osiReporter          = NULL;
     disable_controllers_ = false;
@@ -68,6 +69,7 @@ ScenarioPlayer::ScenarioPlayer(int argc, char* argv[])
     scenarioEngine       = nullptr;
     osiReporter          = nullptr;
     viewer_              = nullptr;
+    player_server_       = nullptr;
 
 #ifdef _USE_OSG
     viewerState_ = ViewerState::VIEWER_STATE_NOT_STARTED;
@@ -84,9 +86,9 @@ ScenarioPlayer::~ScenarioPlayer()
         StopServer();
     }
 
-    if (launch_action_server)
+    if (opt.GetOptionSet("player_server"))
     {
-        actionserver::StopActionServer();
+        player_server_->Stop();
     }
 
 #ifdef _USE_OSG
@@ -127,7 +129,19 @@ void ScenarioPlayer::SetOSIFileStatus(bool is_on, const char* filename)
     {
         if (is_on)
         {
-            osiReporter->OpenOSIFile(filename);
+            if (filename == nullptr || !strcmp(filename, ""))
+            {
+                filename = DEFAULT_OSI_TRACE_FILENAME;
+            }
+
+            if (OSCParameterDistribution::Inst().GetNumPermutations() > 0)
+            {
+                osiReporter->OpenOSIFile(OSCParameterDistribution::Inst().AddInfoToFilepath(filename).c_str());
+            }
+            else
+            {
+                osiReporter->OpenOSIFile(filename);
+            }
         }
         else
         {
@@ -159,20 +173,23 @@ void ScenarioPlayer::Draw()
     }
 }
 
-int ScenarioPlayer::Frame(double timestep_s)
+int ScenarioPlayer::Frame(double timestep_s, bool server_mode)
 {
     static bool messageShown  = false;
     int         retval        = 0;
     double      ghost_solo_dt = 0.05;
 
-    if (!IsPaused())
+    if (!IsPaused() || server_mode)
     {
+#ifdef _USE_OSI
+        osiReporter->SetUpdated(false);
+#endif
         scenarioEngine->mutex_.Lock();
         retval = ScenarioFrame(timestep_s, true);
 
-        if (scenarioEngine->GetGhostMode() != GhostMode::NORMAL)
+        if (SE_Env::Inst().GetGhostMode() != GhostMode::NORMAL)
         {
-            while (retval == 0 && scenarioEngine->GetGhostMode() != GhostMode::NORMAL && !IsQuitRequested())
+            while (retval == 0 && SE_Env::Inst().GetGhostMode() != GhostMode::NORMAL && !IsQuitRequested())
             {
                 Draw();
                 if (!IsPaused() && !IsQuitRequested())
@@ -194,29 +211,37 @@ int ScenarioPlayer::Frame(double timestep_s)
         scenarioEngine->mutex_.Unlock();
     }
 
-    Draw();
-
-    if (scenarioEngine->getSimulationTime() > 3600 && !messageShown)
+    if (!server_mode)
     {
-        LOG("Info: Simulation time > 1 hour. Put a stopTrigger for automatic ending");
-        messageShown = true;
+        Draw();
+
+        if (scenarioEngine->getSimulationTime() > 3600 && !messageShown)
+        {
+            LOG("Info: Simulation time > 1 hour. Put a stopTrigger for automatic ending");
+            messageShown = true;
+        }
+
+        if (player_server_)
+        {
+            player_server_->Step();
+        }
     }
 
     return retval;
 }
 
-int ScenarioPlayer::Frame()
+int ScenarioPlayer::Frame(bool server_mode)
 {
     static __int64 time_stamp = 0;
     double         dt;
 
     if ((dt = GetFixedTimestep()) < 0.0)
     {
-        return Frame(SE_getSimTimeStep(time_stamp, minStepSize, maxStepSize));
+        return Frame(SE_getSimTimeStep(time_stamp, minStepSize, maxStepSize), server_mode);
     }
     else
     {
-        return Frame(dt);
+        return Frame(dt, server_mode);
     }
 }
 
@@ -244,7 +269,7 @@ int ScenarioPlayer::ScenarioFrame(double timestep_s, bool keyframe)
 
         scenarioEngine->prepareGroundTruth(timestep_s);
 
-        if (scenarioEngine->GetGhostMode() != GhostMode::RESTART)
+        if (SE_Env::Inst().GetGhostMode() != GhostMode::RESTART)
         {
             scenarioGateway->WriteStatesToFile();
 
@@ -255,14 +280,16 @@ int ScenarioPlayer::ScenarioFrame(double timestep_s, bool keyframe)
         }
 
         if (keyframe)
+        {
             frame_counter_++;
+        }
     }
 
     scenarioEngine->UpdateGhostMode();
 
     mutex.Unlock();
 
-    quit_request = scenarioEngine->GetQuitFlag();
+    quit_request |= scenarioEngine->GetQuitFlag();
 
     return retval;
 }
@@ -278,20 +305,17 @@ void ScenarioPlayer::ScenarioPostFrame()
 #ifdef _USE_OSI
     if (NEAR_NUMBERS(scenarioEngine->getSimulationTime(), scenarioEngine->GetTrueTime()))
     {
-        osiReporter->ReportSensors(sensor);
-
         // Update OSI info
-        if (osiReporter->IsFileOpen() || osiReporter->GetUDPClientStatus() == 0)
+        if (osi_freq_ > 0)
         {
+            osiReporter->ReportSensors(sensor);
+
             if ((GetCounter() - 1) % osi_freq_ == 0)
             {
                 osiReporter->UpdateOSIGroundTruth(scenarioGateway->objectState_);
-                if (osiReporter->GetCounter() == 1)
-                {
-                    // Clear the static data now when it has been reported once
-                    osiReporter->ClearOSIGroundTruth();
-                }
             }
+
+            osiReporter->UpdateOSITrafficCommand();
         }
     }
 #endif  // _USE_OSI
@@ -501,10 +525,12 @@ void ScenarioPlayer::ViewerFrame(bool init)
 
 int ScenarioPlayer::SaveImagesToRAM(bool state)
 {
+    SE_Env::Inst().SaveImagesToRAM(state);
+
     if (viewer_)
     {
         viewer_->imageMutex.Lock();
-        viewer_->SaveImagesToRAM(state);
+        viewer_->UpdateOffScreenStatus();
         viewer_->imageMutex.Unlock();
         return 0;
     }
@@ -529,7 +555,7 @@ OffScreenImage* ScenarioPlayer::FetchCapturedImagePtr()
 {
     static OffScreenImage img;
 
-    if (viewer_ && SE_Env::Inst().GetOffScreenRendering())
+    if (viewer_ && viewer_->IsOffScreenRequested())
     {
         viewer_->renderSemaphore.Wait();  // Wait until rendering is done
 
@@ -576,31 +602,40 @@ OffScreenImage* ScenarioPlayer::FetchCapturedImagePtr()
     return nullptr;
 }
 
-void ScenarioPlayer::AddCustomCamera(double x, double y, double z, double h, double p, bool fixed_pos)
+int ScenarioPlayer::AddCustomCamera(double x, double y, double z, double h, double p, bool fixed_pos)
 {
     if (viewer_)
     {
         viewer_->AddCustomCamera(x, y, z, h, p, fixed_pos);
         viewer_->SetCameraMode(-1);  // activate last camera which is the one just added
+        return viewer_->GetNumberOfCameraModes() - 1;
     }
+
+    return -1;
 }
 
-void ScenarioPlayer::AddCustomCamera(double x, double y, double z, bool fixed_pos)
+int ScenarioPlayer::AddCustomCamera(double x, double y, double z, bool fixed_pos)
 {
     if (viewer_)
     {
         viewer_->AddCustomCamera(x, y, z, fixed_pos);
         viewer_->SetCameraMode(-1);  // activate last camera which is the one just added
+        return viewer_->GetNumberOfCameraModes() - 1;
     }
+
+    return -1;
 }
 
-void ScenarioPlayer::AddCustomFixedTopCamera(double x, double y, double z, double rot)
+int ScenarioPlayer::AddCustomFixedTopCamera(double x, double y, double z, double rot)
 {
     if (viewer_)
     {
         viewer_->AddCustomFixedTopCamera(x, y, z, rot);
         viewer_->SetCameraMode(-1);  // activate last camera which is the one just added
+        return viewer_->GetNumberOfCameraModes() - 1;
     }
+
+    return -1;
 }
 
 int ScenarioPlayer::AddCustomLightSource(double x, double y, double z, double intensity)
@@ -1040,41 +1075,60 @@ void viewer_thread(void* args)
     }
 
     player->viewer_->renderSemaphore.Wait();
-    player->SetQuitRequest(2);
+    player->SetQuitRequest(true);
     player->CloseViewer();
 }
 
 #endif
 
-void ScenarioPlayer::AddObjectSensor(int    object_index,
-                                     double x,
-                                     double y,
-                                     double z,
-                                     double h,
-                                     double near_dist,
-                                     double far_dist,
-                                     double fovH,
-                                     int    maxObj)
+int ScenarioPlayer::AddObjectSensor(Object* obj, double x, double y, double z, double h, double near_dist, double far_dist, double fovH, int maxObj)
 {
-    sensor.push_back(new ObjectSensor(&scenarioEngine->entities_,
-                                      scenarioEngine->entities_.object_[static_cast<unsigned int>(object_index)],
-                                      x,
-                                      y,
-                                      z,
-                                      h,
-                                      near_dist,
-                                      far_dist,
-                                      fovH,
-                                      maxObj));
+    if (obj == nullptr)
+    {
+        return -1;
+    }
+
+    sensor.push_back(new ObjectSensor(&scenarioEngine->entities_, obj, x, y, z, h, near_dist, far_dist, fovH, maxObj));
 
 #ifdef _USE_OSG
     if (viewer_)
     {
-        mutex.Lock();
-        sensorFrustum.push_back(new viewer::SensorViewFrustum(sensor.back(), viewer_->entities_[static_cast<unsigned int>(object_index)]->txNode_));
-        mutex.Unlock();
+        int object_index = scenarioEngine->entities_.GetObjectIdxById(obj->GetId());
+        if (object_index >= 0)
+        {
+            mutex.Lock();
+            sensorFrustum.push_back(
+                new viewer::SensorViewFrustum(sensor.back(), viewer_->entities_[static_cast<unsigned int>(object_index)]->txNode_));
+            mutex.Unlock();
+        }
     }
 #endif
+
+    return static_cast<int>(sensor.size()) - 1;
+}
+
+int ScenarioPlayer::GetNumberOfObjectSensors()
+{
+    return static_cast<int>(sensor.size());
+}
+
+int ScenarioPlayer::GetNumberOfSensorsAttachedToObject(Object* obj)
+{
+    if (obj == nullptr)
+    {
+        return -1;
+    }
+
+    int counter = 0;
+    for (size_t i = 0; i < sensor.size(); i++)
+    {
+        if (sensor[i]->host_ == obj)
+        {
+            counter++;
+        }
+    }
+
+    return counter;
 }
 
 #ifdef _USE_OSG
@@ -1203,7 +1257,6 @@ int ScenarioPlayer::Init()
     // use an ArgumentParser object to manage the program arguments.
     opt.AddOption("osc", "OpenSCENARIO filename (required) - if path includes spaces, enclose with \"\"", "filename");
     opt.AddOption("aa_mode", "Anti-alias mode=number of multisamples (subsamples, 0=off, 4=default)", "mode");
-    opt.AddOption("action_server", "Launch UDP server for injected actions");
     opt.AddOption("bounding_boxes", "Show entities as bounding boxes (toggle modes on key ',') ");
     opt.AddOption("capture_screen", "Continuous screen capture. Warning: Many jpeg files will be created");
     opt.AddOption(
@@ -1222,7 +1275,6 @@ int ScenarioPlayer::Init()
                   "position and intensity");
     opt.AddOption("disable_controllers", "Disable controllers");
     opt.AddOption("disable_log", "Prevent logfile from being created");
-    opt.AddOption("disable_off_screen", "Disable esmini off-screen rendering, revert to OSG viewer default handling");
     opt.AddOption("disable_stdout", "Prevent messages to stdout");
     opt.AddOption("enforce_generate_model", "Generate road 3D model even if SceneGraphFile is specified");
     opt.AddOption("fixed_timestep", "Run simulation decoupled from realtime, with specified timesteps", "timestep");
@@ -1236,6 +1288,7 @@ int ScenarioPlayer::Init()
     opt.AddOption("info_text", "Show on-screen info text (toggle key 'i') mode 0=None 1=current (default) 2=per_object 3=both", "mode");
     opt.AddOption("logfile_path", "logfile path/filename, e.g. \"../esmini.log\" (default: log.txt)", "path");
     opt.AddOption("osc_str", "OpenSCENARIO XML string", "string");
+    opt.AddOption("osg_screenshot_event_handler", "Revert to OSG default jpg images ('c'/'C' keys handler)");
 #ifdef _USE_OSI
     opt.AddOption("osi_file", "save osi trace file", "filename", DEFAULT_OSI_TRACE_FILENAME);
     opt.AddOption("osi_freq", "relative frequence for writing the .osi file e.g. --osi_freq=2 -> we write every two simulation steps", "frequence");
@@ -1245,7 +1298,9 @@ int ScenarioPlayer::Init()
 #endif
     opt.AddOption("param_dist", "Run variations of the scenario according to specified parameter distribution file", "filename");
     opt.AddOption("param_permutation", "Run specific permutation of parameter distribution", "index (0 .. NumberOfPermutations-1)");
+    opt.AddOption("pause", "Pause simulation after initialization");
     opt.AddOption("path", "Search path prefix for assets, e.g. OpenDRIVE files (multiple occurrences supported)", "path");
+    opt.AddOption("player_server", "Launch UDP server for action/command injection");
 #ifdef _USE_IMPLOT
     opt.AddOption("plot", "Show window with line-plots of interesting data", "mode (asynchronous|synchronous)", "asynchronous");
 #endif
@@ -1384,7 +1439,7 @@ int ScenarioPlayer::Init()
 
     if (dist.GetNumPermutations() > 0)
     {
-        log_filename = dist.AddInfoToFilename(log_filename);
+        log_filename = dist.AddInfoToFilepath(log_filename);
     }
 
     Logger::Inst().OpenLogfile(log_filename);
@@ -1413,16 +1468,23 @@ int ScenarioPlayer::Init()
         LOG("Launch server to receive state of external Ego simulator");
     }
 
-    if (opt.GetOptionSet("action_server"))
+    int index = 0;
+    for (; (arg_str = opt.GetOptionArg("fixed_timestep", index)) != ""; index++)
     {
-        launch_action_server = true;
-        LOG("Launch server to receive actions to inject");
+        double timestep = std::stod(arg_str);
+        if (timestep > SMALL_NUMBER)
+        {
+            SetFixedTimestep(std::stod(arg_str));
+            LOG("Run simulation decoupled from realtime, with fixed timestep: %.2f", GetFixedTimestep());
+        }
+        else
+        {
+            LOG("Zero timestep ignored, running in realtime speed");
+        }
     }
-
-    for (int index = 0; (arg_str = opt.GetOptionArg("fixed_timestep", index)) != ""; index++)
+    if (index == 0)
     {
-        SetFixedTimestep(std::stod(arg_str));
-        LOG("Run simulation decoupled from realtime, with fixed timestep: %.2f", GetFixedTimestep());
+        LOG("No fixed timestep specified - running in realtime speed");
     }
 
     if (opt.GetOptionArg("path") != "")
@@ -1457,11 +1519,6 @@ int ScenarioPlayer::Init()
     if (opt.GetOptionSet("collision"))
     {
         SE_Env::Inst().SetCollisionDetection(true);
-    }
-
-    if (opt.GetOptionSet("disable_off_screen"))
-    {
-        SE_Env::Inst().SetOffScreenRendering(false);
     }
 
     if (opt.GetOptionSet("plot"))
@@ -1531,7 +1588,7 @@ int ScenarioPlayer::Init()
 
         if (xml_doc)
         {
-            filename = dist.AddInfoToFilename(filename);
+            filename = dist.AddInfoToFilepath(filename);
             xml_doc->save_file(filename.c_str());
         }
     }
@@ -1541,24 +1598,39 @@ int ScenarioPlayer::Init()
     odr_manager     = scenarioEngine->getRoadManager();
 
 #ifdef _USE_OSI
-    osiReporter = new OSIReporter();
+    osiReporter = new OSIReporter(scenarioEngine);
     osiReporter->SetStationaryModelReference(scenarioEngine->getSceneGraphFilename());
+    scenarioEngine->storyBoard.SetOSIReporter(osiReporter);
 
     if (opt.GetOptionSet("osi_receiver_ip"))
     {
         osiReporter->OpenSocket(opt.GetOptionArg("osi_receiver_ip"));
+        if (osi_freq_ == 0)
+        {
+            osi_freq_ = 1;
+        }
     }
 
+    std::string osi_filename;
+    // First check arguments
     if (opt.GetOptionSet("osi_file"))
     {
-        std::string osi_filename = opt.GetOptionArg("osi_file");
-
-        if (dist.GetNumPermutations() > 0)
+        osi_filename = opt.GetOptionArg("osi_file");
+        if (osi_freq_ == 0)
         {
-            osi_filename = dist.AddInfoToFilename(osi_filename);
+            osi_freq_ = 1;
         }
+    }
 
-        osiReporter->OpenOSIFile(osi_filename.c_str());
+    // Secondly check esmini environment variables
+    if (osi_filename.empty())
+    {
+        osi_filename = SE_Env::Inst().GetOSIFilePath();
+    }
+
+    if (!osi_filename.empty() || SE_Env::Inst().GetOSIFileEnabled())
+    {
+        SetOSIFileStatus(true, osi_filename.c_str());
     }
 
     if ((arg_str = opt.GetOptionArg("osi_freq")) != "")
@@ -1583,7 +1655,7 @@ int ScenarioPlayer::Init()
 
             if (dist.GetNumPermutations() > 0)
             {
-                filename = dist.AddInfoToFilename(filename);
+                filename = dist.AddInfoToFilepath(filename);
             }
 
             CSV_Log->Open(scenarioEngine->getScenarioFilename(), static_cast<int>(scenarioEngine->entities_.object_.size()), filename);
@@ -1618,7 +1690,7 @@ int ScenarioPlayer::Init()
 
         if (dist.GetNumPermutations() > 0)
         {
-            filename = dist.AddInfoToFilename(filename);
+            filename = dist.AddInfoToFilepath(filename);
         }
 
         LOG("Recording data to file %s", filename.c_str());
@@ -1631,10 +1703,12 @@ int ScenarioPlayer::Init()
         StartServer(scenarioEngine);
     }
 
-    if (launch_action_server)
+    if (opt.GetOptionSet("player_server"))
     {
+        LOG("Launch server to receive actions to inject");
+        player_server_ = new PlayerServer(this);
         // Launch UDP server to receive actions from external process
-        actionserver::StartActionServer(scenarioEngine);
+        player_server_->Start();
     }
 
     player_init_semaphore.Set();
@@ -1693,6 +1767,11 @@ int ScenarioPlayer::Init()
     }
 
     Frame(0.0);
+
+    if (opt.GetOptionSet("pause"))
+    {
+        SetState(PlayerState::PLAYER_STATE_PAUSE);
+    }
 
     player_init_semaphore.Release();
 

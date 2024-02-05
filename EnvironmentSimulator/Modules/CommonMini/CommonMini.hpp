@@ -156,6 +156,13 @@ struct OffScreenImage
     unsigned char* data;
 };
 
+enum class GhostMode
+{
+    NORMAL,
+    RESTART,    // the frame ghost is requested to restart
+    RESTARTING  // ghost restart is ongoing, including the final restart timestep
+};
+
 class SE_Vector
 {
 public:
@@ -543,6 +550,35 @@ void ZYZ2EulerAngles(double z0, double y, double z1, double& h, double& p, doubl
 */
 void R0R12EulerAngles(double h0, double p0, double r0, double h1, double p1, double r1, double& h, double& p, double& r);
 
+int InvertMatrix3(const double m[3][3], double m_out[3][3]);
+
+/**
+        Get Euler angles for the orientation relative road surface orientation
+        Rotation_rel = Rotation_road_inverse * Rotation_abs
+*/
+void CalcRelAnglesFromRoadAndAbsAngles(double  h_road,
+                                       double  p_road,
+                                       double  r_road,
+                                       double  h_abs,
+                                       double  p_abs,
+                                       double  r_abs,
+                                       double& h_rel,
+                                       double& p_rel,
+                                       double& r_rel);
+
+void MultMatrixVector3d(const double m[3][3], const double v0[3], double v1[3]);
+void MultMatrixMatrix3d(const double m0[3][3], const double m1[3][3], double m_out[3][3]);
+
+void RotateVec3d(const double h0,
+                 const double p0,
+                 const double r0,
+                 const double x0,
+                 const double y0,
+                 const double z0,
+                 double&      x1,
+                 double&      y1,
+                 double&      z1);
+
 /**
         Change byte order - can be useful for IP communication with non Intel platforms
 */
@@ -658,6 +694,7 @@ std::string              FileNameOf(const std::string& fname);
 bool                     IsDirectoryName(const std::string& string);
 std::string              FileNameExtOf(const std::string& fname);
 std::string              FileNameWithoutExtOf(const std::string& fname);
+std::string              FilePathWithoutExtOf(const std::string& fpath);
 std::string              ToLower(const std::string in_str);
 std::string              ToLower(const char* in_str);
 FILE*                    FileOpen(const char* filename, const char* mode);
@@ -1101,8 +1138,12 @@ public:
           osiMaxLateralDeviation_(OSI_MAX_LATERAL_DEVIATION),
           logFilePath_(LOG_FILENAME),
           datFilePath_(""),
-          offScreenRendering_(true),
-          collisionDetection_(false)
+          osiFilePath_(""),
+          osiFileEnabled_(false),
+          collisionDetection_(false),
+          saveImagesToRAM_(false),
+          ghost_mode_(GhostMode::NORMAL),
+          ghost_headstart_(0.0)
     {
     }
 
@@ -1123,14 +1164,6 @@ public:
     double GetOSIMaxLateralDeviation()
     {
         return osiMaxLateralDeviation_;
-    }
-    void SetOffScreenRendering(bool enable)
-    {
-        offScreenRendering_ = enable;
-    }
-    bool GetOffScreenRendering()
-    {
-        return offScreenRendering_;
     }
     void SetCollisionDetection(bool enable)
     {
@@ -1196,15 +1229,60 @@ public:
         return datFilePath_;
     }
 
+    /**
+        Set flag controlling whether rendered images are saved and hence can be fetched
+        @param state true/false
+    */
+    void SaveImagesToRAM(bool state)
+    {
+        saveImagesToRAM_ = state;
+    }
+
+    bool GetSaveImagesToRAM()
+    {
+        return saveImagesToRAM_;
+    }
+
+    void        EnableOSIFile(std::string osiFilePath);
+    void        DisableOSIFile();
+    std::string GetOSIFilePath()
+    {
+        return osiFilePath_;
+    }
+    bool GetOSIFileEnabled()
+    {
+        return osiFileEnabled_;
+    }
+
     std::string GetModelFilenameById(int model_id);
     void        ClearModelFilenames()
     {
-        entity_model_map.clear();
+        entity_model_map_.clear();
     }
 
     SE_Rand& GetRand()
     {
         return rand_;
+    }
+
+    GhostMode GetGhostMode()
+    {
+        return ghost_mode_;
+    }
+
+    void SetGhostMode(GhostMode mode)
+    {
+        ghost_mode_ = mode;
+    }
+
+    double GetGhostHeadstart(void)
+    {
+        return ghost_headstart_;
+    }
+
+    void SetGhostHeadstart(double headstart_time)
+    {
+        ghost_headstart_ = headstart_time;
     }
 
 private:
@@ -1213,11 +1291,15 @@ private:
     double                     osiMaxLateralDeviation_;
     std::string                logFilePath_;
     std::string                datFilePath_;
+    std::string                osiFilePath_;
+    bool                       osiFileEnabled_;
     SE_SystemTime              systemTime_;
     SE_Rand                    rand_;
-    bool                       offScreenRendering_;
     bool                       collisionDetection_;
-    std::map<int, std::string> entity_model_map;
+    bool                       saveImagesToRAM_;
+    std::map<int, std::string> entity_model_map_;
+    GhostMode                  ghost_mode_;
+    double                     ghost_headstart_;
 };
 
 /**

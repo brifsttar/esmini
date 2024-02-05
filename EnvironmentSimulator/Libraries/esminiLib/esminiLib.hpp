@@ -235,28 +235,28 @@ typedef struct
 // Must match roadmanager::Position::PositionMode
 typedef enum
 {
-    SE_Z_SET = 1,  // 0001
-    SE_Z_DEF = 1,  // 0001
-    SE_Z_ABS = 3,  // 0011
-    SE_Z_REL = 7,  // 0111
-    SE_H_SET = SE_Z_SET << 4,
-    SE_H_DEF = SE_Z_DEF << 4,
-    SE_H_ABS = SE_Z_ABS << 4,
-    SE_H_REL = SE_Z_REL << 4,
-    SE_P_SET = SE_Z_SET << 8,
-    SE_P_DEF = SE_Z_DEF << 8,
-    SE_P_ABS = SE_Z_ABS << 8,
-    SE_P_REL = SE_Z_REL << 8,
-    SE_R_SET = SE_Z_SET << 12,
-    SE_R_DEF = SE_Z_DEF << 12,
-    SE_R_ABS = SE_Z_ABS << 12,
-    SE_R_REL = SE_Z_REL << 12,
+    SE_Z_SET     = 1,  // 0001
+    SE_Z_DEFAULT = 1,  // 0001
+    SE_Z_ABS     = 3,  // 0011
+    SE_Z_REL     = 7,  // 0111
+    SE_H_SET     = SE_Z_SET << 4,
+    SE_H_ABS     = SE_Z_ABS << 4,
+    SE_H_REL     = SE_Z_REL << 4,
+    SE_H_DEFAULT = SE_Z_DEFAULT << 4,
+    SE_P_SET     = SE_Z_SET << 8,
+    SE_P_ABS     = SE_Z_ABS << 8,
+    SE_P_REL     = SE_Z_REL << 8,
+    SE_P_DEFAULT = SE_Z_DEFAULT << 8,
+    SE_R_SET     = SE_Z_SET << 12,
+    SE_R_DEFAULT = SE_Z_DEFAULT << 12,
+    SE_R_ABS     = SE_Z_ABS << 12,
+    SE_R_REL     = SE_Z_REL << 12,
 } SE_PositionMode;
 
 typedef enum
 {
-    SE_SET    = 0,  // Used by explicit set functions
-    SE_UPDATE = 1   // Used by controllers updating the position
+    SE_SET    = 1,  // Used by explicit set functions
+    SE_UPDATE = 2   // Used by controllers updating the position
 } SE_PositionModeType;
 
 #ifdef __cplusplus
@@ -1067,6 +1067,12 @@ extern "C"
     SE_DLL_API int SE_AddObjectSensor(int object_id, float x, float y, float z, float h, float rangeNear, float rangeFar, float fovH, int maxObj);
 
     /**
+            Retrieve the total number of sensors attached to any objects
+            @return -1 on failure, else the number of sensors
+    */
+    SE_DLL_API int SE_GetNumberOfObjectSensors();
+
+    /**
             Allow to view detected sensor data.
             @param object_id Handle to the object to which the sensor should be attached
             @return Sensor ID (Global index of sensor), -1 if unsucessful
@@ -1102,7 +1108,7 @@ extern "C"
 
     /**
     Registers a function to be called back from esmini every time a StoryBoardElement changes its state.
-    The name of the respective StoryBoardElement, the type and the state will be returned.
+    The name of the respective StoryBoardElement, the type, state, and full path (parent names delimited by /) will be returned.
 
      Values for the StoryBoardElement type
         STORY = 1,
@@ -1122,7 +1128,7 @@ extern "C"
     Registered callbacks will be cleared between SE_Init calls.
     @param fnPtr A pointer to the function to be invoked
     */
-    SE_DLL_API void SE_RegisterStoryBoardElementStateChangeCallback(void (*fnPtr)(const char *name, int type, int state));
+    SE_DLL_API void SE_RegisterStoryBoardElementStateChangeCallback(void (*fnPtr)(const char *name, int type, int state, const char *full_path));
 
     /**
             Get the number of road signs along specified road
@@ -1211,16 +1217,27 @@ extern "C"
     SE_DLL_API int SE_UpdateOSIDynamicGroundTruth(bool reportGhost = true);
 
     /**
+            @return 0
+    */
+    SE_DLL_API int SE_UpdateOSITrafficCommand();
+
+    /**
             The SE_GetOSIGroundTruth function returns a char array containing the osi GroundTruth serialized to a string
             @return osi3::GroundTruth*
     */
     SE_DLL_API const char *SE_GetOSIGroundTruth(int *size);
 
     /**
-            The SE_GetOSIGroundTruthRaw function returns a char array containing the OSI GroundTruth information
+            Get a pointer to the internal OSI data structure, useful for direct access to OSI data in a C/C++ environment
             @return osi3::GroundTruth*
     */
     SE_DLL_API const char *SE_GetOSIGroundTruthRaw();
+
+    /**
+            Get a pointer to the internal OSI data structure, useful for direct access to OSI data in a C/C++ environment
+            @return osi3::TrafficCommand*
+     */
+    SE_DLL_API const char *SE_GetOSITrafficCommandRaw();
 
     /**
             The SE_SetOSISensorDataRaw function returns a char array containing the OSI GroundTruth information
@@ -1257,18 +1274,6 @@ extern "C"
             @return osi3::SensorData*
     */
     SE_DLL_API const char *SE_GetOSISensorDataRaw();
-
-    /**
-            Create and open osi file
-            @param filename Optional filename, including path. Set to 0 to use default.
-            @return true=successful false=error
-    */
-    SE_DLL_API bool SE_OSIFileOpen(const char *filename);
-
-    /**
-            Create and open osi file
-    */
-    SE_DLL_API bool SE_OSIFileWrite(bool flush = false);
 
     /**
             Set explicit OSI timestap
@@ -1391,21 +1396,15 @@ extern "C"
     SE_DLL_API void SE_SimpleVehicleGetState(void *handleSimpleVehicle, SE_SimpleVehicleState *state);
 
     /**
-    Enable (default) or disable callback that handles framebuffer image capturing. NOTE: Needs to be called before SE_Init()
-    @param state true (default) = enable off-screen rendering callback, false = disable off-screen rendering callback
-    @return 0 if successful, -1 if not
-    */
-    SE_DLL_API int SE_SetOffScreenRendering(bool state);
-
-    /**
     Capture rendered image to RAM for possible fetch via API, e.g. SE_FetchImage()
+    Set true before calling SE_Init() to enable fetching first frame at time = 0
     @param state true=capture images, false=don't capture (default, might improve performance on some systems)
     @return 0 if successful, -1 if not
     */
     SE_DLL_API int SE_SaveImagesToRAM(bool state);
 
     /**
-    Capture rendered image to file
+    Capture rendered image to file. Call after SE_Init().
     @param nrOfFrames -1=continuously, 0=stop, >0=number of frames, e.g. 1=next frame only
     @return 0 if successful, -1 if not
     */
@@ -1464,7 +1463,7 @@ extern "C"
     @param z Z coordinate relative vehicle currently in focus
     @param h Heading (yaw) (radians) relative vehicle currently in focus
     @param p Pitch (radians) relative vehicle currently in focus
-    @return 0 if successful, -1 if not
+    @return index of the camera, can be used for SE_SetCameraMode(), -1 on error
     */
     SE_DLL_API int SE_AddCustomCamera(double x, double y, double z, double h, double p);
 
@@ -1475,7 +1474,7 @@ extern "C"
     @param z Z coordinate
     @param h Heading (yaw) (radians)
     @param p P Pitch (radians)
-    @return 0 if successful, -1 if not
+    @return index of the camera, can be used for SE_SetCameraMode(), -1 on error
     */
     SE_DLL_API int SE_AddCustomFixedCamera(double x, double y, double z, double h, double p);
 
@@ -1484,7 +1483,7 @@ extern "C"
     @param x X coordinate
     @param y Y coordinate
     @param z Z coordinate
-    @return 0 if successful, -1 if not
+    @return index of the camera, can be used for SE_SetCameraMode(), -1 on error
     */
     SE_DLL_API int SE_AddCustomAimingCamera(double x, double y, double z);
 
@@ -1494,7 +1493,7 @@ extern "C"
     @param y Y coordinate
     @param z Z coordinate
     @param fixed_pos Position is relative current vehicle (false) or fixed (true)
-    @return 0 if successful, -1 if not
+    @return index of the camera, can be used for SE_SetCameraMode(), -1 on error
     */
     SE_DLL_API int SE_AddCustomFixedAimingCamera(double x, double y, double z);
 
@@ -1504,7 +1503,7 @@ extern "C"
     @param y Y coordinate
     @param z Z coordinate
     @param rot Rotation (radians)
-    @return 0 if successful, -1 if not
+    @return index of the camera, can be used for SE_SetCameraMode(), -1 on error
     */
     SE_DLL_API int SE_AddCustomFixedTopCamera(double x, double y, double z, double rot);
 

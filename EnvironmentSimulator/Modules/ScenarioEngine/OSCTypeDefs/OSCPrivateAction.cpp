@@ -272,18 +272,21 @@ void OSCPrivateAction::TransitionDynamics::UpdateRate()
     }
 }
 
-void AssignRouteAction::Start(double simTime, double dt)
+void AssignRouteAction::Start(double simTime)
 {
+    route_->setObjName(object_->GetName());
     object_->pos_.SetRoute(route_);
     object_->SetDirtyBits(Object::DirtyBit::ROUTE);
 
-    OSCAction::Start(simTime, dt);
+    OSCAction::Start(simTime);
 }
 
 void AssignRouteAction::Step(double simTime, double dt)
 {
+    (void)simTime;
     (void)dt;
-    OSCAction::End(simTime);
+
+    OSCAction::End();
 }
 
 void AssignRouteAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
@@ -298,9 +301,9 @@ void AssignRouteAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
     }
 }
 
-void FollowTrajectoryAction::Start(double simTime, double dt)
+void FollowTrajectoryAction::Start(double simTime)
 {
-    OSCAction::Start(simTime, dt);
+    OSCAction::Start(simTime);
 
     if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE && object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
     {
@@ -319,9 +322,9 @@ void FollowTrajectoryAction::Start(double simTime, double dt)
     time_ = traj_->GetTimeAtS(initialDistanceOffset_);
 }
 
-void FollowTrajectoryAction::End(double simTime)
+void FollowTrajectoryAction::End()
 {
-    OSCAction::End(simTime);
+    OSCAction::End();
 
     if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE && object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
     {
@@ -437,7 +440,7 @@ void FollowTrajectoryAction::Step(double simTime, double dt)
                                         object_->pos_.GetH(),
                                         roadmanager::Position::GetModeDefault(roadmanager::Position::PosModeType::SET));
 
-        End(simTime);
+        End();
     }
 }
 
@@ -462,19 +465,20 @@ void FollowTrajectoryAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
     }
 }
 
-void AcquirePositionAction::Start(double simTime, double dt)
+void AcquirePositionAction::Start(double simTime)
 {
     // Resolve route
     route_.reset(new roadmanager::Route);
     route_->setName("AcquirePositionRoute");
+    route_->setObjName(object_->GetName());
 
     route_->AddWaypoint(&object_->pos_);
     route_->AddWaypoint(target_position_);
 
-    object_->pos_.SetRoute(route_.get());
+    object_->pos_.SetRoute(route_);
     object_->SetDirtyBits(Object::DirtyBit::ROUTE);
 
-    OSCAction::Start(simTime, dt);
+    OSCAction::Start(simTime);
 
     if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE && object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
     {
@@ -485,8 +489,10 @@ void AcquirePositionAction::Start(double simTime, double dt)
 
 void AcquirePositionAction::Step(double simTime, double dt)
 {
+    (void)simTime;
     (void)dt;
-    OSCAction::End(simTime);
+
+    OSCAction::End();
 }
 
 void AcquirePositionAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
@@ -497,7 +503,7 @@ void AcquirePositionAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
     }
 }
 
-void AssignControllerAction::Start(double simTime, double dt)
+void AssignControllerAction::Start(double simTime)
 {
     if (controller_ == 0 || object_->controller_ != controller_)
     {
@@ -538,12 +544,12 @@ void AssignControllerAction::Start(double simTime, double dt)
         }
     }
 
-    OSCAction::Start(simTime, dt);
+    OSCAction::Start(simTime);
 }
 
-void LatLaneChangeAction::Start(double simTime, double dt)
+void LatLaneChangeAction::Start(double simTime)
 {
-    OSCAction::Start(simTime, dt);
+    OSCAction::Start(simTime);
     int target_lane_id_ = 0;
 
     transition_.Reset();
@@ -638,23 +644,24 @@ void LatLaneChangeAction::Step(double simTime, double dt)
                              internal_pos_.GetS(),
                              offset_agnostic * SIGN(internal_pos_.GetLaneId()));
 
-    // Update longitudinal position, considering absolute speed and lateral speed component
-    double dist   = object_->speed_ * dt;                                                  // travel distance total
-    double d_lat  = object_->pos_.GetOffset() - old_offset;                                // travel distance lateral component
-    double d_long = SIGN(object_->speed_) * sqrt(MAX(0.0, pow(dist, 2) - pow(d_lat, 2)));  // travel distance longitudinal component
-    double ds     = object_->pos_.DistanceToDS(d_long);                                    // find correspondning delta s along road reference line
-
-    roadmanager::Position::ReturnCode retval = roadmanager::Position::ReturnCode::OK;
-    if (object_->pos_.GetRoute() && object_->pos_.GetRoute()->IsValid())
+    double dist   = object_->speed_ * dt;  // travel distance total
+    double d_long = 0.0;
+    if (transition_.shape_ != DynamicsShape::STEP)
     {
-        retval = object_->pos_.MoveRouteDS(ds, false);
-        internal_pos_.SetLanePos(object_->pos_.GetTrackId(), object_->pos_.GetLaneId(), object_->pos_.GetS(), object_->pos_.GetOffset());
+        // Update longitudinal position, considering absolute speed and lateral speed component
+        double d_lat = object_->pos_.GetOffset() - old_offset;                                // travel distance lateral component
+        d_long       = SIGN(object_->speed_) * sqrt(MAX(0.0, pow(dist, 2) - pow(d_lat, 2)));  // travel distance longitudinal component
     }
     else
     {
-        retval = object_->pos_.MoveAlongS(ds, 0.0, -1.0);
-        internal_pos_.SetLanePos(object_->pos_.GetTrackId(), object_->pos_.GetLaneId(), object_->pos_.GetS(), object_->pos_.GetOffset());
+        // not for step shape, since it is not a continuous function. Maintain longitudinal motion
+        d_long = dist;
     }
+    double ds = object_->pos_.DistanceToDS(d_long);  // find correspondning delta s along road reference line
+
+    roadmanager::Position::ReturnCode retval = roadmanager::Position::ReturnCode::OK;
+    retval = object_->pos_.MoveAlongS(ds, 0.0, -1.0, false, roadmanager::Position::MoveDirectionMode::HEADING_DIRECTION, true);
+    internal_pos_.SetLanePos(object_->pos_.GetTrackId(), object_->pos_.GetLaneId(), object_->pos_.GetS(), object_->pos_.GetOffset());
 
     if (object_->pos_.GetRoute())
     {
@@ -676,7 +683,7 @@ void LatLaneChangeAction::Step(double simTime, double dt)
         (transition_.GetParamVal() > 0 &&
          SIGN(offset_agnostic - transition_.GetTargetVal()) != SIGN(transition_.GetStartVal() - transition_.GetTargetVal())))
     {
-        OSCAction::End(simTime);
+        OSCAction::End();
         object_->pos_.SetHeadingRelativeRoadDirection(0);
     }
     else
@@ -725,9 +732,9 @@ void LatLaneChangeAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
     }
 }
 
-void LatLaneOffsetAction::Start(double simTime, double dt)
+void LatLaneOffsetAction::Start(double simTime)
 {
-    OSCAction::Start(simTime, dt);
+    OSCAction::Start(simTime);
     transition_.Reset();
 
     if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE && object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
@@ -762,6 +769,8 @@ void LatLaneOffsetAction::Start(double simTime, double dt)
 
 void LatLaneOffsetAction::Step(double simTime, double dt)
 {
+    (void)simTime;
+    (void)dt;
     double offset_agnostic;
 
     if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE && object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
@@ -779,7 +788,7 @@ void LatLaneOffsetAction::Step(double simTime, double dt)
         (transition_.GetParamVal() > 0 &&
          SIGN(offset_agnostic - transition_.GetTargetVal()) != SIGN(transition_.GetStartVal() - transition_.GetTargetVal())))
     {
-        OSCAction::End(simTime);
+        OSCAction::End();
         object_->pos_.SetLanePos(object_->pos_.GetTrackId(),
                                  object_->pos_.GetLaneId(),
                                  object_->pos_.GetS(),
@@ -851,15 +860,16 @@ double LongSpeedAction::TargetRelative::GetValue()
     return 0;
 }
 
-void LongSpeedAction::Start(double simTime, double dt)
+void LongSpeedAction::Start(double simTime)
 {
-    OSCAction::Start(simTime, dt);
+    OSCAction::Start(simTime);
     transition_.Reset();
+    target_speed_reached_ = false;
 
     if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE && object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LONG))
     {
         // longitudinal motion controlled elsewhere
-        OSCAction::End(simTime);
+        OSCAction::End();
         return;
     }
 
@@ -913,12 +923,14 @@ void LongSpeedAction::Start(double simTime, double dt)
 
 void LongSpeedAction::Step(double simTime, double dt)
 {
+    (void)simTime;
+    (void)dt;
     double new_speed = 0;
 
     if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE && object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LONG))
     {
         // longitudinal motion controlled elsewhere
-        OSCAction::End(simTime);
+        OSCAction::End();
         return;
     }
 
@@ -967,13 +979,13 @@ void LongSpeedAction::Step(double simTime, double dt)
     if (target_speed_reached_ &&
         !(target_->type_ == Target::TargetType::RELATIVE_SPEED && (static_cast<TargetRelative*>(target_.get()))->continuous_ == true))
     {
-        OSCAction::End(simTime);
+        OSCAction::End();
     }
 }
 
-void LongSpeedProfileAction::Start(double simTime, double timestep)
+void LongSpeedProfileAction::Start(double simTime)
 {
-    OSCAction::Start(simTime, timestep);
+    OSCAction::Start(simTime);
 
     if (entry_.size() == 0 || object_ == nullptr)
     {
@@ -982,12 +994,6 @@ void LongSpeedProfileAction::Start(double simTime, double timestep)
 
     double speed_offset = entity_ref_ != nullptr ? entity_ref_->GetSpeed() : 0.0;
     double init_time_   = simTime;
-
-    if (object_->GetDirtyBitMask() & Object::DirtyBit::SPEED)
-    {
-        // Speed has already been updated by another action, set start time at end of this timestep
-        init_time_ += timestep;
-    }
 
     init_acc_ = object_->pos_.GetAccLong();
 
@@ -1351,7 +1357,7 @@ void LongSpeedProfileAction::Step(double simTime, double dt)
     if (static_cast<unsigned int>(cur_index_) >= entry_.size() - 1 && fabs(speed_ - segment_.back().v) < SMALL_NUMBER)
     {
         speed_ = segment_.back().v;
-        OSCAction::End(simTime);
+        OSCAction::End();
     }
 
     object_->SetSpeed(speed_);
@@ -1445,7 +1451,7 @@ void LongSpeedAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
     }
 }
 
-void LongDistanceAction::Start(double simTime, double dt)
+void LongDistanceAction::Start(double simTime)
 {
     sim_time_ = simTime;
     if (target_object_ == 0)
@@ -1485,7 +1491,7 @@ void LongDistanceAction::Start(double simTime, double dt)
         }
     }
 
-    OSCAction::Start(simTime, dt);
+    OSCAction::Start(simTime);
 }
 
 void LongDistanceAction::Step(double simTime, double)
@@ -1519,6 +1525,7 @@ void LongDistanceAction::Step(double simTime, double)
 
     double speed_diff = object_->speed_ - target_object_->speed_;
     double acc;
+    double jerk            = 0.0;
     double spring_constant = 0.4;
     double dc;
     double requested_dist = 0;
@@ -1547,7 +1554,7 @@ void LongDistanceAction::Step(double simTime, double)
     if (continuous_ == false && fabs(distance_diff) < LONGITUDINAL_DISTANCE_THRESHOLD)
     {
         // Reached requested distance, quit action
-        OSCAction::End(simTime);
+        OSCAction::End();
     }
 
     if (dynamics_.max_acceleration_ >= LARGE_NUMBER && dynamics_.max_deceleration_ >= LARGE_NUMBER)
@@ -1565,16 +1572,35 @@ void LongDistanceAction::Step(double simTime, double)
         double spring_constant_adjusted = tension * spring_constant;
         dc                              = 2 * sqrt(spring_constant_adjusted);
         acc                             = distance_diff * spring_constant_adjusted - speed_diff * dc;
-        if (acc > dynamics_.max_acceleration_)
+        if (acc < 0.0)
         {
-            acc = dynamics_.max_acceleration_;
+            jerk = -dynamics_.max_deceleration_rate_;
+            if (acc < -dynamics_.max_deceleration_)
+            {
+                acc = -dynamics_.max_deceleration_;
+            }
         }
-        else if (acc < -dynamics_.max_deceleration_)
+        else
         {
-            acc = -dynamics_.max_deceleration_;
+            jerk = dynamics_.max_acceleration_rate_;
+            if (acc > dynamics_.max_acceleration_)
+            {
+                acc = dynamics_.max_acceleration_;
+            }
         }
 
-        object_->SetSpeed(object_->GetSpeed() + acc * dt);
+        // Apply simple linear model for jerk
+        if (jerk < 0.0 && acc < acceleration_)
+        {
+            acc = MAX(acceleration_ + jerk * dt, acc);
+        }
+        else if (jerk > 0.0 && acc > acceleration_)
+        {
+            acc = MIN(acceleration_ + jerk * dt, acc);
+        }
+
+        acceleration_ = acc;
+        object_->SetSpeed(object_->GetSpeed() + acceleration_ * dt);
 
         if (object_->GetSpeed() > dynamics_.max_speed_)
         {
@@ -1600,14 +1626,14 @@ void LongDistanceAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
     }
 }
 
-void TeleportAction::Start(double simTime, double dt)
+void TeleportAction::Start(double simTime)
 {
-    OSCAction::Start(simTime, dt);
+    OSCAction::Start(simTime);
     LOG("Starting teleport Action");
 
     if (object_->IsGhost() && IsGhostRestart() && scenarioEngine_->getSimulationTime() > SMALL_NUMBER)
     {
-        scenarioEngine_->SetGhostRestart();
+        SE_Env::Inst().SetGhostMode(GhostMode::RESTART);
 
         object_->trail_.Reset(true);
 
@@ -1631,7 +1657,10 @@ void TeleportAction::Start(double simTime, double dt)
         return;  // position controlled by tow vehicle
     }
 
+    // consider any assigned route for relative positions
+    position_->CopyRouteSharedPtr(&object_->pos_);
     object_->pos_.TeleportTo(position_);
+
     if (!object_->TowVehicle() && object_->TrailerVehicle())
     {
         (static_cast<Vehicle*>(object_))->AlignTrailers();
@@ -1639,14 +1668,17 @@ void TeleportAction::Start(double simTime, double dt)
 
     LOG("%s New position:", object_->name_.c_str());
     object_->pos_.Print();
-    object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL | Object::DirtyBit::SPEED);
+
+    object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL | Object::DirtyBit::SPEED | Object::DirtyBit::TELEPORT);
     object_->reset_ = true;
 }
 
 void TeleportAction::Step(double simTime, double dt)
 {
+    (void)simTime;
     (void)dt;
-    OSCAction::End(simTime);
+
+    OSCAction::End();
 }
 
 void TeleportAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
@@ -1659,9 +1691,9 @@ void TeleportAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
     position_->ReplaceObjectRefs(&obj1->pos_, &obj2->pos_);
 }
 
-void ConnectTrailerAction::Start(double simTime, double dt)
+void ConnectTrailerAction::Start(double simTime)
 {
-    OSCAction::Start(simTime, dt);
+    OSCAction::Start(simTime);
 
     if (trailer_object_)
     {
@@ -1680,31 +1712,61 @@ void ConnectTrailerAction::Start(double simTime, double dt)
 
         if (trailer_object_ != object_->TrailerVehicle())
         {
-            LOG("Connect trailer %s", reinterpret_cast<Vehicle*>(trailer_object_)->GetName().c_str());
+            LOG("Connect trailer %s to %s", reinterpret_cast<Vehicle*>(trailer_object_)->GetName().c_str(), object_->GetName().c_str());
             reinterpret_cast<Vehicle*>(object_)->ConnectTrailer(reinterpret_cast<Vehicle*>(trailer_object_));
         }
     }
     else
     {
-        if (object_->TrailerVehicle())
-        {
-            LOG("Disconnecting currently connected trailer %s from %s", object_->TrailerVehicle()->GetName().c_str(), object_->GetName().c_str());
-            reinterpret_cast<Vehicle*>(object_)->DisconnectTrailer();
-        }
-        else
-        {
-            LOG("No trailer to disconnect from %s", object_->GetName().c_str());
-        }
+        LOG("No trailer to disconnect from %s", object_->GetName().c_str());
     }
 }
 
 void ConnectTrailerAction::Step(double simTime, double dt)
 {
+    (void)simTime;
     (void)dt;
-    OSCAction::End(simTime);
+
+    OSCAction::End();
 }
 
 void ConnectTrailerAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
+{
+    if (object_ == obj1)
+    {
+        object_ = obj2;
+    }
+
+    if (trailer_object_ == obj1)
+    {
+        trailer_object_ = obj2;
+    }
+}
+
+void DisconnectTrailerAction::Start(double simTime)
+{
+    OSCAction::Start(simTime);
+
+    if (object_->TrailerVehicle())
+    {
+        LOG("Disconnecting %s from %s", object_->TrailerVehicle()->GetName().c_str(), object_->GetName().c_str());
+        reinterpret_cast<Vehicle*>(object_)->DisconnectTrailer();
+    }
+    else
+    {
+        LOG("DisconnectTrailerAction: No trailer connected, ignoring action");
+    }
+}
+
+void DisconnectTrailerAction::Step(double simTime, double dt)
+{
+    (void)simTime;
+    (void)dt;
+
+    OSCAction::End();
+}
+
+void DisconnectTrailerAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
 {
     if (object_ == obj1)
     {
@@ -1787,7 +1849,7 @@ void SynchronizeAction::PrintStatus(const char* custom_msg)
     LOG("%s, mode=%s (%d) sub-mode=%s (%d)", custom_msg, Mode2Str(mode_), mode_, SubMode2Str(submode_), submode_);
 }
 
-void SynchronizeAction::Start(double simTime, double dt)
+void SynchronizeAction::Start(double simTime)
 {
     // resolve steady state -> translate into dist
     if (steadyState_.type_ == SteadyStateType::STEADY_STATE_TIME)
@@ -1804,7 +1866,7 @@ void SynchronizeAction::Start(double simTime, double dt)
         steadyState_.type_ = SteadyStateType::STEADY_STATE_DIST;
     }
 
-    OSCAction::Start(simTime, dt);
+    OSCAction::Start(simTime);
 
     if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE && object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LONG))
     {
@@ -1815,6 +1877,8 @@ void SynchronizeAction::Start(double simTime, double dt)
 
 void SynchronizeAction::Step(double simTime, double dt)
 {
+    (void)simTime;
+    (void)dt;
     bool done = false;
 
     if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE && object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LONG))
@@ -1895,7 +1959,7 @@ void SynchronizeAction::Step(double simTime, double dt)
         {
             object_->SetSpeed(final_speed_->GetValue());
         }
-        OSCAction::End(simTime);
+        OSCAction::End();
     }
     else
     {
@@ -2182,17 +2246,19 @@ void SynchronizeAction::Step(double simTime, double dt)
     }
 }
 
-void VisibilityAction::Start(double simTime, double dt)
+void VisibilityAction::Start(double simTime)
 {
-    OSCAction::Start(simTime, dt);
+    OSCAction::Start(simTime);
     object_->SetVisibilityMask((graphics_ ? Object::Visibility::GRAPHICS : 0) | (traffic_ ? Object::Visibility::TRAFFIC : 0) |
                                (sensors_ ? Object::Visibility::SENSORS : 0));
 }
 
 void VisibilityAction::Step(double simTime, double dt)
 {
+    (void)simTime;
     (void)dt;
-    OSCAction::End(simTime);
+
+    OSCAction::End();
 }
 
 int OverrideControlAction::AddOverrideStatus(Object::OverrideActionStatus status)
@@ -2231,19 +2297,21 @@ int OverrideControlAction::AddOverrideStatus(Object::OverrideActionStatus status
     return 0;
 }
 
-void OverrideControlAction::Start(double simTime, double dt)
+void OverrideControlAction::Start(double simTime)
 {
     for (size_t i = 0; i < overrideActionList.size(); i++)
     {
         object_->overrideActionList[overrideActionList[i].type] = overrideActionList[i];
     }
-    OSCAction::Start(simTime, dt);
+    OSCAction::Start(simTime);
 }
 
 void OverrideControlAction::Step(double simTime, double dt)
 {
+    (void)simTime;
     (void)dt;
-    OSCAction::End(simTime);
+
+    OSCAction::End();
 }
 
 double OverrideControlAction::RangeCheckAndErrorLog(Object::OverrideType type, double valueCheck, double lowerLimit, double upperLimit, bool ifRound)

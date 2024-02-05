@@ -1,5 +1,184 @@
 ## esmini release notes
 
+### 2024-02-02 Version 2.36.4
+
+New features:
+- Add OSI Traffic Command to [OSMP](https://github.com/esmini/esmini/tree/dev/OSMP_FMU)
+  - initial version with limited coverage
+  - only a few actions supported yet (teleport, lane change, speed change)
+
+Improvements and fixes:
+- Fix bugs in World (X,Y) to Road/Route position conversion when off route ([issue #523](https://github.com/esmini/esmini/issues/523))
+  - don't limit search to route roads only
+  - especially when current position is out of route bounds
+- Respect full path for permutation artifacts ([issue #526](https://github.com/esmini/esmini/issues/526))
+  - e.g. log, dat, osi and csv files
+  - include any specified folder path
+- Maintain longitudinal speed in step (immediate) lane change actions
+
+### 2024-01-31 Version 2.36.3
+
+New features:
+- Add full element path name to the storyboard element state change callback function
+  - including all parent names delimited by '/'
+  - see updated test case: [StoryBoardElementStateCallbackInstance1](https://github.com/esmini/esmini/blob/da3e8006acddc03fe69d36f7eadace436ef21e21/EnvironmentSimulator/Unittest/ScenarioEngineDll_test.cpp#L3819-L3862)
+  - and Python example code: [hello_world/storyboard_state_callback.py](https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/code-examples/hello_world/storyboard_state_callback.py)
+- Add OSITrafficCommand embryo ([issue #499](https://github.com/esmini/esmini/issues/499))
+  - some initial code outlining a possible approach
+  - recent storyboard state handling updates ensures no command is missed
+  - code example: [osi-traffic_command](https://github.com/esmini/esmini/tree/dev/EnvironmentSimulator/code-examples/osi-traffic_command)
+- Respect and apply jerk settings (acc/dec change rate) in LongitudinalDistanceAction
+- Add scooter vehicle
+  - add entry in vehicle catalog
+  - add simple 3D model to model pack
+    - remove esmini/resources/models folder and re-run `cmake ..` to download
+    - or fetch latest pack manually from [here](https://esmini.asuscomm.com/AICLOUD779364751/models/models.7z)
+
+Improvements and fixes:
+- Skip velocity and acceleration updates after teleport action, avoiding spikes
+- Fix bug in DistanceCondition not resolving relative positions correctly
+- Fix presets for Linux VSCode including debug support
+  - User guide updated as well, see [Run and Debug with Linux and visual studio code](https://esmini.github.io/#_run_and_debug_with_linux_and_visual_studio_code)
+-  Major storyboard code refactorization
+    - replace mega nested loop with full OO approach
+    - improve element state condition handling, no transition misses
+
+
+### 2024-01-10 Version 2.36.2
+
+New features:
+- Add "off-road" follower controller
+  - a simple "follow-the-leader" controller for open spaces
+  - see more info in [User guide - OffroadFollowerController](https://esmini.github.io/#_offroadfollowercontroller)
+  - example scenario [offroad_follower.xosc](https://github.com/esmini/esmini/blob/dev/resources/xosc/offroad_follower.xosc) and [video clip](https://youtu.be/uHqdsORPsGE)
+  - code module: [ControllerOffroadFollower.cpp](https://github.com/esmini/esmini/blob/feature/add_offroad_follower/EnvironmentSimulator/Modules/Controllers/ControllerOffroadFollower.cpp)
+
+Improvements and fixes:
+- Fix and update ideal sensor API ([issue #514](https://github.com/esmini/esmini/issues/514))
+  - Fix wrong return code in SE_AddObjSensor, now returning unique sensor ID
+  - Add functions to retrieve number of sensors, both total and per object
+- Reset status in SpeedAction for any additional run
+  - enables same speed action to be correctly re-triggered
+  - example scenario: [drive_when_close.xosc](https://github.com/esmini/esmini/blob/dev/resources/xosc/drive_when_close.xosc), drive while close to another car else stop
+
+Build improvements:
+- Automatically attempt download dependent packages from all (3) available sources
+- Add implot package to CI cache (faster total build time)
+- Exclude implot from [slim esmini](https://esmini.github.io/#_slim_esmini_customize_configration) build (in CI)
+
+### 2024-01-04 Version 2.36.1
+
+Fixes:
+- Fix and update esminiRMLib functions for recent positioning updates
+- Support trailerRef attribute name in ConnectTrailerAction
+
+Compile and CI updates:
+- Restore default setting not treating warnings as errors (still enabled for CI)
+- Fix compiler warning in OSI + non-OSG builds
+- Run all relevant unit tests also for non-OSG builds
+
+### 2024-01-03 Version 2.36.0
+
+Improvements and fixes:
+- Fix relative positioning over connections and junctions ([issue #502](https://github.com/esmini/esmini/issues/502))
+  - prioritize own route over referenced object's one
+  - if neither entities has assigned route, use default routing
+- Improve route handling, don't get stuck outside defined route path ([issue #501](https://github.com/esmini/esmini/issues/501))
+- Consider full orientation for relative object positioning ([issue #509](https://github.com/esmini/esmini/issues/509))
+  - align the relative delta x, y, z components with reference entity
+- Accept zero length NURBS trajectories
+- Randomize equal weighting junction choices
+  - randomize choice between candidate roads with equal outgoing angle
+- Fix outdated list of storyboard element states in [storyboard_state_callback.py](https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/code-examples/hello_world/storyboard_state_callback.py)
+- Fix `--threads` mode missing quit request from viewer
+- Cosmetics: Limit steering rate for calculated steering angle
+
+New features:
+- Add `--pause` launch flag
+  - halt after initialization
+  - press `Space` or `Enter` to continue or step
+- Add runtime control to player server (former action server) ([issue #497](https://github.com/esmini/esmini/issues/497))
+    - new feature: support play, pause, step commands
+    - see example: [inject_actions.py](https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/code-examples/hello_world/inject_actions.py) and [video clip](https://youtu.be/FmLtwj518No)
+    - improvement: avoid duplicate actions on same object
+
+Updated behaviors:
+- Treat fixed timestep = 0 as non fixed (realtime)
+
+### 2023-12-16 Version 2.35.0
+
+New features:
+- Add support for OpenDRIVE parking space
+- Support string concatenation expressions
+  - see info in [User guide - Expressions/Strings](https://esmini.github.io/#_strings)
+  - example: OvertakerBrakeEvent startTrigger in [cut-in.xosc](https://github.com/esmini/esmini/blob/3a7c3027f93b690bcb49f768a1604dce2cb66d49/resources/xosc/cut-in.xosc#L162-L163)
+
+Improvements and fixes:
+- Don't automatically stop when all acts are done
+  - continue until storyboard stopTrigger hits
+  - or, if stopTrigger is missing, continue "for ever"
+  - Note: This change might require moving act stop trigger to storyboard
+
+Additional information:
+- Due to a mistake leading to master branch out of synch with dev branch and <br>
+  release tag v2.34.1 stuck on dev, it was decided to revert master history back <br>
+  to v2.34.0. This might lead to issues when pulling master. If that happens, resync <br>
+  your local master branch as described in [User guide - Branch strategy](https://esmini.github.io/#_branch_strategy).
+
+### 2023-12-11 Version 2.34.1
+
+Improvements and fixes:
+- Fix bug preventing trigging and evaluation of subsequential stories
+  - bug introduced in 2.34.0
+- Improve image handling (fetch or save rendered images)  ([issue #173](https://github.com/esmini/esmini/issues/173))
+  - off-screen (to RAM) rendering off by default (for performance)
+  - API now allows to activate before init
+  - Example how to fetch images from multiple cameras: [multiple-cameras.cpp](https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/code-examples/image-capture/multiple-cameras.cpp)
+  - Note: Activating off-screen before init is now required to include initial frame
+
+### 2023-12-08 Version 2.34.0
+
+New features:
+- Support OpenDRIVE explicit road lines
+
+Improvements and fixes:
+- Fix issue with trajectory relative positions not updating
+  - too eager optimization skipped initial evaulation of trajectory
+  - bug introduced in v2.33.0
+- Restore OSI optimization and add documentation
+  - static OSI content should only written first step (not always been the case lately)
+  - add brief info on OSI API for programmers: [User guide - OSI data](https://esmini.github.io/#_osi_data)
+- Improve and simplify storyboard state handling
+  - identity act complete state
+  - support zero stories (Init actions only)
+  - make state transitions immediately
+    - Note: Might affect trigger timing slightly
+  - some code clean-up, e.g. centralize storyboard update
+- Fix low curvature clothoids mistakenly identified as lines
+- Fix position calculation issues
+  - skip reference lane in relative laneId calculations
+  - fix initialization bugs wrt relative/absolute orientation type
+  - fix bugs in relative position
+  - Note: These changes might affect pose (pos + rot) behavior
+- Add code example changing catalog parameter values
+  - [override-bounding-box.cpp](https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/code-examples/parametric-init/override-bounding-box.cpp)
+- Add rmlib c# example
+  - [rm-basic-cs](https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/code-examples/rm-basic-cs)
+- Fix FBX SDK download issue in osg apps build and update info to support DAE
+  - script: [compile_osg_apps.sh](https://github.com/esmini/esmini/blob/dev/scripts/compile_osg_apps.sh)
+  - info: [User guide - Get osgconv](https://esmini.github.io/#_get_osgconv)
+- Add Python OSI receiver example ([issue #500](https://github.com/esmini/esmini/issues/500))
+  - [osi_groundtruth_from_udp.py](https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/code-examples/hello_world/osi_groundtruth_from_udp.py)
+- Add hint how to create .dat files from multiple scenarios in one command
+  -- See end of section [User guide - Scenario recording (.dat)](https://esmini.github.io/#_scenario_recording_dat)
+- Align trailer actions with updated concept (candidate for OpenSCENARIO 1.3)
+  - Introduce separate actions for connect and disconnect trailer
+  - Add parent umbrella action TrailerAction
+  - See updated example [trailer_connect.xosc](https://github.com/esmini/esmini/blob/dev/resources/xosc/trailer_connect.xosc)
+- Handle timestamps in ClothoidSpline prototype implementation
+  - ClothoidSpline shape is an OpenSCENARIO 1.3 feature candidate
+- Add link to User guide git commit history under [Version](https://esmini.github.io/#_version)
+
 ### 2023-11-17 Version 2.33.2
 
 New feature:

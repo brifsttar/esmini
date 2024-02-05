@@ -14,8 +14,7 @@
 #include "RoadNetwork.hpp"
 #include "Catalogs.hpp"
 #include "Entities.hpp"
-#include "Init.hpp"
-#include "Story.hpp"
+#include "Storyboard.hpp"
 #include "OSCPosition.hpp"
 #include "OSCProperties.hpp"
 #include "pugixml.hpp"
@@ -118,11 +117,11 @@ namespace scenarioengine
 
         // Storyboard - Init
         void                      parseInit(Init& init);
-        ActivateControllerAction* parseActivateControllerAction(pugi::xml_node actionNode);
+        ActivateControllerAction* parseActivateControllerAction(pugi::xml_node actionNode, Event* parent);
         int                       parseDynamicConstraints(pugi::xml_node dynamics_node, DynamicConstraints& dc, Object* obj);
-        OSCPrivateAction*         parseOSCPrivateAction(pugi::xml_node actionNode, Object* object);
-        OSCGlobalAction*          parseOSCGlobalAction(pugi::xml_node actionNode);
-        OSCUserDefinedAction*     parseOSCUserDefinedAction(pugi::xml_node actionNode);
+        OSCPrivateAction*         parseOSCPrivateAction(pugi::xml_node actionNode, Object* object, Event* parent);
+        OSCGlobalAction*          parseOSCGlobalAction(pugi::xml_node actionNode, Event* parent);
+        OSCUserDefinedAction*     parseOSCUserDefinedAction(pugi::xml_node actionNode, Event* parent);
         void                      parseOSCOrientation(OSCOrientation& orientation, pugi::xml_node orientationNode);
         OSCPosition*              parseOSCPosition(pugi::xml_node positionNode, OSCPosition* base_on_pos = nullptr);
 
@@ -190,6 +189,7 @@ namespace scenarioengine
         int                   versionMajor_;
         int                   versionMinor_;
         std::string           description_;
+        StoryBoard*           story_board_;
 
         int             ParseTransitionDynamics(pugi::xml_node node, OSCPrivateAction::TransitionDynamics& td);
         ConditionGroup* ParseConditionGroup(pugi::xml_node node);

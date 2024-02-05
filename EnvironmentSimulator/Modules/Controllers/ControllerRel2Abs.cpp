@@ -19,7 +19,7 @@
 #include <cmath>
 #include <math.h>
 #include <algorithm>
-#include "OSCManeuver.hpp"
+#include "Storyboard.hpp"
 #include "ScenarioEngine.hpp"
 #include "RoadManager.hpp"
 #include <ctype.h>
@@ -166,7 +166,7 @@ void ControllerRel2Abs::Step(double timeStep)
                 for (size_t j = 0; j < actions.size(); j++)
                 {
                     // OBS IsActive will return true if next state is running as well
-                    if (actions[j]->IsActive())
+                    if (actions[j]->GetCurrentState() == StoryBoardElement::State::RUNNING)
                     {
                         activeActions.push_back(actions[j]);
                     }
@@ -186,7 +186,7 @@ void ControllerRel2Abs::Step(double timeStep)
             // Start all copied actions
             for (unsigned int i = 0; i < activeActionsCopies.size(); i++)
             {
-                activeActionsCopies[i]->Start(currentTime, pred_timestep);
+                activeActionsCopies[i]->Start(currentTime);
             }
 
             // Simulation loop
@@ -356,7 +356,7 @@ void ControllerRel2Abs::Step(double timeStep)
         for (size_t i = 0; i < actions.size(); i++)
         {
             // OBS IsActive will return true if next state is running as well
-            if (actions[i]->IsActive())
+            if (actions[i]->GetCurrentState() == StoryBoardElement::State::RUNNING)
             {
                 activeActions.push_back(actions[i]);
             }
@@ -386,7 +386,7 @@ void ControllerRel2Abs::Step(double timeStep)
                 {
                     // Assumes object has reached steady state and want to continue in that state.
                     double           currentSpeed = lda->object_->GetSpeed();
-                    LongSpeedAction* lsa          = new LongSpeedAction();
+                    LongSpeedAction* lsa          = new LongSpeedAction(nullptr);
                     lsa->object_                  = object_;
                     lsa->transition_.shape_       = OSCPrivateAction::DynamicsShape::LINEAR;
                     lsa->transition_.dimension_   = OSCPrivateAction::DynamicsDimension::RATE;
@@ -414,8 +414,8 @@ void ControllerRel2Abs::Step(double timeStep)
                             }
                         }
                     }
-                    lda->End(scenario_engine_->getSimulationTime());
-                    lsa->Start(scenario_engine_->getSimulationTime(), timeStep);
+                    lda->End();
+                    lsa->Start(scenario_engine_->getSimulationTime());
                     LOG("Replacing the relative target LongDistanceAction with an absolute target LongSpeedAction and target value: %lf",
                         currentSpeed);
                 }
@@ -447,7 +447,7 @@ void ControllerRel2Abs::Step(double timeStep)
                         {
                             // This is the last part of the action, assume final speed is to be reached
                             double           trgSpeed   = sa->final_speed_->GetValue();
-                            LongSpeedAction* lsa        = new LongSpeedAction();
+                            LongSpeedAction* lsa        = new LongSpeedAction(nullptr);
                             lsa->object_                = object_;
                             lsa->transition_.shape_     = OSCPrivateAction::DynamicsShape::LINEAR;
                             lsa->transition_.dimension_ = OSCPrivateAction::DynamicsDimension::DISTANCE;
@@ -524,8 +524,8 @@ void ControllerRel2Abs::Step(double timeStep)
                                     }
                                 }
                             }
-                            sa->End(scenario_engine_->getSimulationTime());
-                            lsa->Start(scenario_engine_->getSimulationTime(), timeStep);
+                            sa->End();
+                            lsa->Start(scenario_engine_->getSimulationTime());
                             LOG("Replacing the SynchronizeAction (with final speed) with an absolute target LongSpeedAction and target value: %lf",
                                 trgSpeed);
                         }
@@ -545,7 +545,7 @@ void ControllerRel2Abs::Step(double timeStep)
                     else
                     {
                         double           currentSpeed = sa->object_->GetSpeed();
-                        LongSpeedAction* lsa          = new LongSpeedAction();
+                        LongSpeedAction* lsa          = new LongSpeedAction(nullptr);
                         lsa->object_                  = object_;
                         lsa->transition_.shape_       = OSCPrivateAction::DynamicsShape::LINEAR;
                         lsa->transition_.dimension_   = OSCPrivateAction::DynamicsDimension::RATE;
@@ -570,8 +570,8 @@ void ControllerRel2Abs::Step(double timeStep)
                                 }
                             }
                         }
-                        sa->End(scenario_engine_->getSimulationTime());
-                        lsa->Start(scenario_engine_->getSimulationTime(), timeStep);
+                        sa->End();
+                        lsa->Start(scenario_engine_->getSimulationTime());
                         LOG("Replacing the SynchronizeAction (no final speed) with an absolute target LongSpeedAction and target value: %lf",
                             currentSpeed);
                     }

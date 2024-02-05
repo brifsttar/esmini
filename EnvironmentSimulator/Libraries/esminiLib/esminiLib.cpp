@@ -24,7 +24,7 @@
 #include "pugixml.hpp"
 #include "ControllerExternal.hpp"
 #include "OSCCondition.hpp"
-#include "OSCManeuver.hpp"
+#include "Storyboard.hpp"
 #include "OSCParameterDistribution.hpp"
 
 using namespace scenarioengine;
@@ -57,7 +57,7 @@ typedef struct
 static std::vector<SE_ObjCallback> objCallback;
 
 // List of 3D models populated from any found found model_ids.txt file
-static std::map<int, std::string> entity_model_map;
+static std::map<int, std::string> entity_model_map_;
 
 static void log_callback(const char *str)
 {
@@ -320,7 +320,7 @@ static int GetRoadInfoAlongGhostTrail(int object_id, float lookahead_distance, S
     roadmanager::Position pos;
     if (trailPos.road_id >= 0)
     {
-        pos.XYZ2TrackPos(trailPos.x, trailPos.y, 0.0, false, trailPos.road_id, false);
+        pos.XYZ2TrackPos(trailPos.x, trailPos.y, 0.0, roadmanager::Position::PosMode::UNDEFINED, false, trailPos.road_id, false);
     }
     else
     {
@@ -388,7 +388,7 @@ static int GetRoadInfoAtGhostTrailTime(int object_id, float time, SE_RoadInfo *r
     roadmanager::Position pos;
     if (trailPos.road_id >= 0)
     {
-        pos.XYZ2TrackPos(trailPos.x, trailPos.y, 0.0, false, trailPos.road_id, false);
+        pos.XYZ2TrackPos(trailPos.x, trailPos.y, 0.0, roadmanager::Position::PosMode::UNDEFINED, false, trailPos.road_id, false);
     }
     else
     {
@@ -1492,8 +1492,22 @@ extern "C"
         return 0;
     }
 
+    SE_DLL_API const char *SE_GetOSITrafficCommandRaw()
+    {
+#ifdef _USE_OSI
+        if (player != nullptr)
+        {
+            return player->osiReporter->GetOSITrafficCommandRaw();
+        }
+#endif  // _USE_OSI
+
+        return 0;
+    }
+
     SE_DLL_API int SE_SetOSISensorDataRaw(const char *sensordata)
     {
+        (void)sensordata;
+
 #ifdef _USE_OSI
         if (player != nullptr)
         {
@@ -1512,8 +1526,6 @@ extern "C"
             }
 #endif
         }
-#else
-        (void)sensordata;
 #endif  // _USE_OSI
 
         return 0;
@@ -1626,6 +1638,18 @@ extern "C"
         return 0;
     }
 
+    SE_DLL_API int SE_UpdateOSITrafficCommand()
+    {
+#ifdef _USE_OSI
+        if (player != nullptr)
+        {
+            return player->osiReporter->UpdateOSITrafficCommand();
+        }
+#endif  // _USE_OSI
+
+        return 0;
+    }
+
     SE_DLL_API const char *SE_GetOSISensorDataRaw()
     {
 #ifdef _USE_OSI
@@ -1636,47 +1660,6 @@ extern "C"
 #endif  // _USE_OSI
 
         return 0;
-    }
-
-    SE_DLL_API bool SE_OSIFileOpen(const char *filename)
-    {
-#ifdef _USE_OSI
-        if (player != nullptr)
-        {
-            if (OSCParameterDistribution::Inst().GetNumPermutations() > 0)
-            {
-                return player->osiReporter->OpenOSIFile(OSCParameterDistribution::Inst().AddInfoToFilename(filename).c_str());
-            }
-            else
-            {
-                return player->osiReporter->OpenOSIFile(filename);
-            }
-        }
-#else
-        (void)filename;
-#endif  // _USE_OSI
-
-        return false;
-    }
-
-    SE_DLL_API bool SE_OSIFileWrite(bool flush)
-    {
-#ifdef _USE_OSI
-        bool retval = false;
-
-        if (player != nullptr)
-        {
-            retval = player->osiReporter->WriteOSIFile();
-            if (flush)
-            {
-                player->osiReporter->FlushOSIFile();
-            }
-        }
-        return retval;
-#else
-        (void)flush;
-        return false;
-#endif  // _USE_OSI
     }
 
     SE_DLL_API int SE_OSISetTimeStamp(unsigned long long int nanoseconds)
@@ -1823,14 +1806,28 @@ extern "C"
     SE_DLL_API int SE_AddObjectSensor(int object_id, float x, float y, float z, float h, float rangeNear, float rangeFar, float fovH, int maxObj)
     {
         Object *obj = nullptr;
+
+        if (player == nullptr)
+        {
+            return -1;
+        }
+
         if (getObjectById(object_id, obj) == -1)
         {
             return -1;
         }
 
-        player->AddObjectSensor(object_id, x, y, z, h, rangeNear, rangeFar, fovH, maxObj);
+        return player->AddObjectSensor(obj, x, y, z, h, rangeNear, rangeFar, fovH, maxObj);
+    }
 
-        return 0;
+    SE_DLL_API int SE_GetNumberOfObjectSensors()
+    {
+        if (player == nullptr)
+        {
+            return -1;
+        }
+
+        return player->GetNumberOfObjectSensors();
     }
 
     SE_DLL_API int SE_ViewSensorData(int object_id)
@@ -1849,16 +1846,18 @@ extern "C"
 
     SE_DLL_API void SE_DisableOSIFile()
     {
-        if (player == nullptr)
-        {
-            return;
-        }
+        SE_Env::Inst().DisableOSIFile();
 
-        player->SetOSIFileStatus(false);
+        if (player != nullptr)
+        {
+            player->SetOSIFileStatus(false);
+        }
     }
 
     SE_DLL_API void SE_EnableOSIFile(const char *filename)
     {
+        SE_Env::Inst().EnableOSIFile(filename == nullptr ? "" : filename);
+
         if (player != nullptr)
         {
             player->SetOSIFileStatus(true, filename);
@@ -2021,7 +2020,7 @@ extern "C"
         OSCCondition::conditionCallback = fnPtr;
     }
 
-    SE_DLL_API void SE_RegisterStoryBoardElementStateChangeCallback(void (*fnPtr)(const char *name, int type, int state))
+    SE_DLL_API void SE_RegisterStoryBoardElementStateChangeCallback(void (*fnPtr)(const char *name, int type, int state, const char *full_path))
     {
         StoryBoardElement::stateChangeCallback = fnPtr;
     }
@@ -2253,28 +2252,23 @@ extern "C"
         state->wheel_angle    = static_cast<float>(((vehicle::Vehicle *)handleSimpleVehicle)->wheelAngle_);
     }
 
-    SE_DLL_API int SE_SetOffScreenRendering(bool state)
-    {
-        SE_Env::Inst().SetOffScreenRendering(state);
-        return 0;
-    }
-
     SE_DLL_API int SE_SaveImagesToRAM(bool state)
     {
 #ifdef _USE_OSG
+        // prioritize setting via player, else update environment variable for next run
         if (player)
         {
             player->SaveImagesToRAM(state);
-            return 0;
         }
         else
         {
-            return -1;
+            SE_Env::Inst().SaveImagesToRAM(state);
         }
+        return 0;
 #else
         (void)state;
-        return -1;
 #endif
+        return -1;
     }
 
     SE_DLL_API int SE_SaveImagesToFile(int nrOfFrames)
@@ -2282,17 +2276,12 @@ extern "C"
 #ifdef _USE_OSG
         if (player)
         {
-            player->SaveImagesToFile(nrOfFrames);
-            return 0;
-        }
-        else
-        {
-            return -1;
+            return player->SaveImagesToFile(nrOfFrames);
         }
 #else
         (void)nrOfFrames;
-        return -1;
 #endif
+        return -1;
     }
 
     SE_DLL_API int SE_FetchImage(SE_Image *img)
@@ -2346,22 +2335,16 @@ extern "C"
 #ifdef _USE_OSG
         if (player)
         {
-            player->AddCustomCamera(x, y, z, h, p, false);
+            return player->AddCustomCamera(x, y, z, h, p, false);
         }
-        else
-        {
-            return -1;
-        }
-
-        return 0;
 #else
         (void)x;
         (void)y;
         (void)z;
         (void)h;
         (void)p;
-        return -1;
 #endif
+        return -1;
     }
 
     SE_DLL_API int SE_AddCustomFixedCamera(double x, double y, double z, double h, double p)
@@ -2369,22 +2352,16 @@ extern "C"
 #ifdef _USE_OSG
         if (player)
         {
-            player->AddCustomCamera(x, y, z, h, p, true);
+            return player->AddCustomCamera(x, y, z, h, p, true);
         }
-        else
-        {
-            return -1;
-        }
-
-        return 0;
 #else
         (void)x;
         (void)y;
         (void)z;
         (void)h;
         (void)p;
-        return -1;
 #endif
+        return -1;
     }
 
     SE_DLL_API int SE_AddCustomAimingCamera(double x, double y, double z)
@@ -2392,20 +2369,14 @@ extern "C"
 #ifdef _USE_OSG
         if (player)
         {
-            player->AddCustomCamera(x, y, z, false);
+            return player->AddCustomCamera(x, y, z, false);
         }
-        else
-        {
-            return -1;
-        }
-
-        return 0;
 #else
         (void)x;
         (void)y;
         (void)z;
-        return -1;
 #endif
+        return -1;
     }
 
     SE_DLL_API int SE_AddCustomFixedAimingCamera(double x, double y, double z)
@@ -2413,20 +2384,14 @@ extern "C"
 #ifdef _USE_OSG
         if (player)
         {
-            player->AddCustomCamera(x, y, z, true);
+            return player->AddCustomCamera(x, y, z, true);
         }
-        else
-        {
-            return -1;
-        }
-
-        return 0;
 #else
         (void)x;
         (void)y;
         (void)z;
-        return -1;
 #endif
+        return -1;
     }
 
     SE_DLL_API int SE_AddCustomFixedTopCamera(double x, double y, double z, double rot)
@@ -2434,21 +2399,15 @@ extern "C"
 #ifdef _USE_OSG
         if (player)
         {
-            player->AddCustomFixedTopCamera(x, y, z, rot);
+            return player->AddCustomFixedTopCamera(x, y, z, rot);
         }
-        else
-        {
-            return -1;
-        }
-
-        return 0;
 #else
         (void)x;
         (void)y;
         (void)z;
         (void)rot;
-        return -1;
 #endif
+        return -1;
     }
 
     SE_DLL_API int SE_SetCameraMode(int mode)

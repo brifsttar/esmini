@@ -42,22 +42,22 @@
                     <PrivateAction>
                         <TeleportAction>
                             <Position>
-                                <WorldPosition x="${$X0 - $TrajRadius}" y="${$Y0 + $TrajRadius + 4.7}" z="0.0" h="3.1415" p="0.0" r="0.0"/>
+                                <WorldPosition x="${$X0 - $TrajRadius}" y="${$Y0 + $TrajRadius + 4.7}" z="0.0" h="3.141592" p="0.0" r="0.0"/>
                             </Position>
                         </TeleportAction>
                     </PrivateAction>
                 </Private>
             </Actions>
         </Init>
-        <Story name="MyStory">
-            <Act name="DummyAct">
+        <Story name="TrailerStory">
+            <Act name="TrailerAct">
                 <ManeuverGroup maximumExecutionCount="1" name="DummyManueverGroup">
                     <Actors selectTriggeringEntities="false">
                         <EntityRef entityRef="Car"/>
                     </Actors>
                     <Maneuver name="ConnectManeuver">
                         <Event maximumExecutionCount="1" name="ReverseEvent" priority="overwrite">
-                            <Action name="ReverseSpeed">
+                            <Action name="ReverseSpeedAction">
                                 <PrivateAction>
                                     <LongitudinalAction>
                                         <SpeedAction>
@@ -79,6 +79,7 @@
                                                     <Clothoid curvature="${-1.0/$TrajRadius}" curvatureDot="0.0" length="${0.25 * 2.0 * 3.141592 * $TrajRadius}">
                                                         <Position>
                                                             <RelativeWorldPosition dx="0.0" dy="0.0" entityRef="Car">
+                                                                <Orientation type="relative" h="3.1415"/>
                                                             </RelativeWorldPosition>
                                                         </Position>
                                                     </Clothoid>
@@ -105,7 +106,9 @@
                         <Event maximumExecutionCount="1" name="ConnectEvent" priority="overwrite">
                             <Action name="ConnectAction">
                                 <PrivateAction>
-                                    <ConnectTrailerAction trailer="Trailer"/>
+                                    <TrailerAction>
+                                        <ConnectTrailerAction trailerRef="Trailer"/>
+                                    </TrailerAction>
                                 </PrivateAction>
                             </Action>
                             <StartTrigger>
@@ -168,7 +171,9 @@
                         <Event maximumExecutionCount="1" name="DisconnectEvent" priority="parallel">
                             <Action name="ConnectAction">
                                 <PrivateAction>
-                                    <ConnectTrailerAction/>
+                                    <TrailerAction>
+                                        <DisconnectTrailerAction/>
+                                    </TrailerAction>
                                 </PrivateAction>
                             </Action>
                             <StartTrigger>

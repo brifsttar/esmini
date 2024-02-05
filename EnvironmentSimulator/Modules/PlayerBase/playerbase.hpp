@@ -15,10 +15,12 @@
 #include <random>
 
 #include "ScenarioEngine.hpp"
+#include "PlayerServer.hpp"
 #include "RoadManager.hpp"
 #include "CommonMini.hpp"
 #include "Server.hpp"
 #include "IdealSensor.hpp"
+
 #ifdef _USE_OSI
 #include "OSIReporter.hpp"
 #endif  // _USE_OSI
@@ -88,14 +90,41 @@ namespace scenarioengine
             return quit_request;
         }
         void SetOSIFileStatus(bool is_on, const char *filename = 0);
-        int  Frame();  // let player calculate actual time step
+        int  Frame(bool server_mode = false);  // let player calculate actual time step
         void Draw();
-        int  Frame(double timestep_s);
+        int  Frame(double timestep_s, bool server_mode = false);
         void ScenarioPostFrame();
         int  ScenarioFrame(double timestep_s, bool keyframe);
         void ShowObjectSensors(bool mode);
-        void
-        AddObjectSensor(int object_index, double pos_x, double pos_y, double pos_z, double heading, double near, double far, double fovH, int maxObj);
+
+        /**
+        Add an ideal sensor to an object
+        @param obj Pointer to the object
+        @param pos_x The x coordinate of the sensor in object local coordinate system
+        @param pos_y The y coordinate of the sensor in object local coordinate system
+        @param pos_z The z coordinate of the sensor in object local coordinate system
+        @param heading The heading of the sensor in object local coordinate system
+        @param heading The heading of the sensor in object local coordinate system
+        @param near The distance from object reference point to start of sensor view frustum
+        @param far The distance from object reference point to end of sensor view frustum
+        @param fovH The horizontal width, in radians, of the sensor view frustum
+        @return -1 on failure, else the sensor ID (Global index of sensor)
+        */
+        int AddObjectSensor(Object *obj, double pos_x, double pos_y, double pos_z, double heading, double near, double far, double fovH, int maxObj);
+
+        /**
+        Retrieve the total number of ideal sensors attached to any objects
+        @return -1 on failure, else the number of sensors
+        */
+        int GetNumberOfObjectSensors();
+
+        /**
+        Retrieve the number of ideal sensors attached to an object
+        @param obj Pointer to the object
+        @return -1 on failure, else the number of sensors attached to the object
+        */
+        int GetNumberOfSensorsAttachedToObject(Object *obj);
+
 #ifdef _USE_OSG
         void InitVehicleModel(Object *obj, viewer::CarModel *model);
 #endif
@@ -174,6 +203,8 @@ namespace scenarioengine
         CSV_Logger      *CSV_Log;
         ScenarioEngine  *scenarioEngine;
         ScenarioGateway *scenarioGateway;
+        PlayerServer    *player_server_;
+
 #ifdef _USE_OSI
         OSIReporter *osiReporter;
 #else
@@ -195,10 +226,10 @@ namespace scenarioengine
         int SaveImagesToFile(int nrOfFrames);
 
         OffScreenImage *FetchCapturedImagePtr();
-        void            AddCustomCamera(double x, double y, double z, double h, double p, bool fixed_pos);
-        void            AddCustomCamera(double x, double y, double z, bool fixed_pos);
+        int             AddCustomCamera(double x, double y, double z, double h, double p, bool fixed_pos);
+        int             AddCustomCamera(double x, double y, double z, bool fixed_pos);
+        int             AddCustomFixedTopCamera(double x, double y, double z, double rot);
         int             AddCustomLightSource(double x, double y, double z, double intensity);
-        void            AddCustomFixedTopCamera(double x, double y, double z, double rot);
 #else
         void *viewer_;
 #endif
@@ -219,12 +250,12 @@ namespace scenarioengine
         bool        quit_request;
         bool        threads;
         bool        launch_server;
-        bool        launch_action_server;
         bool        disable_controllers_;
         double      fixed_timestep_;
         int         osi_freq_;
         int         frame_counter_;
         std::string osi_receiver_addr;
+        bool        osi_updated_;
         int         argc_;
         char      **argv_;
         std::string titleString;

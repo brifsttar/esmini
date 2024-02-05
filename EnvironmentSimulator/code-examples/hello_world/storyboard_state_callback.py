@@ -18,12 +18,13 @@ else:
 # Storyboard element types (see OSCTypeDefs/OSCAction.hpp)
 sbe_type = {
     0:"UNDEFINED_ELEMENT_TYPE",
-    1:"STORY",
-    2:"ACT",
-    3:"MANEUVER_GROUP",
-    4:"MANEUVER",
-    5:"EVENT",
-    6:"ACTION"
+    1:"STORY_BOARD",
+    2:"STORY",
+    3:"ACT",
+    4:"MANEUVER_GROUP",
+    5:"MANEUVER",
+    6:"EVENT",
+    7:"ACTION"
 }
 
 # Storyboard element states (see OSCTypeDefs/OSCAction.hpp)
@@ -37,11 +38,12 @@ sbe_state = {
 # Define callback for scenario storyboard element state changes
 # according to function type: void (*fnPtr)(const char* name, int type, int state)
 # required by SE_RegisterStoryBoardElementStateChangeCallback()
-def callback(name, type, state):
+def callback(name, type, state, full_path):
     # just print the received info
-    print("callback: {} ({}) state: {}".format(codecs.decode(name), sbe_type[type], sbe_state[state]))
+    print(type)
+    print("callback: {} ({}) state: {} full path: {}".format(codecs.decode(name), sbe_type[type], sbe_state[state], codecs.decode(full_path), ))
 
-callback_type = ct.CFUNCTYPE(None, ct.c_char_p, ct.c_int, ct.c_int)
+callback_type = ct.CFUNCTYPE(None, ct.c_char_p, ct.c_int, ct.c_int, ct.c_char_p)
 callback_func = callback_type(callback)
 
 # Initialize esmini before register the callback

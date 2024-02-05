@@ -4,6 +4,12 @@ message(
 
 # ############################# Project generate options ###########################################################
 
+project(
+    esmini
+    DESCRIPTION "esmini"
+    LANGUAGES C
+              CXX)
+
 set(ENABLE_COLORED_DIAGNOSTICS
     OFF
     CACHE BOOL
@@ -87,12 +93,6 @@ else()
         FATAL_ERROR)
 endif()
 
-project(
-    esmini
-    DESCRIPTION "esmini"
-    LANGUAGES C
-              CXX)
-
 set_property(
     GLOBAL
     PROPERTY USE_FOLDERS
@@ -138,40 +138,14 @@ set_special_build_flags()
 include(${CMAKE_CURRENT_SOURCE_DIR}/support/cmake/utils/get_subdirectories.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/support/cmake/utils/set_folder.cmake)
 
-# ############################### Loading cloud packages ##############################################################
-
-set(FILE_STORAGE
-    "esmini") # "dropbox", "google", "esmini"  (limited GB/Day)
-set(MODEL_STORAGE
-    "esmini") # "dropbox", "google", "esmini"  (limited GB/Day)
-
-include(${CMAKE_CURRENT_SOURCE_DIR}/support/cmake/cloud/dropbox.cmake)
-include(${CMAKE_CURRENT_SOURCE_DIR}/support/cmake/cloud/esmini.cmake)
-include(${CMAKE_CURRENT_SOURCE_DIR}/support/cmake/cloud/googledrive.cmake)
-
-if(${FILE_STORAGE}
-   STREQUAL
-   "dropbox")
-    set_dropbox_cloud_links()
-elseif(
-    ${FILE_STORAGE}
-    STREQUAL
-    "google")
-    set_googledrive_cloud_links()
-elseif(
-    ${FILE_STORAGE}
-    STREQUAL
-    "esmini")
-    set_esmini_cloud_links()
-else()
-    message(
-        "Unknown storage type: "
-        ${FILE_STORAGE})
-endif()
-
 # ############################### Downloading cloud packages #########################################################
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/support/cmake/cloud/set_cloud_links.cmake)
+set_cloud_links()
+
 include(${CMAKE_CURRENT_SOURCE_DIR}/support/cmake/cloud/download.cmake)
+
+message(STATUS "Downloading dependencies...")
 
 if(USE_OSG)
     include(${CMAKE_CURRENT_SOURCE_DIR}/support/cmake/external/osg.cmake)

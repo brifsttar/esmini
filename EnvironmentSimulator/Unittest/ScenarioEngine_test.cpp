@@ -406,63 +406,150 @@ TEST(TrajectoryTest, FollowTrajectoryReverse)
     delete se;
 }
 
+TEST(ExpressionTest, ConcatenateStrings)
+{
+    ExprReturnStruct rs;
+
+    rs = eval_expr("2 + 45 + ab c +  5 +   61");
+    EXPECT_EQ(rs.type, EXPR_RETURN_STRING);
+    EXPECT_EQ(rs._string.len, 10);
+    EXPECT_STREQ(rs._string.string, "245ab c561");
+    clear_expr_result(&rs);
+
+    rs = eval_expr("1 + a + 2 * 6");
+    EXPECT_EQ(rs.type, EXPR_RETURN_STRING);
+    EXPECT_EQ(rs._string.len, 7);
+    EXPECT_STREQ(rs._string.string, "1a2 * 6");
+    clear_expr_result(&rs);
+
+    rs = eval_expr("AC/DC 23 + 1 + ABBA * 7");
+    EXPECT_EQ(rs.type, EXPR_RETURN_STRING);
+    EXPECT_EQ(rs._string.len, 17);
+    EXPECT_STREQ(rs._string.string, "AC/DC 231ABBA * 7");
+    clear_expr_result(&rs);
+
+    rs = eval_expr("2 + 4 + a + 5 + 6");
+    EXPECT_EQ(rs.type, EXPR_RETURN_STRING);
+    EXPECT_EQ(rs._string.len, 5);
+    EXPECT_STREQ(rs._string.string, "24a56");
+    clear_expr_result(&rs);
+
+    rs = eval_expr("1 + a + 2");
+    EXPECT_EQ(rs.type, EXPR_RETURN_STRING);
+    EXPECT_EQ(rs._string.len, 3);
+    EXPECT_STREQ(rs._string.string, "1a2");
+    clear_expr_result(&rs);
+
+    rs = eval_expr("ab + cde");
+    EXPECT_EQ(rs.type, EXPR_RETURN_STRING);
+    EXPECT_EQ(rs._string.len, 5);
+    EXPECT_STREQ(rs._string.string, "abcde");
+    clear_expr_result(&rs);
+
+    rs = eval_expr("123 + _cde");
+    EXPECT_EQ(rs.type, EXPR_RETURN_STRING);
+    EXPECT_EQ(rs._string.len, 7);
+    EXPECT_STREQ(rs._string.string, "123_cde");
+    clear_expr_result(&rs);
+
+    rs = eval_expr("_abc + 456");
+    EXPECT_EQ(rs.type, EXPR_RETURN_STRING);
+    EXPECT_EQ(rs._string.len, 7);
+    EXPECT_STREQ(rs._string.string, "_abc456");
+    clear_expr_result(&rs);
+
+    rs = eval_expr("a + 7");
+    EXPECT_EQ(rs.type, EXPR_RETURN_STRING);
+    EXPECT_EQ(rs._string.len, 2);
+    EXPECT_STREQ(rs._string.string, "a7");
+    clear_expr_result(&rs);
+
+    rs = eval_expr("7 + a");
+    EXPECT_EQ(rs.type, EXPR_RETURN_STRING);
+    EXPECT_EQ(rs._string.len, 2);
+    EXPECT_STREQ(rs._string.string, "7a");
+    clear_expr_result(&rs);
+
+    rs = eval_expr("1 + a + 2");
+    EXPECT_EQ(rs.type, EXPR_RETURN_STRING);
+    EXPECT_EQ(rs._string.len, 3);
+    EXPECT_STREQ(rs._string.string, "1a2");
+    clear_expr_result(&rs);
+
+    // missing 1st operand returns nan
+    rs = eval_expr(" + cde");
+    EXPECT_EQ(rs.type, EXPR_RETURN_UNDEFINED);
+    EXPECT_EQ(std::isnan(rs._double), true);
+    clear_expr_result(&rs);
+
+    // missing 2nd operand will still return first string
+    rs = eval_expr("abc + ");
+    EXPECT_EQ(rs.type, EXPR_RETURN_STRING);
+    EXPECT_EQ(rs._string.len, 3);
+    EXPECT_STREQ(rs._string.string, "abc");
+    clear_expr_result(&rs);
+
+    return;
+}
+
 TEST(ExpressionTest, EnsureResult)
 {
-    ASSERT_DOUBLE_EQ(eval_expr("1 + 1"), 2.0);
-    ASSERT_DOUBLE_EQ(eval_expr("5 * 10 + 1"), 51.0);
-    ASSERT_DOUBLE_EQ(eval_expr("5 * (10 + 1)"), 55.0);
-    ASSERT_DOUBLE_EQ(eval_expr("15/3.5"), 15.0 / 3.5);
-    ASSERT_DOUBLE_EQ(eval_expr("15 % 6"), 3.0);
-    ASSERT_DOUBLE_EQ(eval_expr("-15 % 6"), -3.0);
-    ASSERT_DOUBLE_EQ(eval_expr("180 % 360"), 180.0);
-    ASSERT_DOUBLE_EQ(eval_expr("-15 % 360"), -15.0);
-    ASSERT_DOUBLE_EQ(eval_expr("345 % 360"), -15.0);
-    ASSERT_DOUBLE_EQ(eval_expr("-345 % 360"), 15.0);
-    ASSERT_DOUBLE_EQ(eval_expr("705 % 360"), -15.0);
-    ASSERT_DOUBLE_EQ(eval_expr("-705 % 360"), 15.0);
-    ASSERT_DOUBLE_EQ(eval_expr("1 == 1"), 1.0);
-    ASSERT_DOUBLE_EQ(eval_expr("1 == 2"), 0.0);
-    ASSERT_DOUBLE_EQ(eval_expr("(4 == 4) && (10 == 10)"), 1.0);
-    ASSERT_DOUBLE_EQ(eval_expr("4 == 4 && 10 == 10"), 1.0);
-    ASSERT_DOUBLE_EQ(eval_expr("4 == 4 && 9 < 10"), 1.0);
-    ASSERT_DOUBLE_EQ(eval_expr("4 == 4 || 11 == 10"), 1.0);
-    ASSERT_DOUBLE_EQ(eval_expr("4 == 3 || 9 < 8"), 0.0);
-    ASSERT_DOUBLE_EQ(eval_expr("ceil(11.1) == 12"), 1.0);
-    ASSERT_DOUBLE_EQ(eval_expr("round(11.1) == 11"), 1.0);
-    ASSERT_DOUBLE_EQ(eval_expr("floor(11.9) == 11"), 1.0);
-    ASSERT_DOUBLE_EQ(eval_expr("ceil(-11.1) == -11"), 1.0);
-    ASSERT_DOUBLE_EQ(eval_expr("round(-11.1) == -11"), 1.0);
-    ASSERT_DOUBLE_EQ(eval_expr("floor(-11.9) == -12"), 1.0);
-    ASSERT_DOUBLE_EQ(eval_expr("pow(2,3)"), 8.0);
-    ASSERT_DOUBLE_EQ(eval_expr("2**3"), 8.0);
-    ASSERT_DOUBLE_EQ(eval_expr("13.88888888888889 - 1.0"), 12.88888888888889);
-    ASSERT_DOUBLE_EQ(eval_expr("13.88888888888889 - 0.0"), 13.88888888888889);
+    ASSERT_DOUBLE_EQ(eval_expr("1 + 1")._double, 2.0);
+    ASSERT_DOUBLE_EQ(eval_expr("5 + 10 + 1")._double, 16.0);
+    ASSERT_DOUBLE_EQ(eval_expr("5 * 10 + 1")._double, 51.0);
+    ASSERT_DOUBLE_EQ(eval_expr("5 * (10 + 1)")._double, 55.0);
+    ASSERT_DOUBLE_EQ(eval_expr("15/3.5")._double, 15.0 / 3.5);
+    ASSERT_DOUBLE_EQ(eval_expr("15 % 6")._double, 3.0);
+    ASSERT_DOUBLE_EQ(eval_expr("-15 % 6")._double, -3.0);
+    ASSERT_DOUBLE_EQ(eval_expr("180 % 360")._double, 180.0);
+    ASSERT_DOUBLE_EQ(eval_expr("-15 % 360")._double, -15.0);
+    ASSERT_DOUBLE_EQ(eval_expr("345 % 360")._double, -15.0);
+    ASSERT_DOUBLE_EQ(eval_expr("-345 % 360")._double, 15.0);
+    ASSERT_DOUBLE_EQ(eval_expr("705 % 360")._double, -15.0);
+    ASSERT_DOUBLE_EQ(eval_expr("-705 % 360")._double, 15.0);
+    ASSERT_DOUBLE_EQ(eval_expr("1 == 1")._double, 1.0);
+    ASSERT_DOUBLE_EQ(eval_expr("1 == 2")._double, 0.0);
+    ASSERT_DOUBLE_EQ(eval_expr("(4 == 4) && (10 == 10)")._double, 1.0);
+    ASSERT_DOUBLE_EQ(eval_expr("4 == 4 && 10 == 10")._double, 1.0);
+    ASSERT_DOUBLE_EQ(eval_expr("4 == 4 && 9 < 10")._double, 1.0);
+    ASSERT_DOUBLE_EQ(eval_expr("4 == 4 || 11 == 10")._double, 1.0);
+    ASSERT_DOUBLE_EQ(eval_expr("4 == 3 || 9 < 8")._double, 0.0);
+    ASSERT_DOUBLE_EQ(eval_expr("ceil(11.1) == 12")._double, 1.0);
+    ASSERT_DOUBLE_EQ(eval_expr("round(11.1) == 11")._double, 1.0);
+    ASSERT_DOUBLE_EQ(eval_expr("floor(11.9) == 11")._double, 1.0);
+    ASSERT_DOUBLE_EQ(eval_expr("ceil(-11.1) == -11")._double, 1.0);
+    ASSERT_DOUBLE_EQ(eval_expr("round(-11.1) == -11")._double, 1.0);
+    ASSERT_DOUBLE_EQ(eval_expr("floor(-11.9) == -12")._double, 1.0);
+    ASSERT_DOUBLE_EQ(eval_expr("pow(2,3)")._double, 8.0);
+    ASSERT_DOUBLE_EQ(eval_expr("2**3")._double, 8.0);
+    ASSERT_DOUBLE_EQ(eval_expr("13.88888888888889 - 1.0")._double, 12.88888888888889);
+    ASSERT_DOUBLE_EQ(eval_expr("13.88888888888889 - 0.0")._double, 13.88888888888889);
 
     // round returns the integral value that is nearest to x, with halfway cases rounded away from zero.
-    ASSERT_DOUBLE_EQ(eval_expr("round(-2.5)"), -2.0);
-    ASSERT_DOUBLE_EQ(eval_expr("round(-3.5)"), -4.0);
-    ASSERT_DOUBLE_EQ(eval_expr("round(2.5)"), 2.0);
-    ASSERT_DOUBLE_EQ(eval_expr("round(3.5)"), 4.0);
+    ASSERT_DOUBLE_EQ(eval_expr("round(-2.5)")._double, -2.0);
+    ASSERT_DOUBLE_EQ(eval_expr("round(-3.5)")._double, -4.0);
+    ASSERT_DOUBLE_EQ(eval_expr("round(2.5)")._double, 2.0);
+    ASSERT_DOUBLE_EQ(eval_expr("round(3.5)")._double, 4.0);
 
     // additional expressions not specified in OSC <=1.2
     // may not work in other OpenSCENARIO compliant tools
-    EXPECT_DOUBLE_EQ(eval_expr("min(7,7.1)"), 7.0);
-    EXPECT_DOUBLE_EQ(eval_expr("max(7,7.1)"), 7.1);
-    EXPECT_DOUBLE_EQ(eval_expr("min(-7,-7.1)"), -7.1);
-    EXPECT_DOUBLE_EQ(eval_expr("max(-7,-7.1)"), -7.0);
-    EXPECT_DOUBLE_EQ(eval_expr("sign(7)"), 1);
-    EXPECT_DOUBLE_EQ(eval_expr("sign(-7)"), -1);
-    EXPECT_NEAR(eval_expr("sin(1.1)"), 0.89120, 1e-5);
-    EXPECT_NEAR(eval_expr("sin(7.0)"), 0.65698, 1e-5);
-    EXPECT_NEAR(eval_expr("cos(-2.0)"), -0.41614, 1e-5);
-    EXPECT_NEAR(eval_expr("atan(20.0)"), 1.52083, 1e-5);
-    EXPECT_NEAR(eval_expr("atan(-20.0)"), -1.52083, 1e-5);
-    EXPECT_NEAR(eval_expr("asin(0.5)"), 0.523598, 1e-5);
-    EXPECT_NEAR(eval_expr("acos(-0.5)"), 2.09440, 1e-5);
-    EXPECT_NEAR(eval_expr("abs(-0.5)"), 0.5, 1e-5);
-    EXPECT_NEAR(eval_expr("abs(0.5)"), 0.5, 1e-5);
-    EXPECT_NEAR(eval_expr("abs(2.9)"), 2.9, 1e-5);
-    EXPECT_NEAR(eval_expr("abs(-2.9)"), 2.9, 1e-5);
+    EXPECT_DOUBLE_EQ(eval_expr("min(7,7.1)")._double, 7.0);
+    EXPECT_DOUBLE_EQ(eval_expr("max(7,7.1)")._double, 7.1);
+    EXPECT_DOUBLE_EQ(eval_expr("min(-7,-7.1)")._double, -7.1);
+    EXPECT_DOUBLE_EQ(eval_expr("max(-7,-7.1)")._double, -7.0);
+    EXPECT_DOUBLE_EQ(eval_expr("sign(7)")._double, 1);
+    EXPECT_DOUBLE_EQ(eval_expr("sign(-7)")._double, -1);
+    EXPECT_NEAR(eval_expr("sin(1.1)")._double, 0.89120, 1e-5);
+    EXPECT_NEAR(eval_expr("sin(7.0)")._double, 0.65698, 1e-5);
+    EXPECT_NEAR(eval_expr("cos(-2.0)")._double, -0.41614, 1e-5);
+    EXPECT_NEAR(eval_expr("atan(20.0)")._double, 1.52083, 1e-5);
+    EXPECT_NEAR(eval_expr("atan(-20.0)")._double, -1.52083, 1e-5);
+    EXPECT_NEAR(eval_expr("asin(0.5)")._double, 0.523598, 1e-5);
+    EXPECT_NEAR(eval_expr("acos(-0.5)")._double, 2.09440, 1e-5);
+    EXPECT_NEAR(eval_expr("abs(-0.5)")._double, 0.5, 1e-5);
+    EXPECT_NEAR(eval_expr("abs(0.5)")._double, 0.5, 1e-5);
+    EXPECT_NEAR(eval_expr("abs(2.9)")._double, 2.9, 1e-5);
+    EXPECT_NEAR(eval_expr("abs(-2.9)")._double, 2.9, 1e-5);
 }
 
 TEST(OptionsTest, TestOptionHandling)
@@ -1237,7 +1324,7 @@ TEST(OrientationTest, TestRelativeRoadHeading)
 
 TEST(SpeedProfileTest, TestSpeedProfileFirstEntryOffset)
 {
-    LongSpeedProfileAction        sp_action;
+    LongSpeedProfileAction        sp_action(nullptr);
     DynamicConstraints            dynamics;  // initalized with default values
     LongSpeedProfileAction::Entry entry;
 
@@ -1257,7 +1344,7 @@ TEST(SpeedProfileTest, TestSpeedProfileFirstEntryOffset)
     entry.time_  = 2.0;
     sp_action.AddEntry(entry);
 
-    sp_action.Start(0.0, 0.1);
+    sp_action.Start(0.1);
 
     // Evaluate at a time before first entry time, speed should interpolate towards first entry
     sp_action.Step(1.0);
@@ -1267,7 +1354,7 @@ TEST(SpeedProfileTest, TestSpeedProfileFirstEntryOffset)
 
 TEST(SpeedProfileTest, TestSpeedProfileLinear)
 {
-    LongSpeedProfileAction        sp_action;
+    LongSpeedProfileAction        sp_action(nullptr);
     DynamicConstraints            dynamics;  // initalized with default values
     LongSpeedProfileAction::Entry entry;
 
@@ -1319,7 +1406,7 @@ TEST(SpeedProfileTest, TestSpeedProfileLinear)
 
 TEST(SpeedProfileTest, TestSpeedProfileConstraints)
 {
-    LongSpeedProfileAction        sp_action;
+    LongSpeedProfileAction        sp_action(nullptr);
     LongSpeedProfileAction::Entry entry;
     DynamicConstraints            dynamics;
 
@@ -1366,7 +1453,7 @@ TEST(SpeedProfileTest, TestSpeedProfileConstraints)
 
 TEST(SpeedProfileTest, TestSpeedProfileSingleEntry)
 {
-    LongSpeedProfileAction        sp_action;
+    LongSpeedProfileAction        sp_action(nullptr);
     LongSpeedProfileAction::Entry entry;
 
     sp_action.dynamics_.max_acceleration_      = 4.0;
@@ -1422,7 +1509,7 @@ TEST(SpeedProfileTest, TestSpeedProfileSingleEntry)
 
 TEST(SpeedProfileTest, TestSpeedProfileNoTime)
 {
-    LongSpeedProfileAction        sp_action;
+    LongSpeedProfileAction        sp_action(nullptr);
     LongSpeedProfileAction::Entry entry;
 
     Object obj(Object::Type::VEHICLE);
@@ -1470,7 +1557,7 @@ TEST(SpeedProfileTest, TestSpeedProfileNoTime)
 
 TEST(SpeedProfileTest, TestSpeedProfileFromNonZeroTime)
 {
-    LongSpeedProfileAction        sp_action;
+    LongSpeedProfileAction        sp_action(nullptr);
     LongSpeedProfileAction::Entry entry;
 
     Object obj(Object::Type::VEHICLE);
@@ -1518,7 +1605,7 @@ TEST(SpeedProfileTest, TestSpeedProfileFromNonZeroTime)
 
 TEST(SpeedProfileTest, TestSpeedProfileNonZeroInitalAcc)
 {
-    LongSpeedProfileAction        sp_action;
+    LongSpeedProfileAction        sp_action(nullptr);
     DynamicConstraints            dynamics;  // initalized with default values
     LongSpeedProfileAction::Entry entry;
 
@@ -1544,7 +1631,7 @@ TEST(SpeedProfileTest, TestSpeedProfileNonZeroInitalAcc)
     entry.time_  = 5.0;
     sp_action.AddEntry(entry);
 
-    sp_action.Start(0.0, 0.1);
+    sp_action.Start(0.1);
 
     // Evaluate small time step ahead. Although the speed profile entry slope is negative,
     // the speed is still increasing due to inital positive acceleration.
@@ -1853,7 +1940,7 @@ TEST(SpeedTest, TestAbsoluteSpeed)
 
 TEST(SpeedTest, TestChangeSpeedOverDistance)
 {
-    LongSpeedAction action;
+    LongSpeedAction action(nullptr);
     Object          obj(Object::Type::VEHICLE);
     action.object_ = &obj;
 
@@ -1874,7 +1961,7 @@ TEST(SpeedTest, TestChangeSpeedOverDistance)
         target->value_ = v1[i];
         action.transition_.SetParamTargetVal(dist[i]);  // distance
 
-        action.Start(0.0, 0.0);
+        action.Start(0.0);
         EXPECT_NEAR(action.transition_.GetParamTargetVal(), time[i], 1E-5);
     }
 }
@@ -2411,6 +2498,210 @@ TEST(PositionTest, TestPositionMode)
     EXPECT_NEAR(se->entities_.object_[0]->pos_.GetH(), 5.947, 1E-3);
     EXPECT_NEAR(se->entities_.object_[0]->pos_.GetP(), 0.374, 1E-3);
     EXPECT_NEAR(se->entities_.object_[0]->pos_.GetR(), 0.430, 1E-3);
+
+    delete se;
+}
+
+TEST(PositionTest, TestPositionTypes)
+{
+    double dt = 0.1;
+
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/position_types.xosc");
+    ASSERT_NE(se, nullptr);
+
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+    scenarioengine::Entities* entities = &se->entities_;
+
+    ASSERT_NE(entities, nullptr);
+
+    EXPECT_EQ(entities->object_.size(), 8);
+    EXPECT_EQ(entities->object_[0]->GetName(), "Car0");
+    EXPECT_EQ(entities->object_[1]->GetName(), "Car1");
+    EXPECT_EQ(entities->object_[2]->GetName(), "Car2");
+    EXPECT_EQ(entities->object_[3]->GetName(), "Car3");
+
+    // Check lane position in lane along s-axis
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 14.329, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 200.519, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 10.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetH(), 3.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetP(), 5.991), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetR(), 0.0), 0.0, 1E-3);
+
+    // Check lane position in opposite lane
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 9.006, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), 198.052, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetZ(), 11.495, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[1]->pos_.GetH(), 6.192), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[1]->pos_.GetP(), 0.289), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[1]->pos_.GetR(), 6.283), 0.0, 1E-3);
+
+    // Check relative lane position in lane along s-axis
+    EXPECT_NEAR(entities->object_[2]->pos_.GetX(), entities->object_[0]->pos_.GetX(), 1E-3);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetY(), entities->object_[0]->pos_.GetY(), 1E-3);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetZ(), entities->object_[0]->pos_.GetZ(), 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[2]->pos_.GetH(), entities->object_[0]->pos_.GetH()), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[2]->pos_.GetP(), entities->object_[0]->pos_.GetP()), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[2]->pos_.GetR(), entities->object_[0]->pos_.GetR()), 0.0, 1E-3);
+
+    // Check relative lane position in opposite lane
+    EXPECT_NEAR(entities->object_[3]->pos_.GetX(), entities->object_[1]->pos_.GetX(), 1E-3);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetY(), entities->object_[1]->pos_.GetY(), 1E-3);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetZ(), entities->object_[1]->pos_.GetZ(), 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[3]->pos_.GetH(), entities->object_[1]->pos_.GetH()), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[3]->pos_.GetP(), entities->object_[1]->pos_.GetP()), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[3]->pos_.GetR(), entities->object_[1]->pos_.GetR()), 0.0, 1E-3);
+
+    // Check corresponding variants with RoadPosition instead of LanePosition
+    for (unsigned int i = 0; i < 4; i++)
+    {
+        EXPECT_NEAR(entities->object_[4 + i]->pos_.GetX(), entities->object_[i]->pos_.GetX(), 1E-3);
+        EXPECT_NEAR(entities->object_[4 + i]->pos_.GetY(), entities->object_[i]->pos_.GetY(), 1E-3);
+        EXPECT_NEAR(entities->object_[4 + i]->pos_.GetZ(), entities->object_[i]->pos_.GetZ(), 1E-3);
+        EXPECT_NEAR(GetAngleDifference(entities->object_[4 + i]->pos_.GetH(), entities->object_[i]->pos_.GetH()), 0.0, 1E-3);
+        EXPECT_NEAR(GetAngleDifference(entities->object_[4 + i]->pos_.GetP(), entities->object_[i]->pos_.GetP()), 0.0, 1E-3);
+        EXPECT_NEAR(GetAngleDifference(entities->object_[4 + i]->pos_.GetR(), entities->object_[i]->pos_.GetR()), 0.0, 1E-3);
+    }
+
+    se->step(dt);
+    se->prepareGroundTruth(dt);
+
+    delete se;
+}
+
+TEST(ClothoidSplineTest, TestTrajectoryShape)
+{
+    double dt = 0.05;
+
+    ScenarioEngine* se = new ScenarioEngine("../../../resources/xosc/lane-change_clothoid_spline_based_trajectory.xosc");
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 1);
+
+    while (se->getSimulationTime() < 26.4)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    // Check car position at given time at end phase of the scenario
+    // Correct position indicates all trajectories have been evaluated correctly
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 242.101, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 1.087, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetH(), -0.031), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetR(), 0.0), 0.0, 1E-3);
+
+    delete se;
+}
+
+TEST(RelativePositionRouting, TestRelativePositionWithRoutes)
+{
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/relative_pos_over_intersection.xosc");
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 6);
+
+    // Check car position at given time at end phase of the scenario
+    // Correct position indicates all trajectories have been evaluated correctly
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 40.210, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -58.518, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetH(), 1.793), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetR(), 0.0), 0.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 19.690, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), 39.310, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[1]->pos_.GetH(), 1.752), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[1]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[1]->pos_.GetR(), 0.0), 0.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[2]->pos_.GetX(), -16.886, 1E-3);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetY(), -7.189, 1E-3);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[2]->pos_.GetH(), 3.287), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[2]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[2]->pos_.GetR(), 0.0), 0.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[3]->pos_.GetX(), 44.132, 1E-3);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetY(), -0.885, 1E-3);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[3]->pos_.GetH(), 0.193), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[3]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[3]->pos_.GetR(), 0.0), 0.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[4]->pos_.GetX(), 16.064, 1E-3);
+    EXPECT_NEAR(entities->object_[4]->pos_.GetY(), 58.981, 1E-3);
+    EXPECT_NEAR(entities->object_[4]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[4]->pos_.GetH(), 1.754), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[4]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[4]->pos_.GetR(), 0.0), 0.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[5]->pos_.GetX(), 46.198, 1E-3);
+    EXPECT_NEAR(entities->object_[5]->pos_.GetY(), -88.003, 1E-3);
+    EXPECT_NEAR(entities->object_[5]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[5]->pos_.GetH(), 1.742), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[5]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[5]->pos_.GetR(), 0.0), 0.0, 1E-3);
+
+    while (se->getSimulationTime() < 1.0 + SMALL_NUMBER)
+    {
+        se->step(0.5);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 40.210, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -58.518, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetH(), 1.793), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetR(), 0.0), 0.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 16.248, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), 38.678, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[1]->pos_.GetH(), 1.752), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[1]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[1]->pos_.GetR(), 0.0), 0.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[2]->pos_.GetX(), -16.378, 1E-3);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetY(), -10.652, 1E-3);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[2]->pos_.GetH(), 0.146), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[2]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[2]->pos_.GetR(), 0.0), 0.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[3]->pos_.GetX(), 43.461, 1E-3);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetY(), 2.550, 1E-3);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[3]->pos_.GetH(), 0.193), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[3]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[3]->pos_.GetR(), 0.0), 0.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[4]->pos_.GetX(), 16.064, 1E-3);
+    EXPECT_NEAR(entities->object_[4]->pos_.GetY(), 58.981, 1E-3);
+    EXPECT_NEAR(entities->object_[4]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[4]->pos_.GetH(), 1.754), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[4]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[4]->pos_.GetR(), 0.0), 0.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[5]->pos_.GetX(), 46.0261, 1E-3);
+    EXPECT_NEAR(entities->object_[5]->pos_.GetY(), -87.017, 1E-3);
+    EXPECT_NEAR(entities->object_[5]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[5]->pos_.GetH(), 1.744), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[5]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[5]->pos_.GetR(), 0.0), 0.0, 1E-3);
 
     delete se;
 }
