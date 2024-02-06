@@ -3166,8 +3166,7 @@ namespace roadmanager
                                 int    pos_mode                = PosMode::UNDEFINED,
                                 bool   connectedOnly           = false,
                                 int    roadId                  = -1,
-                                bool   check_overlapping_roads = false
-                                int    hintRoad                = -1);
+                                bool   check_overlapping_roads = false);
 
         int TeleportTo(Position *pos);
 
@@ -3511,6 +3510,11 @@ namespace roadmanager
         double GetRoadSuperElevationPrim() const
         {
             return roadSuperElevationPrim_;
+        }
+
+        void SetHintRoad(int hintRoad)
+        {
+            hintRoad_ = hintRoad;
         }
 
         /**
@@ -4035,6 +4039,7 @@ namespace roadmanager
         double z_roadPrim_;              // the road vertical slope (dz/ds)
         double z_roadPrimPrim_;          // rate of change of the road slope, like the vertical curvature
         double roadSuperElevationPrim_;  // rate of change of the road superelevation/lateral inclination
+        int    hintRoad_ = -1;
 
         // keep track for fast incremental updates of the position
         int track_idx_;            // road index
