@@ -9833,13 +9833,10 @@ roadmanager::Position::NextJunction roadmanager::Position::GetNextJunction() con
 	LinkType lt = DrivingSide() == 1 ? SUCCESSOR : PREDECESSOR;
 	ContactPointType cpt;
 	Road* r = GetRoad();
-        const Road* initRoad = r;
+	const Road* initRoad = r;
 	if (r == nullptr) return next;
 	while(true) {
 		if (!r->GetLink(lt)) {
-			break;
-		}
-		if (r == initRoad) {
 			break;
 		}
 		if (r->GetLink(lt)->GetElementType() == RoadLink::ElementType::ELEMENT_TYPE_JUNCTION) {
@@ -9856,6 +9853,9 @@ roadmanager::Position::NextJunction roadmanager::Position::GetNextJunction() con
 		}
 		r = GetOpenDrive()->GetRoadById(r->GetLink(lt)->GetElementId());
 		if (!r) {
+			break;
+		}
+		if (r == initRoad) {
 			break;
 		}
 		next.distance += r->GetLength();
