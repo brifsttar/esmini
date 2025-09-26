@@ -2933,8 +2933,8 @@ namespace roadmanager
         };
 
 		struct NextJunction {
-			Junction* junction;
-			double distance;
+			Junction* junction = nullptr;
+			double distance = 0.;
 		};
 
         enum class OrientationSetMask

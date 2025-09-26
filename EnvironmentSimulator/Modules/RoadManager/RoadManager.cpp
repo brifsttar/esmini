@@ -9819,6 +9819,9 @@ double Position::getRelativeDistance(double targetX, double targetY, double& x, 
 
 double roadmanager::Position::GetDistanceLeftOnRoad() const
 {
+    if (GetRoad() == nullptr) {
+		return 0.0;
+    }
 	if(DrivingSide() == 1) {
 		return GetRoad()->GetLength() - GetS();
 	} else {
@@ -9829,6 +9832,9 @@ double roadmanager::Position::GetDistanceLeftOnRoad() const
 roadmanager::Position::NextJunction roadmanager::Position::GetNextJunction() const
 {
 	roadmanager::Position::NextJunction next;
+    if (GetRoad() == nullptr) {
+        return next;
+    }
 	next.distance = GetDistanceLeftOnRoad();
 	LinkType lt = DrivingSide() == 1 ? SUCCESSOR : PREDECESSOR;
 	ContactPointType cpt;
