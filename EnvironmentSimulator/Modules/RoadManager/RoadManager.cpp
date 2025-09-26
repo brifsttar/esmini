@@ -9844,6 +9844,7 @@ roadmanager::Position::NextJunction roadmanager::Position::GetNextJunction() con
 			break;
 		}
 		cpt = r->GetLink(lt)->GetContactPointType();
+		r = GetOpenDrive()->GetRoadById(r->GetLink(lt)->GetElementId());
 		if (cpt == ContactPointType::CONTACT_POINT_START) {
 			lt = SUCCESSOR;
 		} else if (cpt == ContactPointType::CONTACT_POINT_END) {
@@ -9851,7 +9852,6 @@ roadmanager::Position::NextJunction roadmanager::Position::GetNextJunction() con
 		} else {
 			break;
 		}
-		r = GetOpenDrive()->GetRoadById(r->GetLink(lt)->GetElementId());
 		if (!r) {
 			break;
 		}
