@@ -22,6 +22,7 @@
 #include "Entities.hpp"
 #include "ScenarioGateway.hpp"
 #include "ScenarioEngine.hpp"
+#include "logger.hpp"
 
 using namespace scenarioengine;
 
@@ -41,7 +42,8 @@ ControllerFollowGhost::ControllerFollowGhost(InitArgs* args)
       lookahead_speed_(0.1),
       min_lookahead_speed_(0.1),
       lookahead_steering_(1.0),
-      min_lookahead_steering_(1.0)
+      min_lookahead_steering_(1.0),
+      steering_speed_inertia_(0.01)
 {
     if (args->properties->ValueExists("headstartTime"))
     {
@@ -61,7 +63,7 @@ ControllerFollowGhost::ControllerFollowGhost(InitArgs* args)
         }
         else
         {
-            LOG("Unexpected follow mode \"%s\", falling back to default \"time\"", follow_mode.c_str());
+            LOG_INFO("Unexpected follow mode \"{}\", falling back to default \"time\"", follow_mode);
             follow_mode_ = FollowMode::FOLLOW_MODE_TIME;
         }
     }
@@ -85,15 +87,20 @@ ControllerFollowGhost::ControllerFollowGhost(InitArgs* args)
     {
         min_lookahead_steering_ = strtod(args->properties->GetValueStr("minLookaheadSteering"));
     }
+
+    if (args->properties->ValueExists("steeringSpeedInertia"))
+    {
+        steering_speed_inertia_ = strtod(args->properties->GetValueStr("steeringSpeedInertia"));
+    }
 }
 
 void ControllerFollowGhost::Init()
 {
     // FollowGhost controller forced into override mode - will not perform any scenario actions
-    if (mode_ != Mode::MODE_OVERRIDE)
+    if (mode_ != ControlOperationMode::MODE_OVERRIDE)
     {
-        LOG("FollowGhost controller mode \"%s\" not applicable. Using override mode instead.", Mode2Str(mode_).c_str());
-        mode_ = Controller::Mode::MODE_OVERRIDE;
+        LOG_INFO("FollowGhost controller mode \"{}\" not applicable. Using override mode instead.", Mode2Str(mode_));
+        mode_ = ControlOperationMode::MODE_OVERRIDE;
     }
 
     object_->SetHeadstartTime(headstart_time_);
@@ -109,15 +116,19 @@ void ControllerFollowGhost::Step(double timeStep)
         return;
     }
 
-    double currentTime = scenarioEngine_->getSimulationTime();
+    double currentTime = scenario_engine_->getSimulationTime();
+    int    ret_val     = 0;
 
     if (follow_mode_ == FollowMode::FOLLOW_MODE_POSITION)
     {
-        if (object_->GetGhost()->trail_.FindClosestPoint(object_->pos_.GetX(),
-                                                         object_->pos_.GetY(),
-                                                         object_->trail_closest_pos_,
-                                                         object_->trail_follow_index_,
-                                                         object_->trail_follow_index_) == 0)
+        ret_val = object_->GetGhost()->trail_.FindClosestPoint(object_->pos_.GetX(),
+                                                               object_->pos_.GetY(),
+                                                               object_->trail_closest_pos_,
+                                                               object_->trail_follow_index_,
+                                                               object_->trail_follow_index_);
+
+        if (ret_val != static_cast<int>(roadmanager::PolyLineBase::GhostTrailReturnCode::GHOST_TRAIL_NO_VERTICES) &&
+            ret_val != static_cast<int>(roadmanager::PolyLineBase::GhostTrailReturnCode::GHOST_TRAIL_ERROR))
         {
             object_->trail_closest_pos_.z = object_->pos_.GetZ();
         }
@@ -131,11 +142,10 @@ void ControllerFollowGhost::Step(double timeStep)
     }
 
     // Find out a steering target along ghost vehicle trail
-    int                     index_out;
+    idx_t                   index_out;
     roadmanager::TrajVertex steering_target_point, speed_point;
 
     // Locate a point at given distance from own vehicle along the ghost trajectory
-    int ret_val = 0;
     if (follow_mode_ == FollowMode::FOLLOW_MODE_POSITION)
     {
         // Set steering target point at a distance ahead proportional to the speed
@@ -147,14 +157,14 @@ void ControllerFollowGhost::Step(double timeStep)
                                                              index_out,
                                                              object_->trail_follow_index_);
 
-        if (ret_val == 0)
+        if (ret_val != static_cast<int>(roadmanager::PolyLineBase::GhostTrailReturnCode::GHOST_TRAIL_NO_VERTICES) &&
+            ret_val != static_cast<int>(roadmanager::PolyLineBase::GhostTrailReturnCode::GHOST_TRAIL_ERROR))
         {
             probe_target_distance = MAX(min_lookahead_steering_, lookahead_steering_ * object_->speed_);
 
             ret_val = object_->GetGhost()->trail_.FindPointAhead(object_->trail_closest_pos_.s,
                                                                  probe_target_distance,
                                                                  steering_target_point,
-                                                                 index_out,
                                                                  object_->trail_follow_index_);
         }
     }
@@ -162,29 +172,24 @@ void ControllerFollowGhost::Step(double timeStep)
     {
         ret_val = object_->GetGhost()->trail_.FindPointAtTime(currentTime - headstart_time_ + MAX(min_lookahead_speed_, lookahead_speed_),
                                                               speed_point,
-                                                              index_out,
                                                               object_->trail_follow_index_);
 
-        if (ret_val == 0)
+        if (ret_val != static_cast<int>(roadmanager::PolyLineBase::GhostTrailReturnCode::GHOST_TRAIL_NO_VERTICES) &&
+            ret_val != static_cast<int>(roadmanager::PolyLineBase::GhostTrailReturnCode::GHOST_TRAIL_ERROR))
         {
             ret_val = object_->GetGhost()->trail_.FindPointAtTime(currentTime - headstart_time_ + MAX(min_lookahead_steering_, lookahead_steering_),
                                                                   steering_target_point,
-                                                                  index_out,
                                                                   object_->trail_follow_index_);
         }
     }
 
-    if (ret_val != 0)
+    if (ret_val == static_cast<int>(roadmanager::PolyLineBase::GhostTrailReturnCode::GHOST_TRAIL_NO_VERTICES) ||
+        ret_val == static_cast<int>(roadmanager::PolyLineBase::GhostTrailReturnCode::GHOST_TRAIL_ERROR))
     {
         steering_target_point.x = static_cast<float>(object_->pos_.GetX());
         steering_target_point.y = static_cast<float>(object_->pos_.GetY());
         steering_target_point.z = static_cast<float>(object_->pos_.GetZ());
         speed_point.speed       = 0;
-    }
-    else if (follow_mode_ == FollowMode::FOLLOW_MODE_TIME)
-    {
-        // For time based ghost follow, register last trail index for next search
-        object_->trail_follow_index_ = index_out;
     }
 
     // Update object sensor position for visualization
@@ -225,12 +230,12 @@ void ControllerFollowGhost::Step(double timeStep)
     gateway_->updateObjectSpeed(object_->id_, 0.0, vehicle_.speed_);
 
     // Update wheels wrt domains
-    if (IsActiveOnDomains(ControlDomains::DOMAIN_LONG))
+    if (IsActiveOnDomains(static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LONG)))
     {
         gateway_->updateObjectWheelRotation(object_->id_, 0.0, vehicle_.wheelRotation_);
     }
 
-    if (IsActiveOnDomains(ControlDomains::DOMAIN_LAT))
+    if (IsActiveOnDomains(static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LAT)))
     {
         gateway_->updateObjectWheelAngle(object_->id_, 0.0, vehicle_.wheelAngle_);
     }
@@ -238,7 +243,7 @@ void ControllerFollowGhost::Step(double timeStep)
     Controller::Step(timeStep);
 }
 
-void ControllerFollowGhost::Activate(DomainActivation lateral, DomainActivation longitudinal)
+int ControllerFollowGhost::Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)])
 {
     if (object_)
     {
@@ -248,13 +253,14 @@ void ControllerFollowGhost::Activate(DomainActivation lateral, DomainActivation 
         vehicle_.speed_ = object_->GetSpeed();
         vehicle_.SetMaxSpeed(100);  // just set a random high value
         vehicle_.SetMaxAcc(10.0);
+        vehicle_.SetSteeringScale(steering_speed_inertia_);
 
         object_->sensor_pos_[0] = object_->pos_.GetX();
         object_->sensor_pos_[1] = object_->pos_.GetY();
         object_->sensor_pos_[2] = object_->pos_.GetZ();
     }
 
-    Controller::Activate(lateral, longitudinal);
+    return Controller::Activate(mode);
 }
 
 void ControllerFollowGhost::ReportKeyEvent(int key, bool down)

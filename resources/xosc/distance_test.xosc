@@ -19,7 +19,7 @@
    </CatalogLocations>
    <RoadNetwork>
       <LogicFile filepath="../xodr/straight_500m_signs.xodr"/>
-      <!-- <SceneGraphFile filepath="../models/straight_500m.osgb"/> -->
+      <SceneGraphFile filepath="../models/straight_500m.osgb"/>
    </RoadNetwork>
    <Entities>
       <ScenarioObject name="Ego">
@@ -161,6 +161,13 @@
                   <StoryboardElementStateCondition storyboardElementType="event"
                                                    storyboardElementRef="NonContinuousDistEvent"
                                                    state="endTransition"/>
+               </ByValueCondition>
+            </Condition>
+         </ConditionGroup>
+         <ConditionGroup>
+            <Condition name="StopSimulationCondition" delay="0" conditionEdge="rising">
+               <ByValueCondition>
+                  <SimulationTimeCondition value="1200" rule="greaterThan"/>
                </ByValueCondition>
             </Condition>
          </ConditionGroup>

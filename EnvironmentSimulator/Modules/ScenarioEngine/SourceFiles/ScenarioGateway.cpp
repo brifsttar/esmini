@@ -22,6 +22,8 @@
 #include <arpa/inet.h>
 #include <netdb.h>  /* Needed for getaddrinfo() and freeaddrinfo() */
 #include <unistd.h> /* Needed for close() */
+
+#include <utility>
 #endif
 
 using namespace scenarioengine;
@@ -31,25 +33,26 @@ ObjectState::ObjectState()
     state_.info.id = -1;
 }
 
-ObjectState::ObjectState(int                    id,
-                         std::string            name,
-                         int                    obj_type,
-                         int                    obj_category,
-                         int                    obj_role,
-                         int                    model_id,
-                         std::string            model3d,
-                         int                    ctrl_type,
-                         OSCBoundingBox         boundingbox,
-                         int                    scaleMode,
-                         int                    visibilityMask,
-                         double                 timestamp,
-                         double                 speed,
-                         double                 wheel_angle,
-                         double                 wheel_rot,
-                         double                 rear_axle_z_pos,
-                         double                 front_axle_x_pos,
-                         double                 front_axle_z_pos,
-                         roadmanager::Position* pos)
+ObjectState::ObjectState(int                          id,
+                         std::string                  name,
+                         int                          obj_type,
+                         int                          obj_category,
+                         int                          obj_role,
+                         int                          model_id,
+                         std::string                  model3d,
+                         int                          ctrl_type,
+                         OSCBoundingBox               boundingbox,
+                         int                          scaleMode,
+                         int                          visibilityMask,
+                         double                       timestamp,
+                         double                       speed,
+                         double                       wheel_angle,
+                         double                       wheel_rot,
+                         double                       rear_axle_z_pos,
+                         double                       front_axle_x_pos,
+                         double                       front_axle_z_pos,
+                         const roadmanager::Position* pos,
+                         std::string                  source_reference)
     : dirty_(0)
 {
     state_.info.id           = id;
@@ -63,14 +66,20 @@ ObjectState::ObjectState(int                    id,
     StrCopy(state_.info.name, name.c_str(), MIN(name.length() + 1, NAME_LEN));
     state_.pos                   = *pos;
     state_.info.speed            = speed;
-    state_.info.wheel_angle      = wheel_angle;
-    state_.info.wheel_rot        = wheel_rot;
     state_.info.rear_axle_z_pos  = rear_axle_z_pos;
     state_.info.front_axle_x_pos = front_axle_x_pos;
     state_.info.front_axle_z_pos = front_axle_z_pos;
     state_.info.boundingbox      = boundingbox;
     state_.info.scaleMode        = scaleMode;
     state_.info.visibilityMask   = visibilityMask;
+
+    for (auto& w : state_.info.wheel_data)
+    {
+        w.h = static_cast<float>(wheel_angle);
+        w.p = static_cast<float>(wheel_rot);
+    }
+
+    state_.info.source_reference = source_reference;
 
     dirty_ = Object::DirtyBit::LONGITUDINAL | Object::DirtyBit::LATERAL | Object::DirtyBit::SPEED | Object::DirtyBit::WHEEL_ANGLE |
              Object::DirtyBit::WHEEL_ROTATION;
@@ -111,12 +120,16 @@ ObjectState::ObjectState(int            id,
     state_.pos.Init();
     state_.pos.SetInertiaPos(x, y, z, h, p, r);
     state_.info.speed           = speed;
-    state_.info.wheel_angle     = wheel_angle;
-    state_.info.wheel_rot       = wheel_rot;
     state_.info.rear_axle_z_pos = rear_axle_z_pos;
     state_.info.boundingbox     = boundingbox;
     state_.info.scaleMode       = scaleMode;
     state_.info.visibilityMask  = visibilityMask;
+
+    for (auto& w : state_.info.wheel_data)
+    {
+        w.h = static_cast<float>(wheel_angle);
+        w.p = static_cast<float>(wheel_rot);
+    }
 
     dirty_ = Object::DirtyBit::LONGITUDINAL | Object::DirtyBit::LATERAL | Object::DirtyBit::SPEED | Object::DirtyBit::WHEEL_ANGLE |
              Object::DirtyBit::WHEEL_ROTATION;
@@ -137,7 +150,7 @@ ObjectState::ObjectState(int            id,
                          double         wheel_angle,
                          double         wheel_rot,
                          double         rear_axle_z_pos,
-                         int            roadId,
+                         id_t           roadId,
                          int            laneId,
                          double         laneOffset,
                          double         s)
@@ -153,12 +166,16 @@ ObjectState::ObjectState(int            id,
     StrCopy(state_.info.name, name.c_str(), MIN(name.length() + 1, NAME_LEN));
     state_.pos.SetLanePos(roadId, laneId, s, laneOffset);
     state_.info.speed           = speed;
-    state_.info.wheel_angle     = wheel_angle;
-    state_.info.wheel_rot       = wheel_rot;
     state_.info.rear_axle_z_pos = rear_axle_z_pos;
     state_.info.boundingbox     = boundingbox;
     state_.info.scaleMode       = scaleMode;
     state_.info.visibilityMask  = visibilityMask;
+
+    for (auto& w : state_.info.wheel_data)
+    {
+        w.h = static_cast<float>(wheel_angle);
+        w.p = static_cast<float>(wheel_rot);
+    }
 
     dirty_ = Object::DirtyBit::LONGITUDINAL | Object::DirtyBit::LATERAL | Object::DirtyBit::SPEED | Object::DirtyBit::WHEEL_ANGLE |
              Object::DirtyBit::WHEEL_ROTATION;
@@ -179,7 +196,7 @@ ObjectState::ObjectState(int            id,
                          double         wheel_angle,
                          double         wheel_rot,
                          double         rear_axle_z_pos,
-                         int            roadId,
+                         id_t           roadId,
                          double         lateralOffset,
                          double         s)
 {
@@ -193,12 +210,16 @@ ObjectState::ObjectState(int            id,
     StrCopy(state_.info.name, name.c_str(), MIN(name.length() + 1, NAME_LEN));
     state_.pos.SetTrackPos(roadId, s, lateralOffset);
     state_.info.speed           = speed;
-    state_.info.wheel_angle     = wheel_angle;
-    state_.info.wheel_rot       = wheel_rot;
     state_.info.rear_axle_z_pos = rear_axle_z_pos;
     state_.info.boundingbox     = boundingbox;
     state_.info.scaleMode       = scaleMode;
     state_.info.visibilityMask  = visibilityMask;
+
+    for (auto& w : state_.info.wheel_data)
+    {
+        w.h = static_cast<float>(wheel_angle);
+        w.p = static_cast<float>(wheel_rot);
+    }
 
     dirty_ = Object::DirtyBit::LONGITUDINAL | Object::DirtyBit::LATERAL | Object::DirtyBit::SPEED | Object::DirtyBit::WHEEL_ANGLE |
              Object::DirtyBit::WHEEL_ROTATION;
@@ -206,7 +227,8 @@ ObjectState::ObjectState(int            id,
 
 void ObjectState::Print()
 {
-    LOG("state: \n\tid %d\n\tname %s\n\tmodel_id: %d\n\tctrl_type: %d\n\ttime %.2f\n\tx %.2f\n\ty %.2f\n\th %.2f\n\tspeed %.2f\twheel_angle %.2f type %d category %d role %d",
+    LOG_INFO(
+        "state: \n\tid {}\n\tname {}\n\tmodel_id: {}\n\tctrl_type: {}\n\ttime {:.2f}\n\tx {:.2f}\n\ty {:.2f}\n\th {:.2f}\n\tspeed {:.2f}\twheel_angle {:.2f} type {} category {} role {}",
         state_.info.id,
         state_.info.name,
         state_.info.model_id,
@@ -216,11 +238,12 @@ void ObjectState::Print()
         state_.pos.GetY(),
         state_.pos.GetZ(),
         state_.info.speed,
-        state_.info.wheel_angle,
+        state_.info.wheel_data[0].h,
         state_.info.obj_type,
         state_.info.obj_category,
         state_.info.obj_role);
-    LOG("state: \n\tbounding box: \ncenter: x: %.2f, y: %.2f, z: %.2f\n\tdimensions: width: %.2f, length: %.2f, height: %.2f scaleMode: %d visMask: %d",
+    LOG_INFO(
+        "state: \n\tbounding box: \ncenter: x: {:.2f}, y: {:.2f}, z: {:.2f}\n\tdimensions: width: {:.2f}, length: {:.2f}, height: {:.2f} scaleMode: {} visMask: {}",
         static_cast<double>(state_.info.boundingbox.center_.x_),
         static_cast<double>(state_.info.boundingbox.center_.y_),
         static_cast<double>(state_.info.boundingbox.center_.z_),
@@ -258,7 +281,7 @@ ObjectState* ScenarioGateway::getObjectStatePtrById(int id)
     return 0;
 }
 
-int ScenarioGateway::getObjectStateById(int id, ObjectState& objectState)
+int ScenarioGateway::getObjectStateById(int id, ObjectState& objectState) const
 {
     for (size_t i = 0; i < objectState_.size(); i++)
     {
@@ -287,9 +310,16 @@ int ScenarioGateway::updateObjectInfo(ObjectState* obj_state,
 
     obj_state->state_.info.speed          = speed;
     obj_state->state_.info.timeStamp      = timestamp;
-    obj_state->state_.info.wheel_angle    = wheel_angle;
-    obj_state->state_.info.wheel_rot      = wheel_rot;
     obj_state->state_.info.visibilityMask = visibilityMask;
+
+    for (auto& w : obj_state->state_.info.wheel_data)
+    {
+        if (w.axle == 0)
+        {
+            w.h = static_cast<float>(wheel_angle);
+        }
+        w.p = static_cast<float>(wheel_rot);
+    }
 
     obj_state->dirty_ |= Object::DirtyBit::SPEED | Object::DirtyBit::WHEEL_ANGLE | Object::DirtyBit::WHEEL_ROTATION;
 
@@ -314,24 +344,13 @@ int ScenarioGateway::reportObject(int                    id,
                                   double                 rear_axle_z_pos,
                                   double                 front_axle_x_pos,
                                   double                 front_axle_z_pos,
-                                  roadmanager::Position* pos)
+                                  roadmanager::Position* pos,
+                                  std::string            source_reference)
 {
     ObjectState* obj_state = getObjectStatePtrById(id);
 
     if (obj_state == 0)
     {
-        // Check registered paths for model3d
-        std::string model3d_abs_path;
-        for (size_t i = 0; i < SE_Env::Inst().GetPaths().size(); i++)
-        {
-            std::string file_name_candidate = CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], model3d);
-            if (FileExists(file_name_candidate.c_str()))
-            {
-                model3d_abs_path = file_name_candidate;
-                break;
-            }
-        }
-
         // Create state and set permanent information
         obj_state = new ObjectState(id,
                                     name,
@@ -339,7 +358,7 @@ int ScenarioGateway::reportObject(int                    id,
                                     obj_category,
                                     obj_role,
                                     model_id,
-                                    model3d_abs_path,
+                                    model3d,
                                     ctrl_type,
                                     boundingbox,
                                     scaleMode,
@@ -351,7 +370,8 @@ int ScenarioGateway::reportObject(int                    id,
                                     rear_axle_z_pos,
                                     front_axle_x_pos,
                                     front_axle_z_pos,
-                                    pos);
+                                    pos,
+                                    source_reference);
 
         // Add object to collection
         objectState_.push_back(std::unique_ptr<ObjectState>{obj_state});
@@ -395,7 +415,7 @@ int ScenarioGateway::reportObject(int            id,
     if (obj_state == 0)
     {
         // Create state and set permanent information
-        LOG("Creating new object \"%s\" (id %d, timestamp %.2f)", name.c_str(), id, timestamp);
+        LOG_INFO("Creating new object \"{}\" (id {}, timestamp {:.2f})", name, id, timestamp);
         obj_state = new ObjectState(id,
                                     name,
                                     obj_type,
@@ -457,7 +477,7 @@ int ScenarioGateway::reportObject(int            id,
     if (obj_state == 0)
     {
         // Create state and set permanent information
-        LOG("Creating new object \"%s\" (id %d, timestamp %.2f)", name.c_str(), id, timestamp);
+        LOG_INFO("Creating new object \"{}\" (id {}, timestamp {:.2f})", name, id, timestamp);
         obj_state = new ObjectState(id,
                                     name,
                                     obj_type,
@@ -510,7 +530,7 @@ int ScenarioGateway::reportObject(int            id,
                                   double         wheel_angle,
                                   double         wheel_rot,
                                   double         rear_axle_z_pos,
-                                  int            roadId,
+                                  id_t           roadId,
                                   int            laneId,
                                   double         laneOffset,
                                   double         s)
@@ -520,7 +540,7 @@ int ScenarioGateway::reportObject(int            id,
     if (obj_state == 0)
     {
         // Create state and set permanent information
-        LOG("Creating new object \"%s\" (id %d, timestamp %.2f)", name.c_str(), id, timestamp);
+        LOG_INFO("Creating new object \"{}\" (id {}, timestamp {:.2f})", name, id, timestamp);
         obj_state = new ObjectState(id,
                                     name,
                                     obj_type,
@@ -569,9 +589,9 @@ int ScenarioGateway::reportObject(int            id,
                                   double         timestamp,
                                   double         speed,
                                   double         wheel_angle,
-                                  double         rear_axle_z_pos,
                                   double         wheel_rot,
-                                  int            roadId,
+                                  double         rear_axle_z_pos,
+                                  id_t           roadId,
                                   double         lateralOffset,
                                   double         s)
 {
@@ -580,7 +600,7 @@ int ScenarioGateway::reportObject(int            id,
     if (obj_state == 0)
     {
         // Create state and set permanent information
-        LOG("Creating new object \"%s\" (id %d, timestamp %.2f)", name.c_str(), id, timestamp);
+        LOG_INFO("Creating new object \"{}\" (id {}, timestamp {:.2f})", name, id, timestamp);
         obj_state = new ObjectState(id,
                                     name,
                                     obj_type,
@@ -615,14 +635,14 @@ int ScenarioGateway::reportObject(int            id,
     return 0;
 }
 
-int ScenarioGateway::updateObjectPos(int id, double timestamp, roadmanager::Position* pos)
+int ScenarioGateway::updateObjectPos(int id, double timestamp, const roadmanager::Position* pos)
 {
     ObjectState* obj_state = getObjectStatePtrById(id);
 
     if (obj_state == 0)
     {
         // Create state and set permanent information
-        LOG("Object id: %d must be reported before updated", id);
+        LOG_ERROR("Object id: {} must be reported before updated", id);
         return -1;
     }
     else
@@ -636,14 +656,14 @@ int ScenarioGateway::updateObjectPos(int id, double timestamp, roadmanager::Posi
     return 0;
 }
 
-int ScenarioGateway::updateObjectRoadPos(int id, double timestamp, int roadId, double lateralOffset, double s)
+int ScenarioGateway::updateObjectRoadPos(int id, double timestamp, id_t roadId, double lateralOffset, double s)
 {
     ObjectState* obj_state = getObjectStatePtrById(id);
 
     if (obj_state == 0)
     {
         // Create state and set permanent information
-        LOG("Object id: %d must be reported before updated", id);
+        LOG_ERROR("Object id: {} must be reported before updated", id);
         return -1;
     }
     else
@@ -657,14 +677,14 @@ int ScenarioGateway::updateObjectRoadPos(int id, double timestamp, int roadId, d
     return 0;
 }
 
-int ScenarioGateway::updateObjectLanePos(int id, double timestamp, int roadId, int laneId, double offset, double s)
+int ScenarioGateway::updateObjectLanePos(int id, double timestamp, id_t roadId, int laneId, double offset, double s)
 {
     ObjectState* obj_state = getObjectStatePtrById(id);
 
     if (obj_state == 0)
     {
         // Create state and set permanent information
-        LOG("Object id: %d must be reported before updated", id);
+        LOG_ERROR("Object id: {} must be reported before updated", id);
     }
     else
     {
@@ -684,7 +704,7 @@ int ScenarioGateway::updateObjectWorldPosXYH(int id, double timestamp, double x,
     if (obj_state == 0)
     {
         // Create state and set permanent information
-        LOG("Object id: %d must be reported before updated", id);
+        LOG_ERROR("Object id: {} must be reported before updated", id);
     }
     else
     {
@@ -704,7 +724,7 @@ int ScenarioGateway::updateObjectWorldPosXYHMode(int id, double timestamp, doubl
     if (obj_state == 0)
     {
         // Create state and set permanent information
-        LOG("Object id: %d must be reported before updated", id);
+        LOG_ERROR("Object id: {} must be reported before updated", id);
     }
     else
     {
@@ -724,7 +744,7 @@ int ScenarioGateway::updateObjectWorldPos(int id, double timestamp, double x, do
     if (obj_state == 0)
     {
         // Create state and set permanent information
-        LOG("Object id: %d must be reported before updated", id);
+        LOG_ERROR("Object id: {} must be reported before updated", id);
     }
     else
     {
@@ -744,7 +764,7 @@ int ScenarioGateway::updateObjectWorldPosMode(int id, double timestamp, double x
     if (obj_state == 0)
     {
         // Create state and set permanent information
-        LOG("Object id: %d must be reported before updated", id);
+        LOG_ERROR("Object id: {} must be reported before updated", id);
     }
     else
     {
@@ -764,7 +784,7 @@ int ScenarioGateway::updateObjectSpeed(int id, double timestamp, double speed)
 
     if (obj_state == nullptr)
     {
-        LOG_ONCE("Can't set speed for object %d yet. Please register object using reportObject() first.", id);
+        LOG_ERROR("Can't set speed for object {} yet. Please register object using reportObject() first.", id);
         return -1;
     }
 
@@ -781,7 +801,7 @@ int ScenarioGateway::updateObjectVel(int id, double timestamp, double x_vel, dou
 
     if (obj_state == nullptr)
     {
-        LOG_ONCE("Can't set velocity for object %d yet. Please register object using reportObject() first.", id);
+        LOG_ERROR("Can't set velocity for object {} yet. Please register object using reportObject() first.", id);
         return -1;
     }
 
@@ -798,7 +818,7 @@ int ScenarioGateway::updateObjectAcc(int id, double timestamp, double x_acc, dou
 
     if (obj_state == nullptr)
     {
-        LOG_ONCE("Can't set acceleration for object %d yet. Please register object using reportObject() first.", id);
+        LOG_ERROR("Can't set acceleration for object {} yet. Please register object using reportObject() first.", id);
         return -1;
     }
 
@@ -815,7 +835,7 @@ int ScenarioGateway::updateObjectAngularVel(int id, double timestamp, double h_r
 
     if (obj_state == nullptr)
     {
-        LOG_ONCE("Can't set angular velocity for object %d yet. Please register object using reportObject() first.", id);
+        LOG_ERROR("Can't set angular velocity for object {} yet. Please register object using reportObject() first.", id);
         return -1;
     }
 
@@ -832,7 +852,7 @@ int ScenarioGateway::updateObjectAngularAcc(int id, double timestamp, double h_a
 
     if (obj_state == nullptr)
     {
-        LOG_ONCE("Can't set angular acceleration for object %d yet. Please register object using reportObject() first.", id);
+        LOG_ERROR("Can't set angular acceleration for object {} yet. Please register object using reportObject() first.", id);
         return -1;
     }
 
@@ -849,12 +869,36 @@ int ScenarioGateway::updateObjectWheelAngle(int id, double timestamp, double whe
 
     if (obj_state == nullptr)
     {
-        LOG_ONCE("Can't set wheel angle for object %d yet. Please register object using reportObject() first.", id);
+        LOG_ERROR("Can't set wheel angle for object {} yet. Please register object using reportObject() first.", id);
         return -1;
     }
 
-    obj_state->state_.info.wheel_angle = wheelAngle;
-    obj_state->dirty_ |= Object::DirtyBit::WHEEL_ANGLE;
+    // update any wheel on front axle
+    for (auto& w : obj_state->state_.info.wheel_data)
+    {
+        if (w.axle == 0)
+        {
+            w.h = static_cast<float>(wheelAngle);
+            obj_state->dirty_ |= Object::DirtyBit::WHEEL_ANGLE;
+        }
+    }
+
+    return 0;
+}
+
+int ScenarioGateway::updateObjectLaneTypeSnapMask(int id, double timestamp, int laneTypeMask)
+{
+    (void)timestamp;
+    ObjectState* obj_state = getObjectStatePtrById(id);
+
+    if (obj_state == nullptr)
+    {
+        LOG_ERROR("Can't set lane type mask for object {} yet. Please register object using reportObject() first.", id);
+        return -1;
+    }
+
+    obj_state->state_.pos.SetSnapLaneTypes(laneTypeMask);
+    obj_state->dirty_ |= Object::DirtyBit::LANE_TYPE_SNAP_MASK;
 
     return 0;
 }
@@ -866,12 +910,16 @@ int ScenarioGateway::updateObjectWheelRotation(int id, double timestamp, double 
 
     if (obj_state == nullptr)
     {
-        LOG_ONCE("Can't set wheel rotation for object %d yet. Please register object using reportObject() first.", id);
+        LOG_ERROR("Can't set wheel rotation for object {} yet. Please register object using reportObject() first.", id);
         return -1;
     }
 
-    obj_state->state_.info.wheel_rot = wheelRotation;
-    obj_state->dirty_ |= Object::DirtyBit::WHEEL_ROTATION;
+    // update all wheels
+    for (auto& w : obj_state->state_.info.wheel_data)
+    {
+        w.p = static_cast<float>(wheelRotation);
+        obj_state->dirty_ |= Object::DirtyBit::WHEEL_ROTATION;
+    }
 
     return 0;
 }
@@ -882,12 +930,73 @@ int ScenarioGateway::updateObjectVisibilityMask(int id, int visibilityMask)
 
     if (obj_state == nullptr)
     {
-        LOG_ONCE("Can't set visibility mask for object %d yet. Please register object using reportObject() first.", id);
+        LOG_ERROR("Can't set visibility mask for object {} yet. Please register object using reportObject() first.", id);
         return -1;
     }
 
     obj_state->state_.info.visibilityMask = visibilityMask;
     obj_state->dirty_ |= Object::DirtyBit::VISIBILITY;
+
+    return 0;
+}
+
+int ScenarioGateway::updateObjectControllerType(int id, int controllerType)
+{
+    ObjectState* obj_state = getObjectStatePtrById(id);
+
+    if (obj_state == nullptr)
+    {
+        LOG_ERROR("Can't set controller type for object {} yet. Please register object using reportObject() first.", id);
+        return -1;
+    }
+
+    obj_state->state_.info.ctrl_type = controllerType;
+    obj_state->dirty_ |= Object::DirtyBit::CONTROLLER;
+
+    return 0;
+}
+
+int ScenarioGateway::updateObjectBoundingBox(int id, OSCBoundingBox bb)
+{
+    ObjectState* obj_state = getObjectStatePtrById(id);
+
+    if (obj_state == nullptr)
+    {
+        LOG_ERROR("Can't set bounding box for object {} yet. Please register object using reportObject() first.", id);
+        return -1;
+    }
+
+    obj_state->state_.info.boundingbox = bb;
+    obj_state->dirty_ |= Object::DirtyBit::BOUNDING_BOX;
+
+    return 0;
+}
+
+int ScenarioGateway::updateObjectWheelData(int id, std::vector<WheelData> wheel_data)
+{
+    ObjectState* obj_state = getObjectStatePtrById(id);
+
+    if (obj_state == nullptr)
+    {
+        LOG_ERROR("Can't set friction coefficients for object {} yet. Please register object using reportObject() first.", id);
+        return -1;
+    }
+
+    for (unsigned int i = 0; i < wheel_data.size(); i++)
+    {
+        if (obj_state->state_.info.wheel_data.size() <= i)
+        {
+            // push first time
+            obj_state->state_.info.wheel_data.push_back(std::move(wheel_data[i]));
+        }
+        else
+        {
+            // update existing
+            obj_state->state_.info.wheel_data[i] = std::move(wheel_data[i]);
+        }
+    }
+
+    obj_state->dirty_ |= Object::DirtyBit::FRICTION | Object::DirtyBit::WHEEL_ANGLE | Object::DirtyBit::WHEEL_ROTATION;
 
     return 0;
 }
@@ -898,13 +1007,13 @@ int ScenarioGateway::setObjectPositionMode(int id, int type, int mode)
 
     if (obj_state == nullptr)
     {
-        LOG_ONCE("Can't set alignment mode for object %d yet. Please register object using reportObject() first.", id);
+        LOG_ERROR("Can't set alignment mode for object {} yet. Please register object using reportObject() first.", id);
         return -1;
     }
 
     if (type < 0 || type > static_cast<int>(roadmanager::Position::PosModeType::UPDATE))
     {
-        LOG_ONCE("Unexpected ObjectPositionMode type %d, skipping", type);
+        LOG_ERROR_ONCE("Unexpected ObjectPositionMode type {}, skipping", type);
         return -1;
     }
 
@@ -944,7 +1053,7 @@ int ScenarioGateway::setObjectPositionModeDefault(int id, int type)
 
     if (obj_state == nullptr)
     {
-        LOG_ONCE("Can't set alignment mode for object %d yet. Please register object using reportObject() first.", id);
+        LOG_ERROR("Can't set alignment mode for object {} yet. Please register object using reportObject() first.", id);
         return -1;
     }
 
@@ -1017,7 +1126,6 @@ void ScenarioGateway::WriteStatesToFile()
 
             datState.info.boundingbox = objectState_[i]->state_.info.boundingbox;
             datState.info.ctrl_type   = objectState_[i]->state_.info.ctrl_type;
-            datState.info.ctrl_type   = objectState_[i]->state_.info.ctrl_type;
             datState.info.id          = objectState_[i]->state_.info.id;
             datState.info.model_id    = objectState_[i]->state_.info.model_id;
             memcpy(datState.info.name, objectState_[i]->state_.info.name, sizeof(datState.info.name));
@@ -1027,8 +1135,12 @@ void ScenarioGateway::WriteStatesToFile()
             datState.info.speed          = static_cast<float>(objectState_[i]->state_.info.speed);
             datState.info.timeStamp      = static_cast<float>(objectState_[i]->state_.info.timeStamp);
             datState.info.visibilityMask = objectState_[i]->state_.info.visibilityMask;
-            datState.info.wheel_angle    = static_cast<float>(objectState_[i]->state_.info.wheel_angle);
-            datState.info.wheel_rot      = static_cast<float>(objectState_[i]->state_.info.wheel_rot);
+
+            // assume first wheel is on front axle and steering
+            datState.info.wheel_angle =
+                objectState_[i]->state_.info.wheel_data.size() > 0 ? static_cast<float>(objectState_[i]->state_.info.wheel_data[0].h) : 0.0f;
+            datState.info.wheel_rot =
+                objectState_[i]->state_.info.wheel_data.size() > 0 ? static_cast<float>(objectState_[i]->state_.info.wheel_data[0].p) : 0.0f;
 
             datState.pos.x      = static_cast<float>(objectState_[i]->state_.pos.GetX());
             datState.pos.y      = static_cast<float>(objectState_[i]->state_.pos.GetY());
@@ -1053,7 +1165,7 @@ int ScenarioGateway::RecordToFile(std::string filename, std::string odr_filename
         data_file_.open(filename, std::ofstream::binary);
         if (data_file_.fail())
         {
-            LOG("Cannot open file: %s", filename.c_str());
+            LOG_ERROR("Cannot open file: {}", filename);
             return -1;
         }
         DatHeader header;

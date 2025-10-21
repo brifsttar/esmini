@@ -14,6 +14,7 @@
 #include "CommonMini.hpp"
 #include "Entities.hpp"
 #include "ScenarioGateway.hpp"
+#include "logger.hpp"
 
 #include <random>
 
@@ -22,12 +23,12 @@ using namespace scenarioengine;
 #define WHEEL_RADIUS 0.35
 #define SLOPPY_SCALE 5.0  // Magic scale factor to achieve reasonable sloppiness in range 0..1
 
-double SinusoidalTransition::GetValue()
+double SinusoidalTransition::GetValue() const
 {
     return start_ + amplitude_ * (offset_ + cos(startAngle_ + factor_ * M_PI));
 }
 
-double SinusoidalTransition::GetHeading()
+double SinusoidalTransition::GetHeading() const
 {
     return -amplitude_ * sin(startAngle_ + factor_ * M_PI);
 }
@@ -41,10 +42,14 @@ Controller* scenarioengine::InstantiateControllerSloppyDriver(void* args)
 
 ControllerSloppyDriver::ControllerSloppyDriver(InitArgs* args) : Controller(args), sloppiness_(0.5), time_(0)
 {
+    type_name_ = "SloppyDriver";
     if (args->properties->ValueExists("sloppiness"))
     {
         sloppiness_ = strtod(args->properties->GetValueStr("sloppiness"));
     }
+
+    align_to_road_heading_on_deactivation_ = true;
+    align_to_road_heading_on_activation_   = true;
 }
 
 void ControllerSloppyDriver::Init()
@@ -61,15 +66,17 @@ void ControllerSloppyDriver::Step(double timeStep)
 
     time_ += timeStep;
 
-    if (object_->CheckDirtyBits(Object::DirtyBit::SPEED))
+    // First check if speed has been set from somewhere else (another action or controller), respect it and update setSpeed
+    if (abs(object_->GetSpeed() - currentSpeed_) > 1e-3)
     {
         // Speed has been updated by Default Driver, update our reference speed
         referenceSpeed_ = object_->GetSpeed();
     }
+
     currentSpeed_ = object_->GetSpeed();
 
     // Do modification to a local position object and then report to gateway
-    if (object_ && IsActiveOnDomains(ControlDomains::DOMAIN_LONG))
+    if (IsActiveOnDomains(static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LONG)))
     {
         if (speedTimer_.Expired(time_))
         {
@@ -79,7 +86,7 @@ void ControllerSloppyDriver::Step(double timeStep)
 
             // target speed +/- 35%
             initSpeed_    = referenceSpeed_ * targetFactor_;
-            targetFactor_ = 1 + 0.7 * sloppiness_ * MIN(sloppiness_, 1.0) * SE_Env::Inst().GetRand().GetRealBetween(0.5, 1.5);
+            targetFactor_ = 1.0 + sloppiness_ * SE_Env::Inst().GetRand().GetRealBetween(-0.35, 0.35);
         }
 
         double steplen = 0;
@@ -88,7 +95,7 @@ void ControllerSloppyDriver::Step(double timeStep)
         currentSpeed_ = initSpeed_ * (1 - weight) + targetFactor_ * referenceSpeed_ * weight;
         currentSpeed_ = MAX(currentSpeed_, 0);
 
-        if (mode_ == Mode::MODE_OVERRIDE)
+        if (mode_ == ControlOperationMode::MODE_OVERRIDE)
         {
             steplen = currentSpeed_ * timeStep;
             object_->SetSpeed(currentSpeed_);
@@ -113,7 +120,7 @@ void ControllerSloppyDriver::Step(double timeStep)
         }
     }
 
-    if (object_ && IsActiveOnDomains(ControlDomains::DOMAIN_LAT))
+    if (IsActiveOnDomains(static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LAT)))
     {
         if (lateralTimer_.Expired(time_))
         {
@@ -126,7 +133,7 @@ void ControllerSloppyDriver::Step(double timeStep)
             lateralTimer_.Start(time_, timerValue);
         }
         double h_error{};
-        if (mode_ == Mode::MODE_OVERRIDE)
+        if (mode_ == ControlOperationMode::MODE_OVERRIDE)
         {
             h_error = object_->pos_.GetHRelative();
         }
@@ -151,7 +158,7 @@ void ControllerSloppyDriver::Step(double timeStep)
         if (object_->GetSpeed() > SMALL_NUMBER)  // Use old speed set by Default Controller to decide whether heading should be updated
         {
             object_->pos_.SetTrackPos(object_->pos_.GetTrackId(), object_->pos_.GetS(), object_->pos_.GetT() + dt);
-            if (mode_ == Mode::MODE_OVERRIDE)
+            if (mode_ == ControlOperationMode::MODE_OVERRIDE)
             {
                 object_->pos_.SetHeading(currentH_ + dh);
             }
@@ -166,21 +173,18 @@ void ControllerSloppyDriver::Step(double timeStep)
     }
 
     gateway_->updateObjectPos(object_->id_, 0.0, &object_->pos_);
-    if (mode_ == Mode::MODE_OVERRIDE)
-    {
-        gateway_->updateObjectSpeed(object_->id_, 0.0, object_->GetSpeed());
-    }
+    gateway_->updateObjectSpeed(object_->GetId(), 0.0, currentSpeed_);
 
     Controller::Step(timeStep);
 }
 
-void ControllerSloppyDriver::Activate(DomainActivation lateral, DomainActivation longitudinal)
+int ControllerSloppyDriver::Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)])
 {
     if (object_)
     {
         if (sloppiness_ < 0 || sloppiness_ > 1)
         {
-            LOG("Warning, sloppiness is %.2f recommended range is [0:1]", sloppiness_);
+            LOG_WARN("Warning, sloppiness is {:.2f} recommended range is [0:1]", sloppiness_);
         }
         speedTimerAverage_ = 3.0;
         speedTimer_.Start(0, speedTimerAverage_);
@@ -195,7 +199,7 @@ void ControllerSloppyDriver::Activate(DomainActivation lateral, DomainActivation
         currentH_   = object_->pos_.GetHRelative();
     }
 
-    Controller::Activate(lateral, longitudinal);
+    return Controller::Activate(mode);
 }
 
 void ControllerSloppyDriver::ReportKeyEvent(int key, bool down)

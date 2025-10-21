@@ -17,49 +17,55 @@ using namespace scenarioengine;
 
 StoryBoardElement* StoryBoardElement::FindChildByName(std::string name)
 {
-    for (auto child : *GetChildren())
+    std::vector<StoryBoardElement*>*          children = GetChildren();
+    std::vector<StoryBoardElement*>::iterator it =
+        std::find_if(children->begin(), children->end(), [&name](StoryBoardElement* child) { return child->GetName() == name; });
+    if (it != children->end())
     {
-        if (child->GetName() == name)
-        {
-            return child;
-        }
+        return *it;
     }
-
     return nullptr;
 }
 
-StoryBoardElement* StoryBoardElement::FindChildByTypeAndName(ElementType type, std::string name)
+std::vector<StoryBoardElement*> StoryBoardElement::FindChildByTypeAndName(ElementType type, std::string name)
 {
-    if (type == type_)
+    std::vector<StoryBoardElement*> elements;
+
+    if (type == element_type_ &&                // types should match
+        name.size() <= GetFullPath().size() &&  // size of given name path must not be longer than element full path
+        name.size() >= GetName().size())        // size of given name path must not be shorter than element name
     {
-        if (GetName() == name)
+        // compare rightmost part of element name with the given name to check
+        if (GetFullPath().substr(GetFullPath().size() - name.size()) == name)
         {
-            return this;
+            elements.push_back(this);
+            return elements;
         }
     }
-    else if (type > type_)
+    else if (type > element_type_)
     {
         for (auto child : *GetChildren())
         {
-            StoryBoardElement* element = child->FindChildByTypeAndName(type, name);
-            if (element != nullptr)
+            std::vector<StoryBoardElement*> elements_tmp = child->FindChildByTypeAndName(type, name);
+
+            if (elements_tmp.size() > 0)
             {
-                return element;
+                elements.insert(elements.end(), elements_tmp.begin(), elements_tmp.end());
             }
         }
     }
 
-    return nullptr;
+    return elements;
 }
 
-void Story::Print()
+void Story::Print() const
 {
-    LOG("Story: %s", GetName().c_str());
+    LOG_INFO("Story: {}", GetName());
 }
 
 void StoryBoard::Print()
 {
-    LOG("Storyboard:");
+    LOG_INFO("Storyboard:");
     for (size_t i = 0; i < story_.size(); i++)
     {
         story_[i]->Print();
@@ -69,11 +75,17 @@ void StoryBoard::Print()
 void StoryBoard::Start(double simTime)
 {
     // kick off init actions
-    for (auto action : init_.private_action_)
+    for (auto action : init_.global_action_)
     {
         action->Start(simTime);
     }
-    for (auto action : init_.global_action_)
+
+    for (auto action : init_.user_defined_action_)
+    {
+        action->Start(simTime);
+    }
+
+    for (auto action : init_.private_action_)
     {
         action->Start(simTime);
     }
@@ -85,16 +97,29 @@ void StoryBoard::Step(double simTime, double dt)
 {
     EvalTriggers(simTime);
 
-    for (auto action : init_.private_action_)
+    for (auto action : init_.global_action_)
     {
-        if (action->GetCurrentState() == StoryBoardElement::State::RUNNING)
+        // skip update for during ghost restart phases
+        if (action->GetCurrentState() == StoryBoardElement::State::RUNNING && !(SE_Env::Inst().GetGhostMode() == GhostMode::RESTARTING))
         {
             action->Step(simTime, dt);
         }
     }
-    for (auto action : init_.global_action_)
+
+    for (auto action : init_.user_defined_action_)
     {
-        if (action->GetCurrentState() == StoryBoardElement::State::RUNNING)
+        // skip update for during ghost restart phases
+        if (action->GetCurrentState() == StoryBoardElement::State::RUNNING && !(SE_Env::Inst().GetGhostMode() == GhostMode::RESTARTING))
+        {
+            action->Step(simTime, dt);
+        }
+    }
+
+    for (auto action : init_.private_action_)
+    {
+        if (action->GetCurrentState() == StoryBoardElement::State::RUNNING &&
+            // skip update for non ghost objects during ghost restart phases
+            !(!action->object_->IsGhost() && SE_Env::Inst().GetGhostMode() == GhostMode::RESTARTING))
         {
             action->Step(simTime, dt);
         }
@@ -115,7 +140,7 @@ void Event::Start(double simTime)
         // Activate trigged event
         if (GetCurrentState() == StoryBoardElement::State::RUNNING)
         {
-            LOG("Event already running, can't overwrite itself (%s) - skip trig", GetName().c_str());
+            LOG_WARN("Event already running, can't overwrite itself ({}) - skip trig", GetName());
         }
         else
         {
@@ -124,7 +149,7 @@ void Event::Start(double simTime)
                 if (tmp_event != this && tmp_event->GetCurrentState() == StoryBoardElement::State::RUNNING)
                 {
                     tmp_event->End();
-                    LOG("Event %s ended, overwritten by event %s", tmp_event->GetName().c_str(), GetName().c_str());
+                    LOG_INFO("Event {} ended, overwritten by event {}", tmp_event->GetName(), GetName());
                 }
             }
             start_event = true;
@@ -134,7 +159,7 @@ void Event::Start(double simTime)
     {
         if (maneuver->AnyChildRunning())
         {
-            LOG("Some event is already running within the maneuver %s, skipping trigged %s", maneuver->GetName().c_str(), GetName().c_str());
+            LOG_WARN("Some event is already running within the maneuver {}, skipping trigged {}", maneuver->GetName(), GetName());
         }
         else
         {
@@ -148,17 +173,17 @@ void Event::Start(double simTime)
         // Don't care if any other action is ongoing, launch anyway
         if (GetCurrentState() == StoryBoardElement::State::RUNNING)
         {
-            LOG("Event %s already running, trigger ignored", GetName().c_str());
+            LOG_WARN("Event {} already running, trigger ignored", GetName());
             start_event = false;
         }
         else if (maneuver->AnyChildRunning())
         {
-            LOG("Other events ongoing, %s will run in parallel", GetName().c_str());
+            LOG_INFO("Other events ongoing, {} will run in parallel", GetName());
         }
     }
     else
     {
-        LOG("Unknown event priority: %d", priority_);
+        LOG_WARN("Unknown event priority: {}", priority_);
     }
 
     if (!start_event)
@@ -182,7 +207,7 @@ void Event::Start(double simTime)
     for (size_t i = 0; i < action_.size(); i++)
     {
         // Terminate any ongoing action on same object and domain
-        if (action_[i]->base_type_ == OSCAction::BaseType::PRIVATE)
+        if (action_[i]->GetBaseType() == OSCAction::BaseType::PRIVATE)
         {
             OSCPrivateAction* pa  = static_cast<OSCPrivateAction*>(action_[i]);
             Object*           obj = pa->object_;
@@ -191,15 +216,15 @@ void Event::Start(double simTime)
                 // First check init actions
                 for (size_t j = 0; j < obj->initActions_.size(); j++)
                 {
-                    if (obj->initActions_[j]->base_type_ == OSCAction::BaseType::PRIVATE &&
+                    if (obj->initActions_[j]->GetBaseType() == OSCAction::BaseType::PRIVATE &&
                         obj->initActions_[j]->GetCurrentState() == StoryBoardElement::State::RUNNING)
                     {
-                        if (static_cast<int>(obj->initActions_[j]->GetDomain()) & static_cast<int>(pa->GetDomain()))
+                        if (static_cast<int>(obj->initActions_[j]->GetDomains()) & static_cast<int>(pa->GetDomains()))
                         {
                             // Domains overlap, at least one domain in common. Terminate old action.
-                            LOG("Stopping %s on conflicting %s domain(s)",
-                                obj->initActions_[j]->GetName().c_str(),
-                                ControlDomain2Str(obj->initActions_[j]->GetDomain()).c_str());
+                            LOG_WARN("Stopping {} on conflicting {} domain(s)",
+                                     obj->initActions_[j]->GetName(),
+                                     ControlDomainMask2Str(obj->initActions_[j]->GetDomains()));
                             obj->initActions_[j]->End();
                         }
                     }
@@ -211,19 +236,19 @@ void Event::Start(double simTime)
                     for (size_t k = 0; k < obj->objectEvents_[j]->action_.size(); k++)
                     {
                         // Make sure the object's action is of private type
-                        if (obj->objectEvents_[j]->action_[k]->base_type_ == OSCAction::BaseType::PRIVATE)
+                        if (obj->objectEvents_[j]->action_[k]->GetBaseType() == OSCAction::BaseType::PRIVATE)
                         {
                             OSCPrivateAction* pa2 = static_cast<OSCPrivateAction*>(obj->objectEvents_[j]->action_[k]);
                             if (pa2 != pa && pa2->object_->GetId() == pa->object_->GetId() &&
-                                pa2->GetCurrentState() == StoryBoardElement::State::RUNNING && pa2->base_type_ == OSCAction::BaseType::PRIVATE)
+                                pa2->GetCurrentState() == StoryBoardElement::State::RUNNING && pa2->GetBaseType() == OSCAction::BaseType::PRIVATE)
                             {
-                                if (static_cast<int>(pa2->GetDomain()) & static_cast<int>(pa->GetDomain()))
+                                if (static_cast<int>(pa2->GetDomains()) & static_cast<int>(pa->GetDomains()))
                                 {
                                     // Domains overlap, at least one domain in common. Terminate old action.
-                                    LOG("Stopping object %s %s on conflicting %s domain(s)",
-                                        obj->GetName().c_str(),
-                                        pa2->GetName().c_str(),
-                                        ControlDomain2Str(pa2->GetDomain()).c_str());
+                                    LOG_WARN("Stopping object {} {} on conflicting {} domain(s)",
+                                             obj->GetName(),
+                                             pa2->GetName(),
+                                             ControlDomainMask2Str(pa2->GetDomains()));
                                     pa2->End();
                                 }
                             }
@@ -235,13 +260,13 @@ void Event::Start(double simTime)
         // Restart actions
         action_[i]->Start(adjustedTime);
 
-        if (action_[i]->base_type_ == OSCAction::BaseType::PRIVATE)
+        if (action_[i]->GetBaseType() == OSCAction::BaseType::PRIVATE)
         {
             // When using a TeleportAction for the Ghost-vehicle, we need to set back the starting simTime for other Actions in the same Event.
             // This is an easy solution. A nicer one could be to access ScenarioEngines getSimulationTime() when calling action Start.
             OSCAction*        action = action_[i];
             OSCPrivateAction* pa     = static_cast<OSCPrivateAction*>(action);
-            if (pa->object_->IsGhost() && pa->type_ == OSCPrivateAction::ActionType::TELEPORT)
+            if (pa->object_->IsGhost() && pa->action_type_ == OSCPrivateAction::ActionType::TELEPORT)
             {
                 adjustedTime = simTime - pa->object_->GetHeadstartTime();
             }
@@ -257,7 +282,7 @@ void Event::Step(double simTime, double dt)
         {
             bool is_private_ghost = [&]()
             {
-                if (action->base_type_ == OSCAction::BaseType::PRIVATE)
+                if (action->GetBaseType() == OSCAction::BaseType::PRIVATE)
                 {
                     return (static_cast<OSCPrivateAction*>(action)->object_->IsGhost());
                 }

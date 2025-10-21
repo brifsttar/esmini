@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include "EnumConfig.hpp"
+
 #include <vector>
 #include <random>
 #include <fstream>
@@ -21,6 +23,7 @@
 #include <condition_variable>
 #include <cstring>
 #include <map>
+#include <unordered_map>
 
 #ifndef _WIN32
 #include <inttypes.h>
@@ -39,6 +42,13 @@ typedef int64_t __int64;
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #endif
 
+using id_t  = uint32_t;
+using idx_t = uint32_t;
+
+#define ID_UNDEFINED                  0xffffffff
+#define ID_MAX                        0xfffffffe
+#define IDX_UNDEFINED                 0xffffffff
+#define IDX_MAX                       0xfffffffe
 #define SMALL_NUMBER                  (1E-6)
 #define SMALL_NUMBERF                 (1E-6f)
 #define LARGE_NUMBER                  (1E+10)
@@ -57,36 +67,20 @@ typedef int64_t __int64;
 #define IS_IN_SPAN(x, y, z)           ((x) >= (y) && (x) <= (z))
 #define OSI_MAX_LONGITUDINAL_DISTANCE 50
 #define OSI_MAX_LATERAL_DEVIATION     0.05
+#define OSI_TIMESTAMP_UNDEFINED       0xffffffffffffffff
 #define LOG_FILENAME                  "log.txt"
+#define ODRVIEWER_LOG_FILENAME        "odrviewer_log.txt"
+#define REPLAYER_LOG_FILENAME         "replayer_log.txt"
 #define DAT_FILENAME                  "sim.dat"
-#define GHOST_TRAIL_SAMPLE_TIME       0.2
+#define GHOST_TRAIL_SAMPLE_TIME       0.2  // default value, can be overridden by ghost_trail_dt option
+#define LOGICAL_OR(X, Y)              ((X || Y) && !(X && Y))
 
-#define LOG(...)       Logger::Inst().Log(false, false, __FILENAME__, __FUNCTION__, __LINE__, __VA_ARGS__)
-#define LOG_TRACE(...) Logger::Inst().Log(false, true, __FILENAME__, __FUNCTION__, __LINE__, __VA_ARGS__)
-#define LOG_ONCE(...)                                                                            \
-    {                                                                                            \
-        static bool firstTime = true;                                                            \
-        if (firstTime)                                                                           \
-        {                                                                                        \
-            Logger::Inst().Log(false, false, __FILENAME__, __FUNCTION__, __LINE__, __VA_ARGS__); \
-            firstTime = false;                                                                   \
-        }                                                                                        \
-    }
-#define LOG_TRACE_ONCE(...)                                                                     \
-    {                                                                                           \
-        static bool firstTime = true;                                                           \
-        if (firstTime)                                                                          \
-        {                                                                                       \
-            Logger::Inst().Log(false, true, __FILENAME__, __FUNCTION__, __LINE__, __VA_ARGS__); \
-            firstTime = false;                                                                  \
-        }                                                                                       \
-    }
-#define LOG_AND_QUIT(...)       Logger::Inst().Log(true, false, __FILENAME__, __FUNCTION__, __LINE__, __VA_ARGS__)
-#define LOG_TRACE_AND_QUIT(...) Logger::Inst().Log(true, true, __FILENAME__, __FUNCTION__, __LINE__, __VA_ARGS__)
+const std::string CONFIG_FILE_OPTION_NAME = "config_file_path";
+const std::string DEFAULT_CONFIG_FILE     = "config.yml";
 
 // Time functions
-__int64 SE_getSystemTime();
-void    SE_sleep(unsigned int msec);
+__int64 SE_getSystemTimeMilliseconds();           // get systemtime in ms
+void    SE_sleepMilliseconds(unsigned int msec);  // sleep msec
 double  SE_getSimTimeStep(__int64& time_stamp, double min_time_step, double max_time_step);
 
 // Useful types
@@ -119,10 +113,36 @@ enum class ModKeyMask
 
 enum class ControlDomains
 {
-    DOMAIN_NONE = 0,
-    DOMAIN_LONG = 1,
-    DOMAIN_LAT  = 2,
-    DOMAIN_BOTH = 3  // can also be interpreted as bitwise OR: DIM_LONG | DIM_LAT
+    DOMAIN_LONG  = 0,
+    DOMAIN_LAT   = 1,
+    DOMAIN_LIGHT = 2,
+    DOMAIN_ANIM  = 3,
+    COUNT        = 4
+};
+
+enum class ControlDomainMasks
+{
+    DOMAIN_MASK_NONE         = 0,
+    DOMAIN_MASK_LONG         = 1,
+    DOMAIN_MASK_LAT          = 1 << 1,
+    DOMAIN_MASK_LIGHT        = 1 << 2,
+    DOMAIN_MASK_ANIM         = 1 << 3,
+    DOMAIN_MASK_LAT_AND_LONG = DOMAIN_MASK_LAT | DOMAIN_MASK_LONG,                                         // = 3 (1+2)
+    DOMAIN_MASK_ALL          = DOMAIN_MASK_LAT | DOMAIN_MASK_LONG | DOMAIN_MASK_LIGHT | DOMAIN_MASK_ANIM,  // = 15 (1+2+4+8)
+};
+
+enum class ControlOperationMode
+{
+    MODE_NONE     = 0,  // Controller not available or it is not active
+    MODE_OVERRIDE = 1,  // Actions from the scenario are not applied, default
+    MODE_ADDITIVE = 2,  // Actions from the scenario are applied
+};
+
+enum class ControlActivationMode
+{
+    UNDEFINED = 0,
+    OFF       = 1,
+    ON        = 2
 };
 
 enum class EntityScaleMode
@@ -130,6 +150,7 @@ enum class EntityScaleMode
     NONE,
     BB_TO_MODEL,  // Scale bounding box to 3D model
     MODEL_TO_BB,  // Scale 3D model to specified or generated bounding box
+    UNDEFINED
 };
 
 enum class FollowingMode
@@ -138,7 +159,9 @@ enum class FollowingMode
     POSITION
 };
 
-std::string ControlDomain2Str(ControlDomains domains);
+std::string        ControlDomainMask2Str(unsigned int domain_mask);
+std::string        ControlDomain2Str(ControlDomains domain);
+ControlDomainMasks ControlDomain2DomainMask(ControlDomains domain);
 
 enum class PixelFormat
 {
@@ -161,6 +184,36 @@ enum class GhostMode
     NORMAL,
     RESTART,    // the frame ghost is requested to restart
     RESTARTING  // ghost restart is ongoing, including the final restart timestep
+};
+
+class SE_Color
+{
+public:
+    enum class Color
+    {
+        UNDEFINED,
+        BLACK,
+        BLUE,
+        GREEN,
+        ORANGE,
+        RED,
+        VIOLET,
+        WHITE,
+        YELLOW,
+        DARK_GRAY,
+        GRAY,
+        LIGHT_GRAY,
+        COUNT  // Number of colors defined
+    };
+
+    static const float                        rgb_values_[static_cast<size_t>(Color::COUNT)][3];
+    static const std::map<std::string, Color> str2enum_;
+    static const std::string                  color_strings_[static_cast<size_t>(Color::COUNT)];
+
+    static Color              ColorStr2Idx(std::string color_str);
+    static const std::string& ColorIdx2Str(Color color_idx);
+    static const float (&ColorStr2RBG(std::string color_str))[3];
+    static const float (&Color2RBG(Color color_enum))[3];
 };
 
 class SE_Vector
@@ -202,6 +255,14 @@ public:
         return res;
     }
 
+    SE_Vector operator*(double const& s) const
+    {
+        SE_Vector res;
+        res.x_ = x_ * s;
+        res.y_ = y_ * s;
+        return res;
+    }
+
     SE_Vector& operator+=(SE_Vector const& p)
     {
         this->x_ += p.x_;
@@ -216,7 +277,7 @@ public:
         return *this;
     }
 
-    SE_Vector Rotate(double angle)
+    SE_Vector Rotate(double angle) const
     {
         SE_Vector res;
         res.x_ = x_ * cos(angle) - y_ * sin(angle);
@@ -286,6 +347,16 @@ private:
 };
 
 // Useful operations
+class SE_Options;  // forward declaration
+// if user has requested for help menu or version information then print it and return 1 for help, 2 for version, 3 for both
+// else return 0
+int OnRequestShowHelpOrVersion(int argc, char** argv, SE_Options& opt);
+
+// Displays OSG options on the command prompt
+void PrintOSGUsage();
+
+// Function to get the executable's/library's disk path
+std::string GetDefaultPath();
 
 /**
         Get model filename from model_id.
@@ -337,6 +408,10 @@ double GetAngleDifference(double angle1, double angle2);
 */
 bool IsAngleForward(double teta);
 
+double GetCrossProduct3DMagnitude(double x1, double y1, double z1, double x2, double y2, double z2);
+
+int GetCrossProduct3D(double x1, double y1, double z1, double x2, double y2, double z2, double& x, double& y, double& z);
+
 /**
         Retrieve the cross product of two vectors where z=0
 */
@@ -346,6 +421,13 @@ double GetCrossProduct2D(double x1, double y1, double x2, double y2);
         Retrieve the dot product of two vectors where z=0
 */
 double GetDotProduct2D(double x1, double y1, double x2, double y2);
+
+/**
+        Retrieve the angle between two vectors of any length
+*/
+double GetAngleBetweenVectors(double x1, double y1, double x2, double y2);
+
+double GetDotProduct3D(double x1, double y1, double z1, double x2, double y2, double z2);
 
 /**
         Retrieve the intersection between two line segments/vectors a and b
@@ -363,6 +445,25 @@ int GetIntersectionOfTwoLineSegments(double  ax1,
                                      double  by2,
                                      double& x3,
                                      double& y3);
+
+/**
+        This function calculates any intersection points between a line and a circle.
+        Returns nr of intersections found.
+
+        @param p0 first point of line
+        @param p1 second point of line
+        @param cc center of circle
+        @param cr radius of circle
+        @param i0 first intersection point (if exists)
+        @param i1 second intersection point (if exists)
+        @return Number of intersections found (0, 1 or 2)
+ */
+int GetIntersectionsOfLineAndCircle(const double (&p0)[2],
+                                    const double (&p1)[2],
+                                    const double (&cc)[2],
+                                    const double cr,
+                                    double (&i0)[2],
+                                    double (&i1)[2]);
 
 /**
         Calculate distance between two 2D points
@@ -412,6 +513,18 @@ void ProjectPointOnLine2D(double x, double y, double vx1, double vy1, double vx2
         @param py Y coordinate of projected point (reference parameter)
 */
 void ProjectPointOnVector2D(double x0, double y0, double x1, double y1, double& px, double& py);
+
+/**
+        Project a 2D point on a 2D vector (from origin to specified point). Return signed length of resultant.
+        @param x0 X coordinate of point
+        @param y0 Y coordinate of point
+        @param x1 X coordinate of vector
+        @param y1 Y coordinate of vector
+        @param px X coordinate of projected point (reference parameter)
+        @param py Y coordinate of projected point (reference parameter)
+        @return Length of projected point relative given vector, negative if opposite direction
+*/
+double ProjectPointOnVector2DSignedLength(double x0, double y0, double x1, double y1, double& px, double& py);
 
 /**
         Check whether projected point is in area formed by the two given vectors
@@ -472,14 +585,14 @@ double DistanceFromPointToEdge2D(double x3, double y3, double x1, double y1, dou
 double DistanceFromPointToLine2D(double x3, double y3, double x1, double y1, double x2, double y2, double* x, double* y);
 
 /**
-        Measure distance from point to line given by point and angle.
+        Measure signed distance from point to line given by point and angle.
         Strategy: Find and measure distance to closest/perpendicular point on line
         @param x3 X-coordinate of the point to check
         @param y3 Y-coordinate of the point to check
         @param x1 X-coordinate of a point on the line
         @param y1 Y-coordinate of a point on the line
         @param angle angle of the line
-        @return the distance
+        @return the distance, positive if on right side, negative on left
 */
 double DistanceFromPointToLine2DWithAngle(double x3, double y3, double x1, double y1, double angle);
 
@@ -530,6 +643,8 @@ void Local2GlobalCoordinates(double& xTargetGlobal,
                              double  targetXforHost,
                              double  targetYforHost);
 
+double GetAngleBetweenVectors3D(double x1, double y1, double z1, double x2, double y2, double z2);
+
 /**
         Normalize a 2D vector
 */
@@ -538,7 +653,7 @@ void NormalizeVec2D(double x, double y, double& xn, double& yn);
 /**
         Find parallel line at specified offset (- means left, + right)
 */
-void OffsetVec2D(double x0, double y0, double x1, double y1, double offset, double& xo0, double& yo0, double& xo1, double& y01);
+void OffsetVec2D(double x0, double y0, double x1, double y1, double offset, double& xo0, double& yo0, double& xo1, double& yo1);
 
 /**
         Get Euler angles in local coordinates after rotation Z0 * Y * Z1 (heading, pitch, heading)
@@ -550,7 +665,7 @@ void ZYZ2EulerAngles(double z0, double y, double z1, double& h, double& p, doubl
 */
 void R0R12EulerAngles(double h0, double p0, double r0, double h1, double p1, double r1, double& h, double& p, double& r);
 
-int InvertMatrix3(const double m[3][3], double m_out[3][3]);
+int InvertMatrix3(const double m[3][3], double mi[3][3]);
 
 /**
         Get Euler angles for the orientation relative road surface orientation
@@ -583,6 +698,39 @@ void RotateVec3d(const double h0,
         Change byte order - can be useful for IP communication with non Intel platforms
 */
 void SwapByteOrder(unsigned char* buf, int data_type_size, int buf_size);
+
+bool IsNumber(const std::string& str, int max_digits = -1);
+
+/**
+ * Checks if a given string conforms to the ISO 8601 combined date and time representation format.
+ * Specifically, the format is: YYYY-MM-DDTHH:MM:SS.mmm+ZZZZ or YYYY-MM-DDTHH:MM:SS.mmm-ZZZZ.
+ */
+bool IsValidDateTimeFormat(const std::string& dateTimeString);
+
+/**
+ * Make (use IsValidDateTimeFormat funtion)sure that the given string is a valid date and time string in the ISO 8601 combined date and time
+ * representation format. Extracts the number of seconds since midnight from a string in the ISO 8601 combined date and time representation format.
+ * Specifically, the format is: YYYY-MM-DDTHH:MM:SS.mmm+ZZZZ or YYYY-MM-DDTHH:MM:SS.mmm-ZZZZ.
+ */
+uint32_t GetSecondsSinceMidnight(const std::string& dateTimeString);
+
+/**
+ * Make (use IsValidDateTimeFormat funtion)sure that the given string is a valid date and time string in the ISO 8601 combined date and time
+ * representation format. Extracts the number of seconds that have elapsed since January 1, 1970 (midnight UTC/GMT [1]), not counting leap seconds [2]
+ * Specifically, the format is: YYYY-MM-DDTHH:MM:SS.mmm+ZZZZ or YYYY-MM-DDTHH:MM:SS.mmm-ZZZZ.
+ */
+int64_t GetEpochTimeFromString(const std::string& datetime);
+
+/**
+ * Converts a time in seconds to a sun intensity factor.
+ * The sun intensity factor is calculated based on the time of day, where 0 seconds corresponds to midnight (00:00:00)
+ * and 86400 seconds corresponds to the end of the day (23:59:59).
+ * The function uses a sine function to model the sun's intensity throughout the day.
+ *
+ * @param seconds The time in seconds since midnight (00:00:00).
+ * @return The sun intensity factor, which ranges from 0.0 to 1.0.
+ */
+double GetSecondsToFactor(int seconds);
 
 #if (defined WINVER && WINVER == _WIN32_WINNT_WIN7)
 #else
@@ -669,8 +817,7 @@ public:
 
     inline void Wait()
     {
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
-#else
+#if !(defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
         std::unique_lock<std::mutex> lock(mtx);
         if (flag == true)
         {
@@ -688,7 +835,15 @@ private:
     bool flag;
 };
 
-std::vector<std::string> SplitString(const std::string& s, char separator);
+// Converts string to bool pair, first is set if value is bool and second is value of conversion
+// caller should check first before using second. This function will take:
+// true, True, TRUE as true
+// false, False, FALSE as false
+std::pair<bool, bool> StrToBool(const std::string& val);
+// Splits string with delimiter
+std::vector<std::string> SplitString(const std::string& str, char delimiter);
+// Splits string with delimiter, but ignores delimiter inside quotes
+std::vector<std::string> SplitQuotedString(const std::string& str, char delim);
 std::string              DirNameOf(const std::string& fname);
 std::string              FileNameOf(const std::string& fname);
 bool                     IsDirectoryName(const std::string& string);
@@ -709,38 +864,8 @@ double strtod(std::string s);
         @param size Maximum character written, including optional added terminating null (see terminate parameter)
         @param terminate If true the dest will always be terminated, at latest at dest[size-1]
 */
-void StrCopy(char* dest, const char* src, size_t size, bool terminate = true);
-
-// Global Logger class
-class Logger
-{
-public:
-    typedef void (*FuncPtr)(const char*);
-
-    static Logger& Inst();
-    void           Log(bool quit, bool trace, const char* func, const char* file, int line, const char* format, ...);
-    void           SetCallback(FuncPtr callback);
-    bool           IsCallbackSet();
-    void           SetTimePtr(double* timePtr)
-    {
-        time_ = timePtr;
-    }
-    void OpenLogfile(std::string filename);
-    void LogVersion();
-    bool IsFileOpen()
-    {
-        return file_.is_open();
-    }
-
-private:
-    Logger();
-    ~Logger();
-
-    SE_Mutex      mutex_;
-    FuncPtr       callback_;
-    std::ofstream file_;
-    double*       time_;  // seconds
-};
+void        StrCopy(char* dest, const char* src, size_t size, bool terminate = true);
+std::string GetVersionInfoForLog();
 
 // Global Vehicle Data Logger
 class CSV_Logger
@@ -751,9 +876,11 @@ public:
     // Instantiator
     static CSV_Logger& Inst();
 
+    // Call this first for each timestep, before LogVehicleData()
+    void LogEntryHeader(double timestamp);
+
     // Logging function called by VehicleLogger object using pass by value
     void LogVehicleData(bool        isendline,
-                        double      timestamp,
                         char const* name,
                         int         id,
                         double      speed,
@@ -815,28 +942,37 @@ public:
     std::string              opt_str_;
     std::string              opt_desc_;
     std::string              opt_arg_;
-    bool                     set_;
+    bool                     set_ = false;
     std::vector<std::string> arg_value_;
     std::string              default_value_;
+    bool                     persistent_          = false;
+    bool                     autoApply_           = false;
+    bool                     isSingleValueOption_ = false;
 
-    SE_Option(std::string opt_str, std::string opt_desc, std::string opt_arg = "")
-        : opt_str_(opt_str),
-          opt_desc_(opt_desc),
-          opt_arg_(opt_arg),
-          set_(false)
+    SE_Option()
     {
     }
 
-    SE_Option(std::string opt_str, std::string opt_desc, std::string opt_arg, std::string default_value)
+    SE_Option(std::string opt_str,
+              std::string opt_desc,
+              std::string opt_arg             = "",
+              std::string default_value       = "",
+              bool        autoApply           = false,
+              bool        isSingleValueOption = false)
         : opt_str_(opt_str),
           opt_desc_(opt_desc),
           opt_arg_(opt_arg),
           set_(false),
-          default_value_(default_value)
+          default_value_(default_value),
+          autoApply_(autoApply),
+          isSingleValueOption_(isSingleValueOption)
     {
     }
 
-    void Usage();
+    void Usage() const;
+    bool IsSpecified() const;
+    // returns first value, or given index, of the option
+    std::string GetValue(int index = 0) const;
 };
 
 class SE_Options
@@ -844,31 +980,66 @@ class SE_Options
 #define OPT_PREFIX "--"
 
 public:
-    void AddOption(std::string opt_str, std::string opt_desc, std::string opt_arg = "");
-    void AddOption(std::string opt_str, std::string opt_desc, std::string opt_arg, std::string opt_arg_default_value);
+    SE_Options()
+    {
+        option_.resize(esmini_options::CONFIG_ENUM::CONFIGS_COUNT);
+    }
+    void AddOption(std::string opt_str,
+                   std::string opt_desc,
+                   std::string opt_arg             = "",
+                   std::string default_value       = "",
+                   bool        autoApply           = false,
+                   bool        isSingleValueOption = true);
 
-    void                      PrintUsage();
-    void                      PrintUnknownArgs(std::string message = "Unrecognized arguments:");
-    bool                      GetOptionSet(std::string opt);
-    bool                      IsOptionArgumentSet(std::string opt);
-    std::string               GetOptionArg(std::string opt, int index = 0);
+    void PrintUsage();
+    void PrintUnknownArgs(std::string message = "Unrecognized arguments:") const;
+    bool GetOptionSet(std::string opt);
+    bool GetOptionSetByEnum(esmini_options::CONFIG_ENUM opt);
+    bool IsOptionArgumentSet(std::string opt);
+
+    // Get option value by name and index if present otherwise will return empty string
+    std::string GetOptionValue(std::string opt, unsigned int index = 0);
+
+    // Get option value by enum and index if present otherwise will return empty string
+    std::string GetOptionValueByEnum(esmini_options::CONFIG_ENUM opt, unsigned int index = 0);
+
+    // returns all the values set for the option
+    std::vector<std::string>& GetOptionValues(std::string opt);
     int                       ParseArgs(int argc, const char* const argv[]);
+    // sets default values to options which are auto defaulted and are unset
+    void                      ApplyDefaultValues();
     std::vector<std::string>& GetOriginalArgs()
     {
         return originalArgs_;
     }
+
     bool IsInOriginalArgs(std::string opt);
-    bool HasUnknownArgs();
+    bool HasUnknownArgs() const;
     void Reset();
     int  ChangeOptionArg(std::string opt, std::string new_value, int index = 0);
+    int  SetOptionValue(std::string opt, std::string value, bool add = false, bool persistent = false);
+    // it does the whole cleanup of the option i.e. unsets, non-persists and clears value(s) of the option
+    int UnsetOption(const std::string& opt);
+    // clears only value(s) of the option and let the other flags as they are
+    int         ClearOption(const std::string& opt);
+    std::string GetSetOptionsAsStr() const;
+
+    // Get option by name if present otherwise will return null
+    SE_Option* GetOption(std::string opt);
+
+    // Get option by name if present otherwise will return null
+    SE_Option* GetOptionByEnum(esmini_options::CONFIG_ENUM opt);
+
+    void        SetAppName(std::string app_name);
+    std::string GetAppName() const;
 
 private:
+    // std::unordered_map<std::string, SE_Option> option_;
     std::vector<SE_Option>   option_;
+    std::vector<SE_Option*>  optionOrder_;  // To maintain the order of insertion of options, to print in help
     std::string              app_name_;
     std::vector<std::string> originalArgs_;
     std::vector<std::string> unknown_args_;
-
-    SE_Option* GetOption(std::string opt);
 };
 
 class SE_SystemTime
@@ -876,16 +1047,16 @@ class SE_SystemTime
 public:
     __int64 start_time_;
 
-    SE_SystemTime() : start_time_(SE_getSystemTime())
+    SE_SystemTime() : start_time_(SE_getSystemTimeMilliseconds())
     {
     }
     void Reset()
     {
-        start_time_ = SE_getSystemTime();
+        start_time_ = SE_getSystemTimeMilliseconds();
     }
-    double GetS()
+    double GetS() const
     {
-        return 1E-3 * static_cast<double>((SE_getSystemTime() - start_time_));
+        return 1E-3 * static_cast<double>((SE_getSystemTimeMilliseconds() - start_time_));
     }
 };
 
@@ -900,11 +1071,11 @@ public:
     }
     void Start()
     {
-        start_time_ = SE_getSystemTime();
+        start_time_ = SE_getSystemTimeMilliseconds();
     }
     void Start(double duration)
     {
-        start_time_ = SE_getSystemTime();
+        start_time_ = SE_getSystemTimeMilliseconds();
         duration_   = duration;
     }
 
@@ -912,7 +1083,7 @@ public:
     {
         start_time_ = 0;
     }
-    bool Started()
+    bool Started() const
     {
         return start_time_ > 0 ? true : false;
     }
@@ -920,11 +1091,11 @@ public:
     {
         duration_ = duration;
     }
-    double Elapsed()
+    double Elapsed() const
     {
-        return 1E-3 * static_cast<double>((SE_getSystemTime() - start_time_));
+        return 1E-3 * static_cast<double>((SE_getSystemTimeMilliseconds() - start_time_));
     }
-    double Remaining()
+    double Remaining() const
     {
         if (Expired())
         {
@@ -935,7 +1106,7 @@ public:
             return duration_ - Elapsed();
         }
     }
-    bool Expired()
+    bool Expired() const
     {
         return Elapsed() > duration_ - SMALL_NUMBER;
     }
@@ -962,7 +1133,7 @@ public:
         duration_   = 0;
     }
 
-    double Remaining(double timestamp_s)
+    double Remaining(double timestamp_s) const
     {
         if (Expired(timestamp_s))
         {
@@ -978,15 +1149,15 @@ public:
     {
         return duration_ > SMALL_NUMBER;
     }
-    double Elapsed(double timestamp_s)
+    double Elapsed(double timestamp_s) const
     {
         return timestamp_s - start_time_;
     }
-    bool Expired(double timestamp_s)
+    bool Expired(double timestamp_s) const
     {
         return timestamp_s - start_time_ > duration_ - SMALL_NUMBER;
     }
-    double GetDuration()
+    double GetDuration() const
     {
         return duration_;
     }
@@ -994,6 +1165,9 @@ public:
 
 class DampedSpring
 {
+    /*
+        https://en.wikipedia.org/wiki/Mass-spring-damper_model
+    */
 public:
     // Custom damping factor, set 0 for no damping
     DampedSpring() : x_(0), x0_(0), t_(0), d_(0), v_(0), a_(0), critical_(false){};
@@ -1023,21 +1197,21 @@ public:
         a_ = -t_ * (x_ - x0_) - d_ * v_;
         v_ = v_ + a_ * timeStep;
         x_ = x_ + v_ * timeStep;
-    };
+    }
 
     void SetValue(double value)
     {
         x_ = value;
     }
-    double GetValue()
+    double GetValue() const
     {
         return x_;
     }
-    double GetV()
+    double GetV() const
     {
         return v_;
     }
-    double GetA()
+    double GetA() const
     {
         return a_;
     }
@@ -1049,7 +1223,7 @@ public:
     {
         x0_ = targetValue;
     }
-    double GetTargetValue()
+    double GetTargetValue() const
     {
         return x0_;
     }
@@ -1101,22 +1275,36 @@ public:
     }
 
     // Get an integer in the range (min, max) NOTE: including max
+
+    // cppcheck-suppress functionConst
+    // This function is intentionally not marked as const because it calls gen_ (std::mt19937), which modifies internal state each time a number is
+    // generated. Although no visible state is changed, the Random Number Generator state must be advanced, so the function is not logically const.
+    // Get an integer in the range (min, max) NOTE: including max
     int GetNumberBetween(int min, int max)
     {
+        if (max < min)
+        {
+            return min;
+        }
+
         return std::uniform_int_distribution<>{min, max}(gen_);
     }
-
+    // cppcheck-suppress functionConst
+    // This function is intentionally not marked as const because it calls gen_ (std::mt19937), which modifies internal state each time a number is
+    // generated. Although no visible state is changed, the Random Number Generator state must be advanced, so the function is not logically const.
     double GetReal()  // returns a floating point number between 0 and 1
     {
         return std::uniform_real_distribution<>{}(gen_);
     }
-
+    // cppcheck-suppress functionConst
+    // This function is intentionally not marked as const because it calls gen_ (std::mt19937), which modifies internal state each time a number is
+    // generated. Although no visible state is changed, the Random Number Generator state must be advanced, so the function is not logically const.
     double GetRealBetween(double min, double max)
     {
         return std::uniform_real_distribution<>{min, max}(gen_);
     }
 
-    unsigned int GetSeed()
+    unsigned int GetSeed() const
     {
         return seed_;
     }
@@ -1138,17 +1326,32 @@ public:
           osiMaxLateralDeviation_(OSI_MAX_LATERAL_DEVIATION),
           logFilePath_(LOG_FILENAME),
           datFilePath_(""),
-          osiFilePath_(""),
-          osiFileEnabled_(false),
           collisionDetection_(false),
           saveImagesToRAM_(false),
           ghost_mode_(GhostMode::NORMAL),
-          ghost_headstart_(0.0)
+          ghost_headstart_(0.0),
+          osiTimeStamp_(OSI_TIMESTAMP_UNDEFINED)
     {
     }
 
     static SE_Env& Inst();
 
+    void SetOSITimeStamp(unsigned long long timestamp)
+    {
+        osiTimeStamp_ = timestamp;
+    }
+    unsigned long long GetOSITimeStamp() const
+    {
+        return osiTimeStamp_;
+    }
+    bool IsOSITimeStampSet() const
+    {
+        return osiTimeStamp_ != OSI_TIMESTAMP_UNDEFINED;
+    }
+    void ResetOSITimeStamp()
+    {
+        osiTimeStamp_ = OSI_TIMESTAMP_UNDEFINED;
+    }
     void SetOSIMaxLongitudinalDistance(double maxLongitudinalDistance)
     {
         osiMaxLongitudinalDistance_ = maxLongitudinalDistance;
@@ -1157,11 +1360,11 @@ public:
     {
         osiMaxLateralDeviation_ = maxLateralDeviation;
     }
-    double GetOSIMaxLongitudinalDistance()
+    double GetOSIMaxLongitudinalDistance() const
     {
         return osiMaxLongitudinalDistance_;
     }
-    double GetOSIMaxLateralDeviation()
+    double GetOSIMaxLateralDeviation() const
     {
         return osiMaxLateralDeviation_;
     }
@@ -1169,20 +1372,20 @@ public:
     {
         collisionDetection_ = enable;
     }
-    bool GetCollisionDetection()
+    bool GetCollisionDetection() const
     {
         return collisionDetection_;
     }
     std::vector<std::string>& GetPaths()
     {
-        return paths_;
+        return SE_Env::Inst().GetOptions().GetOptionValues("path");
     }
     int  AddPath(std::string path);
     void ClearPaths()
     {
-        paths_.clear();
+        SE_Env::Inst().GetOptions().ClearOption("path");
     }
-    double GetSystemTime()
+    double GetSystemTime() const
     {
         return systemTime_.GetS();
     }
@@ -1202,8 +1405,8 @@ public:
             Note: Needs to be called prior to calling SE_Init()
             @param path Logfile path
     */
-    void        SetLogFilePath(std::string logFilePath);
-    std::string GetLogFilePath()
+    // void        SetLogFilePath(std::string logFilePath);
+    std::string GetLogFilePath() const
     {
         return logFilePath_;
     }
@@ -1224,7 +1427,7 @@ public:
             @param path Logfile path
     */
     void        SetDatFilePath(std::string datFilePath);
-    std::string GetDatFilePath()
+    std::string GetDatFilePath() const
     {
         return datFilePath_;
     }
@@ -1238,20 +1441,9 @@ public:
         saveImagesToRAM_ = state;
     }
 
-    bool GetSaveImagesToRAM()
+    bool GetSaveImagesToRAM() const
     {
         return saveImagesToRAM_;
-    }
-
-    void        EnableOSIFile(std::string osiFilePath);
-    void        DisableOSIFile();
-    std::string GetOSIFilePath()
-    {
-        return osiFilePath_;
-    }
-    bool GetOSIFileEnabled()
-    {
-        return osiFileEnabled_;
     }
 
     std::string GetModelFilenameById(int model_id);
@@ -1265,7 +1457,7 @@ public:
         return rand_;
     }
 
-    GhostMode GetGhostMode()
+    GhostMode GetGhostMode() const
     {
         return ghost_mode_;
     }
@@ -1275,7 +1467,7 @@ public:
         ghost_mode_ = mode;
     }
 
-    double GetGhostHeadstart(void)
+    double GetGhostHeadstart(void) const
     {
         return ghost_headstart_;
     }
@@ -1285,14 +1477,16 @@ public:
         ghost_headstart_ = headstart_time;
     }
 
+    SE_Options& GetOptions()
+    {
+        return opt;
+    };
+
 private:
-    std::vector<std::string>   paths_;
     double                     osiMaxLongitudinalDistance_;
     double                     osiMaxLateralDeviation_;
     std::string                logFilePath_;
     std::string                datFilePath_;
-    std::string                osiFilePath_;
-    bool                       osiFileEnabled_;
     SE_SystemTime              systemTime_;
     SE_Rand                    rand_;
     bool                       collisionDetection_;
@@ -1300,6 +1494,8 @@ private:
     std::map<int, std::string> entity_model_map_;
     GhostMode                  ghost_mode_;
     double                     ghost_headstart_;
+    SE_Options                 opt;
+    unsigned long long         osiTimeStamp_;
 };
 
 /**

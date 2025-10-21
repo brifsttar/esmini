@@ -13,11 +13,14 @@
 #pragma once
 
 #include "CommonMini.hpp"
+#include "logger.hpp"
 
 #include <string>
 #include <vector>
 
+#ifdef _USE_OSI
 class OSIReporter;  // Forward declaration
+#endif              // _USE_OSI
 
 namespace scenarioengine
 {
@@ -66,7 +69,7 @@ namespace scenarioengine
             UNDEFINED_ELEMENT_TRANSITION
         } Transition;
 
-        ElementType        type_;
+        ElementType        element_type_;
         StoryBoardElement* parent_;
         int                num_executions_;
         int                max_num_executions_;
@@ -76,6 +79,7 @@ namespace scenarioengine
         Trigger* start_trigger_;
         Trigger* stop_trigger_;
 
+#ifdef _USE_OSI
         static OSIReporter* osi_reporter_;
         static void         SetOSIReporter(OSIReporter* osi_reporter)
         {
@@ -86,8 +90,9 @@ namespace scenarioengine
         {
             return osi_reporter_;
         };
+#endif  // _USE_OSI
 
-        State GetCurrentState()
+        State GetCurrentState() const
         {
             return state_;
         }
@@ -102,7 +107,7 @@ namespace scenarioengine
             transition_ = transition;
         }
 
-        Transition GetCurrentTransition()
+        Transition GetCurrentTransition() const
         {
             return transition_;
         }
@@ -118,7 +123,7 @@ namespace scenarioengine
         }
 
         StoryBoardElement(ElementType type, StoryBoardElement* parent, int max_num_executions = -1)
-            : type_(type),
+            : element_type_(type),
               parent_(parent),
               num_executions_(0),
               max_num_executions_(max_num_executions),
@@ -134,14 +139,14 @@ namespace scenarioengine
 
         void        SetState(State state);  // perform state change via already set transition
         std::string state2str(State state);
-        std::string transition2str(StoryBoardElement::Transition state);
+        std::string transition2str(StoryBoardElement::Transition transition);
 
         bool AllChildrenComplete();
         bool AnyChildRunning();
 
         void PropagateStateFromChildren();
 
-        bool IsTriggable()
+        bool IsTriggable() const
         {
             return GetCurrentState() == State::STANDBY;
         }
@@ -170,7 +175,7 @@ namespace scenarioengine
             }
             else
             {
-                LOG("Invalid transition requested from %s to %s", state2str(GetCurrentState()).c_str(), state2str(State::STANDBY).c_str());
+                LOG_ERROR("Invalid transition requested from {} to {}", state2str(GetCurrentState()), state2str(State::STANDBY));
             }
         }
 
@@ -188,8 +193,8 @@ namespace scenarioengine
             return full_path_;
         };
 
-        StoryBoardElement* FindChildByName(std::string name);
-        StoryBoardElement* FindChildByTypeAndName(ElementType type, std::string name);
+        StoryBoardElement*              FindChildByName(std::string name);
+        std::vector<StoryBoardElement*> FindChildByTypeAndName(ElementType type, std::string name);
 
         virtual std::vector<StoryBoardElement*>* GetChildren() = 0;
 

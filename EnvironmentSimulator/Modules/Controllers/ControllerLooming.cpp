@@ -16,6 +16,7 @@
 #include "ScenarioEngine.hpp"
 #include "ScenarioGateway.hpp"
 #include "playerbase.hpp"
+#include "logger.hpp"
 
 using namespace scenarioengine;
 
@@ -28,6 +29,8 @@ Controller* scenarioengine::InstantiateControllerLooming(void* args)
 
 ControllerLooming::ControllerLooming(InitArgs* args) : Controller(args)
 {
+    operating_domains_ = static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LONG);
+
     if (args && args->properties && args->properties->ValueExists("timeGap"))
     {
         timeGap_ = strtod(args->properties->GetValueStr("timeGap"));
@@ -37,14 +40,13 @@ ControllerLooming::ControllerLooming(InitArgs* args) : Controller(args)
         setSpeed_    = strtod(args->properties->GetValueStr("setSpeed"));
         setSpeedSet_ = true;
     }
+    align_to_road_heading_on_deactivation_ = true;
+    align_to_road_heading_on_activation_   = true;
 }
 
 void ControllerLooming::Step(double timeStep)
 {
     // looming controller properties
-    double       k0                = 1.8;
-    double       k1                = 1.3;
-    double       k2                = 1.5;
     double const nearPointDistance = 10.0;
     double       farPointDistance  = 80.0;
 
@@ -53,11 +55,9 @@ void ControllerLooming::Step(double timeStep)
     double far_y     = 0.0;
     double far_tan_s = 0.0;
 
-    hasFarTan              = false;
-    int    road_counter    = -1;
-    int    laneSec_counter = -1;
-    bool   isIntersection  = false;
-    double dist            = 0.0;
+    hasFarTan             = false;
+    bool   isIntersection = false;
+    double dist           = 0.0;
 
     currentSpeed_ = object_->GetSpeed();
 
@@ -72,7 +72,7 @@ void ControllerLooming::Step(double timeStep)
         roadmanager::Road* road = odr->GetRoadById(object_->pos_.GetTrackId());
         if (road == nullptr)
         {
-            LOG("Road ID %d", object_->pos_.GetTrackId());
+            LOG_INFO("Road ID {}", object_->pos_.GetTrackId());
             return;
         }
 
@@ -91,11 +91,12 @@ void ControllerLooming::Step(double timeStep)
             far_angle_prev[1] = GetAngleInIntervalMinusPIPlusPI(object_->pos_.GetHRoad() + M_PI_2);
         }
 
-        roadmanager::Road* roadTemp       = nullptr;
-        int                direction      = IsAngleForward(object_->pos_.GetHRelative());
-        int                direction_prev = direction;
-        roadmanager::Lane* lane           = nullptr;
-
+        roadmanager::Road* roadTemp        = nullptr;
+        int                direction       = IsAngleForward(object_->pos_.GetHRelative());
+        int                direction_prev  = direction;
+        roadmanager::Lane* lane            = nullptr;
+        int                laneSec_counter = -1;
+        int                road_counter    = -1;
         while (!hasFarTan && dist < farPointDistance)
         {
             roadmanager::LaneSection* lsec = nullptr;
@@ -138,9 +139,9 @@ void ControllerLooming::Step(double timeStep)
 
             road_counter++;
             double dist_lsec = 0.0;
-            for (int n = 0; !hasFarTan && dist + dist_lsec < farPointDistance && n < roadTemp->GetNumberOfLaneSections(); n++)
+            for (unsigned int n = 0; !hasFarTan && dist + dist_lsec < farPointDistance && n < roadTemp->GetNumberOfLaneSections(); n++)
             {
-                int current_laneSec_idx = n;
+                idx_t current_laneSec_idx = n;
                 if (direction == -1)
                 {  // switch lanesec index according to direction of ego
                     current_laneSec_idx = roadTemp->GetNumberOfLaneSections() - 1 - n;
@@ -149,7 +150,7 @@ void ControllerLooming::Step(double timeStep)
                 lsec = roadTemp->GetLaneSectionByIdx(current_laneSec_idx);  // pick lanesec by lanesec id
                 if (lsec == nullptr)
                 {
-                    LOG("Unexpected missing lane Section");
+                    LOG_WARN("Unexpected missing lane Section");
                     return;
                 }
                 if (road_counter == 0)
@@ -159,7 +160,7 @@ void ControllerLooming::Step(double timeStep)
                     {
                         lane = lsec->GetLaneById(object_->pos_.GetLaneId());
                     }
-                    else if (laneSec_counter >= 0)
+                    else
                     {
                         lane = lsec->GetLaneById(
                             lane->GetLink(direction_prev == 1 ? roadmanager::LinkType::SUCCESSOR : roadmanager::LinkType::PREDECESSOR)->GetId());
@@ -172,7 +173,7 @@ void ControllerLooming::Step(double timeStep)
                         lane->GetLink(direction_prev == 1 ? roadmanager::LinkType::SUCCESSOR : roadmanager::LinkType::PREDECESSOR);
                     if (link == nullptr)
                     {
-                        LOG("Unexpected missing lane link");
+                        LOG_WARN("Unexpected missing lane link");
                         return;
                     }
 
@@ -224,7 +225,7 @@ void ControllerLooming::Step(double timeStep)
                         {
                             double xr = 0.0, yr = 0.0;
                             double local_x = 0.0;
-                            double local_y = (m == 0 ? +1 : -1) * road->GetLaneWidthByS(osi_points[cur_idx].s, object_->pos_.GetLaneId()) / 2;
+                            double local_y = (m == 0 ? +1 : -1) * roadTemp->GetLaneWidthByS(osi_points[cur_idx].s, object_->pos_.GetLaneId()) / 2;
                             local_y        = (direction == 1 ? local_y : -local_y);  // switch y position according to ego driving side
                             RotateVec2D(local_x, local_y, osi_points[cur_idx].h, xr, yr);
                             double far_x_tmp   = osi_points[cur_idx].x + xr;
@@ -245,7 +246,7 @@ void ControllerLooming::Step(double timeStep)
                                 if (abs(angleDiff) > SMALL_NUMBER &&  // skip points at same angle (e.g. identical position)
                                     SIGN(angleDiff) != SIGN(angle_diff_prev[m]))
                                 {
-                                    // LOG("has far tan");
+                                    LOG_DEBUG("has far tan");
                                     hasFarTan = true;
                                     far_x     = far_x_prev[m];
                                     far_y     = far_y_prev[m];
@@ -346,7 +347,7 @@ void ControllerLooming::Step(double timeStep)
                     hasLeadFar = true;
                     far_angle  = GetAngleInIntervalMinusPIPlusPI(
                         atan2(object_->pos_.GetY() - pivot_obj->pos_.GetY(), object_->pos_.GetX() - pivot_obj->pos_.GetX()) - object_->pos_.GetH());
-                    // LOG("new far: %.2f, %.2f\n", pivot_obj->pos_.GetX(), pivot_obj->pos_.GetY());
+                    LOG_DEBUG("new far: {:.2f}, {:.2f}", pivot_obj->pos_.GetX(), pivot_obj->pos_.GetY());
                     far_x = pivot_obj->pos_.GetX();
                     far_y = pivot_obj->pos_.GetY();
                 }
@@ -393,8 +394,10 @@ void ControllerLooming::Step(double timeStep)
     {
         double nearAngleDot = (nearAngle - prevNearAngle) / timeStep;
         double farAngleDot  = (far_angle - prevFarAngle) / timeStep;
-
-        steering = k0 * nearAngle + k1 * nearAngleDot + k2 * farAngleDot;
+        double k0           = 1.8;
+        double k1           = 1.3;
+        double k2           = 1.5;
+        steering            = k0 * nearAngle + k1 * nearAngleDot + k2 * farAngleDot;
         // scale (90 degrees) and truncate
         steering = steering / M_PI_4;
         steering = CLAMP(steering, -1, 1);
@@ -422,10 +425,10 @@ void ControllerLooming::Init()
     Controller::Init();
 }
 
-void ControllerLooming::Activate(DomainActivation lateral, DomainActivation longitudinal)
+int ControllerLooming::Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)])
 {
     currentSpeed_ = object_->GetSpeed();
-    if (mode_ == Mode::MODE_ADDITIVE || setSpeedSet_ == false)
+    if (mode_ == ControlOperationMode::MODE_ADDITIVE || setSpeedSet_ == false)
     {
         setSpeed_ = object_->GetSpeed();
     }
@@ -441,9 +444,9 @@ void ControllerLooming::Activate(DomainActivation lateral, DomainActivation long
         vehicle_.SetSteeringRate(steering_rate_);
     }
 
-    Controller::Activate(lateral, longitudinal);
+    Controller::Activate(mode);
 
-    if (IsActiveOnDomains(ControlDomains::DOMAIN_LAT))
+    if (IsActiveOnDomains(static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LAT)))
     {
         // Make sure heading is aligned with road driving direction
         object_->pos_.SetHeadingRelative((object_->pos_.GetHRelative() > M_PI_2 && object_->pos_.GetHRelative() < 3 * M_PI_2) ? M_PI : 0.0);
@@ -452,6 +455,8 @@ void ControllerLooming::Activate(DomainActivation lateral, DomainActivation long
     {
         player_->SteeringSensorSetVisible(object_->GetId(), true);
     }
+
+    return 0;
 }
 
 void ControllerLooming::ReportKeyEvent(int key, bool down)

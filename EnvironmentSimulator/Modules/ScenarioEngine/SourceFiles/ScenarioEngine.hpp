@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 #include <math.h>
+#include <array>
 
 #include "Catalogs.hpp"
 #include "Entities.hpp"
@@ -23,6 +24,7 @@
 #include "ScenarioGateway.hpp"
 #include "ScenarioReader.hpp"
 #include "RoadNetwork.hpp"
+#include "OSCEnvironment.hpp"
 
 namespace scenarioengine
 {
@@ -48,6 +50,7 @@ namespace scenarioengine
         Entities                   entities_;
         std::vector<CollisionPair> collision_pair_;
         std::vector<OSCAction *>  *injected_actions_;
+        OSCEnvironment             environment;
 
         ScenarioEngine(std::string oscFilename, bool disable_controllers = false);
         ScenarioEngine(const pugi::xml_document &xml_doc, bool disable_controllers = false);
@@ -73,18 +76,37 @@ namespace scenarioengine
 
         void ReplaceObjectInTrigger(Trigger *trigger, Object *obj1, Object *obj2, double timeOffset, Event *event = 0);
         void SetupGhost(Object *object);
-        void ResetEvents();
+        void ResetEvents() const;
         int  DetectCollisions();
-
-        std::string getScenarioFilename()
+        void ParseGlobalDeclarations();
+        void EraseCleanParams();
+        void EraseCleanVariables();
+        void GetIdxsFromIds(const int id_1, const int id_2, int &idx_1, int &idx_2);
+        int  UpdateDistance(Object                            *obj_1,
+                            Object                            *obj_2,
+                            roadmanager::RelativeDistanceType &dist_type,
+                            const uint64_t                    &key,
+                            const uint64_t                    &rev_key,
+                            const double                       tracking_limit);
+        int  GetDistance(Object                           *object_1,
+                         Object                           *object_2,
+                         roadmanager::RelativeDistanceType dist_type,
+                         const double                      tracking_limit,
+                         double                           *distance,
+                         double                           *timestamp);
+        bool GetDisableControllersFlag() const
+        {
+            return disable_controllers_;
+        }
+        std::string getScenarioFilename() const
         {
             return scenarioReader->getScenarioFilename();
         }
-        std::string getSceneGraphFilename()
+        std::string getSceneGraphFilename() const
         {
             return roadNetwork.sceneGraphFile.filepath;
         }
-        std::string getOdrFilename()
+        std::string getOdrFilename() const
         {
             return roadNetwork.logicFile.filepath;
         }
@@ -98,7 +120,7 @@ namespace scenarioengine
         {
             return simulationTime_;
         }
-        bool GetQuitFlag()
+        bool GetQuitFlag() const
         {
             return storyBoard.GetCurrentState() == StoryBoard::State::COMPLETE;
         }
@@ -120,7 +142,7 @@ namespace scenarioengine
         {
             trueTime_ = time;
         }
-        double GetTrueTime()
+        double GetTrueTime() const
         {
             return trueTime_;
         }
@@ -131,15 +153,17 @@ namespace scenarioengine
         void CreateGhostTeleport(Object *obj1, Object *obj2, Event *event);
 
         void UpdateGhostMode();
-        int  GetInitStatus()
+        int  GetInitStatus() const
         {
             return init_status_;
         }
 
+#ifdef _USE_OSI
         void SetOSIReporter(OSIReporter *osi_reporter)
         {
             storyBoard.SetOSIReporter(osi_reporter);
         }
+#endif  // _USE_OSI
 
         double   trueTime_;
         bool     doOnce = true;
@@ -159,6 +183,27 @@ namespace scenarioengine
         Vehicle         sumotemplate;
         ScenarioGateway scenarioGateway;
         Object         *ghost_;
+        double          ghost_trail_dt_;
+
+        // Distance map
+        struct DistanceMeasurement
+        {
+            double distance_  = 10000.0;
+            double timestamp_ = 0.0;
+        };
+
+        struct DistanceEntry
+        {
+            std::array<DistanceMeasurement, static_cast<size_t>(roadmanager::RelativeDistanceType::ENUM_SIZE)> measurement_;
+            double                                                                                             next_update_ = 0.0;
+        };
+
+        inline uint64_t GenerateKey(int id1, int id2) const
+        {
+            return (static_cast<uint64_t>(id1) << 32) | static_cast<uint32_t>(id2);
+        }
+
+        std::unordered_map<uint64_t, DistanceEntry> object_distance_map_;
 
         // execution control flags
         unsigned int frame_nr_;

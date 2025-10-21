@@ -40,14 +40,22 @@ const float orbitCameraRotation = -14.0f;
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
-RubberbandManipulator::RubberbandManipulator(unsigned int mode)
+RubberbandManipulator::RubberbandManipulator(unsigned int mode, osg::Vec3d origin, double& time_ref) : time_ref_(time_ref)
+
 {
-    _cameraAngle    = orbitCameraAngle;
-    _cameraDistance = orbitCameraDistance;
-    _cameraRotation = orbitCameraRotation;
-    track_node_     = nullptr;
-    track_tx_       = nullptr;
+    cameraAngle_        = orbitCameraAngle;
+    cameraBaseDistance_ = orbitCameraDistance;
+    cameraRotation_     = orbitCameraRotation;
+    track_node_         = nullptr;
+    track_tx_           = nullptr;
+    origin_             = origin;
     setMode(mode);
+    explicitCenter_.Reset();
+}
+
+double osgGA::RubberbandManipulator::GetCameraDistance() const
+{
+    return cameraBaseDistance_ + zoom_distance_;
 }
 
 RubberbandManipulator::~RubberbandManipulator()
@@ -62,7 +70,7 @@ RubberbandManipulator::CustomCamera* RubberbandManipulator::RubberbandManipulato
     }
 
     // Custom camera models starts on index RB_MODE_CUSTOM
-    int index = static_cast<int>(_mode) - RB_MODE_CUSTOM;
+    int index = static_cast<int>(mode_) - RB_MODE_CUSTOM;
 
     // make sure index is withing range
     if (index >= static_cast<int>(customCamera_.size()))
@@ -71,7 +79,7 @@ RubberbandManipulator::CustomCamera* RubberbandManipulator::RubberbandManipulato
     }
     else if (index < 0)
     {
-        index = 0;
+        // index = 0;
         return 0;
     }
 
@@ -85,53 +93,56 @@ void RubberbandManipulator::setMode(unsigned int mode)
         mode = GetNumberOfCameraModes() - 1;
     }
 
-    // If leaving locked views, then reset camera rotations
-    if (_mode == RB_MODE_TOP || _mode == RB_MODE_DRIVER || _mode >= RB_MODE_CUSTOM)
+    // If leaving locked views, then reset camera rotations and zoom
+    if (mode_ == RB_MODE_TOP || mode_ == RB_MODE_DRIVER || mode_ >= RB_MODE_CUSTOM)
     {
-        _cameraAngle    = orbitCameraAngle;
-        _cameraRotation = orbitCameraRotation;
-        _cameraDistance = orbitCameraDistance;
+        cameraAngle_        = orbitCameraAngle;
+        cameraRotation_     = orbitCameraRotation;
+        cameraBaseDistance_ = orbitCameraDistance;
+        zoom_distance_      = 0.0;
     }
 
-    _mode = mode;
+    mode_ = mode;
 
-    if (mode == RB_MODE_RUBBER_BAND)
+    if (mode_ == RB_MODE_RUBBER_BAND)
     {
-        _cameraAngle    = orbitCameraAngle;
-        _cameraDistance = orbitCameraDistance;
+        cameraAngle_        = orbitCameraAngle;
+        cameraBaseDistance_ = orbitCameraDistance;
     }
-    else if (mode == RB_MODE_TOP)
+    else if (mode_ == RB_MODE_TOP)
     {
-        _cameraDistance = topCameraDistance;
-    }
-    else if (mode >= CAMERA_MODE::RB_MODE_CUSTOM)
-    {
+        cameraBaseDistance_ = topCameraDistance;
     }
 }
 
 void RubberbandManipulator::setTrackNode(osg::ref_ptr<osg::Node> node, bool calcDistance)
 {
-    if (!node)
-    {
-        osg::notify(osg::NOTICE) << "RubberbandManipulator::setTrackBB(bb):  Unable to set tracked bounding box due to null Node" << std::endl;
-        return;
-    }
     track_node_ = node;
 
     if (calcDistance)
     {
         calculateCameraDistance();
     }
+    explicitCenter_.Reset();
+}
+
+const osg::Node* RubberbandManipulator::getTrackNode() const
+{
+    return track_node_.get();
+}
+
+void RubberbandManipulator::setCenterAndDistance(osg::Vec3 center, double distance)
+{
+    track_node_ = nullptr;
+    track_tx_   = nullptr;
+    explicitCenter_.Set(center);
+    cameraBaseDistance_ = distance;
 }
 
 void RubberbandManipulator::setTrackTransform(osg::ref_ptr<osg::PositionAttitudeTransform> tx)
 {
-    if (!tx)
-    {
-        osg::notify(osg::NOTICE) << "RubberbandManipulator::setTrackTX(tx):  Unable to set tracked transofmration node due to null Node" << std::endl;
-        return;
-    }
     track_tx_ = tx;
+    explicitCenter_.Reset();
 }
 
 void RubberbandManipulator::calculateCameraDistance()
@@ -142,7 +153,17 @@ void RubberbandManipulator::calculateCameraDistance()
     osg::BoundingBox bb   = cbv.getBoundingBox();
     osg::Vec3        minV = bb._min * m.front();
     osg::Vec3        maxV = bb._max * m.front();
-    _cameraDistance       = MAX((maxV.x() - minV.x() + maxV.y() - minV.y()) / 2, orbitCameraDistance);
+
+    if (mode_ == RB_MODE_TOP)
+    {
+        cameraBaseDistance_ = topCameraDistance;
+    }
+    else
+    {
+        cameraBaseDistance_ = MAX((maxV.x() - minV.x() + maxV.y() - minV.y()) / 2, orbitCameraDistance);
+    }
+
+    zoom_distance_ = 0.0;
 }
 
 void RubberbandManipulator::init(const GUIEventAdapter&, GUIActionAdapter& us)
@@ -160,12 +181,10 @@ void RubberbandManipulator::getUsage(osg::ApplicationUsage& usage) const
 
 bool RubberbandManipulator::handle(const GUIEventAdapter& ea, GUIActionAdapter& us)
 {
-    static float lx0         = 0;
-    static float ly0         = 0;
-    static float ry0         = 0;
-    float        angleScale  = 30.0;
-    float        zoomScale   = 1.0;
-    float        scrollScale = 0.2f;
+    static float lx0        = 0;
+    static float ly0        = 0;
+    static float ry0        = 0;
+    float        angleScale = 30.0;
 
     if (ea.getEventType() & GUIEventAdapter::PUSH)
     {
@@ -200,30 +219,30 @@ bool RubberbandManipulator::handle(const GUIEventAdapter& ea, GUIActionAdapter& 
         case (GUIEventAdapter::DRAG):
             if (ea.getButtonMask() == GUIEventAdapter::LEFT_MOUSE_BUTTON)
             {
-                _cameraAngle += angleScale * (ly0 - ea.getYnormalized());
-                if (_cameraAngle > 89)
+                cameraAngle_ += angleScale * (ly0 - ea.getYnormalized());
+                if (cameraAngle_ > 89)
                 {
-                    _cameraAngle = 89;
+                    cameraAngle_ = 89;
                 }
-                if (_cameraAngle < -89)
+                if (cameraAngle_ < -89)
                 {
-                    _cameraAngle = -89;
+                    cameraAngle_ = -89;
                 }
-                _cameraRotation += 2 * angleScale * (lx0 - ea.getXnormalized());
+                cameraRotation_ += 2 * angleScale * (lx0 - ea.getXnormalized());
 
                 lx0 = ea.getXnormalized();
                 ly0 = ea.getYnormalized();
             }
             if (ea.getButtonMask() == GUIEventAdapter::RIGHT_MOUSE_BUTTON)
             {
-                _cameraDistance -= zoomScale * _cameraDistance * (ry0 - ea.getYnormalized());
-                if (_cameraDistance < 1)
+                float zoomScale = 1.0;
+                zoom_distance_ -= zoomScale * GetCameraDistance() * (ry0 - ea.getYnormalized());
+                if (GetCameraDistance() < 1)
                 {
-                    _cameraDistance = 1;
+                    zoom_distance_ = 1.0 - cameraBaseDistance_;
                 }
                 ry0 = ea.getYnormalized();
             }
-            break;
             return false;
 
         case (GUIEventAdapter::SCROLL):
@@ -246,29 +265,32 @@ bool RubberbandManipulator::handle(const GUIEventAdapter& ea, GUIActionAdapter& 
                     scroll = 1;
                     break;
             }
-            _cameraDistance -= scrollScale * _cameraDistance * (static_cast<float>(scroll));
+            float scrollScale = 0.2f;
+            zoom_distance_ -= scrollScale * cameraBaseDistance_ * scroll;
             return false;
         }
         case (GUIEventAdapter::FRAME):
         {
-            static double old_frametime = 0;
-#if 1
-            double current_frame_time = ea.getTime();
-            double dt                 = current_frame_time - old_frametime;
-            old_frametime             = current_frame_time;
+            static double old_simulation_time = 0.0;
+            static double old_system_time     = 0.0;
 
-#else
-            double current_frame_time = elapsedTime();
-#endif
-
-            if (dt > 1)
+            double dt = minimum(time_ref_ - old_simulation_time, 0.1);
+            if (dt < 1e-6)
             {
-                dt = 0.1;
+                // If simulation time is not updated, use system time
+                dt = minimum(ea.getTime() - old_system_time, 0.1);
             }
 
+            old_simulation_time = time_ref_;
+            old_system_time     = ea.getTime();
+
             addEvent(ea);
+
             if (calcMovement(dt, false))
+            {
                 us.requestRedraw();
+            }
+
             return false;
         }
 
@@ -285,7 +307,7 @@ void RubberbandManipulator::computeNodeCenterAndRotation(osg::Vec3d& nodeCenter,
         nodeRotation = track_tx_->getAttitude();
         if (track_node_ != nullptr)
         {
-            nodeCenter = track_tx_->getPosition() + nodeRotation * track_node_->getBound().center();
+            nodeCenter = (track_tx_->getPosition() + origin_) + nodeRotation * track_node_->getBound().center();
         }
         else
         {
@@ -298,19 +320,23 @@ void RubberbandManipulator::computeNodeCenterAndRotation(osg::Vec3d& nodeCenter,
         {
             nodeCenter = track_node_->getBound().center();
         }
+        else
+        {
+            nodeCenter = explicitCenter_.GetRef();
+        }
     }
 }
 
 void RubberbandManipulator::flushEventStack()
 {
-    _ga_t1 = NULL;
-    _ga_t0 = NULL;
+    ga_t1_ = NULL;
+    ga_t0_ = NULL;
 }
 
 void RubberbandManipulator::addEvent(const GUIEventAdapter& ea)
 {
-    _ga_t1 = _ga_t0;
-    _ga_t0 = &ea;
+    ga_t1_ = ga_t0_;
+    ga_t0_ = &ea;
 }
 
 void RubberbandManipulator::setByMatrix(const osg::Matrixd& matrix)
@@ -320,24 +346,24 @@ void RubberbandManipulator::setByMatrix(const osg::Matrixd& matrix)
 
 osg::Matrixd RubberbandManipulator::getMatrix() const
 {
-    return osg::Matrixd::inverse(_matrix);
+    return osg::Matrixd::inverse(matrix_);
 }
 
 osg::Matrixd RubberbandManipulator::getInverseMatrix() const
 {
-    return _matrix;
+    return matrix_;
 }
 
 bool RubberbandManipulator::calcMovement(double dt, bool reset)
 {
-    osg::Vec3     up(0.0, 0.0, 1.0);
+    osg::Vec3d    up(0.0, 0.0, 1.0);
     osg::Vec3d    nodeCenter;
     osg::Quat     nodeRotation;
     osg::Matrix   cameraTargetRotation;
     float         springDC;
-    osg::Vec3     cameraTargetPosition(0, 0, 0);
-    osg::Vec3     cameraToTarget(0, 0, 0);
-    float         x, y, z;
+    osg::Vec3d    cameraTargetPosition(0, 0, 0);
+    osg::Vec3d    cameraToTarget(0, 0, 0);
+    double        x, y, z;
     CustomCamera* custom_cam = GetCurrentCustomCamera();
 
     relative_pos_.set(0.0, 0.0, 0.0);
@@ -345,30 +371,29 @@ bool RubberbandManipulator::calcMovement(double dt, bool reset)
     computeNodeCenterAndRotation(nodeCenter, nodeRotation);
     osg::Matrix nodeRot;
     nodeRot.makeRotate(nodeRotation);
-    osg::Vec3 nodeFocusPoint = osg::Vec3(NODE_CENTER_OFFSET_X, NODE_CENTER_OFFSET_Y, NODE_CENTER_OFFSET_Z) + nodeCenter;
+    osg::Vec3d nodeFocusPoint = osg::Vec3d(NODE_CENTER_OFFSET_X, NODE_CENTER_OFFSET_Y, NODE_CENTER_OFFSET_Z) + nodeCenter;
 
-    if (_mode == RB_MODE_TOP)
+    if (mode_ == RB_MODE_TOP)
     {
-        _cameraRotation = -90;
-        _cameraAngle    = 90;
-        x               = -_cameraDistance * (cosf(_cameraRotation * 0.0174533f) * cosf(_cameraAngle * 0.0174533f));
-        y               = -_cameraDistance * (sinf(_cameraRotation * 0.0174533f) * cosf(_cameraAngle * 0.0174533f));
-        relative_pos_.set(x, y, _cameraDistance);  // Put a small number to prevent undefined camera angle
+        cameraRotation_ = -90;
+        cameraAngle_    = 90;
+        x               = -GetCameraDistance() * (cosf(cameraRotation_ * 0.0174533f) * cosf(cameraAngle_ * 0.0174533f));
+        y               = -GetCameraDistance() * (sinf(cameraRotation_ * 0.0174533f) * cosf(cameraAngle_ * 0.0174533f));
+        relative_pos_.set(x, y, GetCameraDistance());  // Put a small number to prevent undefined camera angle
     }
-    else if (_mode == RB_MODE_RUBBER_BAND)
+    else if (mode_ == RB_MODE_RUBBER_BAND)
     {
-        relative_pos_.set(-_cameraDistance, 0.0, _cameraDistance * atan(_cameraAngle * 0.0174533f));
+        relative_pos_.set(-GetCameraDistance(), 0.0, GetCameraDistance() * atan(cameraAngle_ * 0.0174533f));
     }
-    else if (_mode == RB_MODE_DRIVER)
+    else if (mode_ == RB_MODE_DRIVER)
     {
-        _cameraRotation = 0;
-        _cameraAngle    = 0;
-        relative_pos_.set(1.0, 0.0, 0.0);
+        cameraRotation_ = 0;
+        cameraAngle_    = 0;
     }
-    else if (_mode >= RB_MODE_CUSTOM)
+    else if (mode_ >= RB_MODE_CUSTOM)
     {
-        _cameraRotation = 0.0;
-        _cameraAngle    = 0;
+        cameraRotation_ = 0.0;
+        cameraAngle_    = 0;
         if (custom_cam && !custom_cam->GetFixPos() && !custom_cam->GetFixRot())
         {
             relative_pos_.set(custom_cam->GetPos());
@@ -380,13 +405,13 @@ bool RubberbandManipulator::calcMovement(double dt, bool reset)
     }
     else
     {
-        if (_mode == RB_MODE_FIXED)
+        if (mode_ == RB_MODE_FIXED)
         {
-            _cameraRotation = 0;
+            cameraRotation_ = 0;
         }
-        x = -_cameraDistance * (cosf(_cameraRotation * 0.0174533f) * cosf(_cameraAngle * 0.0174533f));
-        y = -_cameraDistance * (sinf(_cameraRotation * 0.0174533f) * cosf(_cameraAngle * 0.0174533f));
-        z = _cameraDistance * sinf(_cameraAngle * 0.0174533f);
+        x = -GetCameraDistance() * (cosf(cameraRotation_ * 0.0174533f) * cosf(cameraAngle_ * 0.0174533f));
+        y = -GetCameraDistance() * (sinf(cameraRotation_ * 0.0174533f) * cosf(cameraAngle_ * 0.0174533f));
+        z = GetCameraDistance() * sinf(cameraAngle_ * 0.0174533f);
 
         relative_pos_.set(x, y, z);
     }
@@ -403,9 +428,9 @@ bool RubberbandManipulator::calcMovement(double dt, bool reset)
 
     if (reset)
     {
-        _eye = nodeFocusPoint + cameraTargetPosition;
-        cameraVel.set(0, 0, 0);
-        cameraAcc.set(0, 0, 0);
+        eye_ = nodeFocusPoint + cameraTargetPosition;
+        cameraVel_.set(0, 0, 0);
+        cameraAcc_.set(0, 0, 0);
     }
     else
     {
@@ -419,25 +444,25 @@ bool RubberbandManipulator::calcMovement(double dt, bool reset)
         }
 
         // Find the vector between target position and actual camera position
-        cameraToTarget = (nodeFocusPoint + cameraTargetPosition) - _eye;
+        cameraToTarget = (nodeFocusPoint + cameraTargetPosition) - eye_;
 
         // Update camera state
-        springDC  = 2 * sqrt(springFC);
-        cameraAcc = cameraToTarget * springFC - cameraVel * springDC;
-        cameraVel += cameraAcc * static_cast<float>(dt);
+        springDC   = 2 * sqrt(springFC);
+        cameraAcc_ = cameraToTarget * springFC - cameraVel_ * springDC;
+        cameraVel_ += cameraAcc_ * static_cast<float>(dt);
 
-        if (_mode == RB_MODE_FIXED || _mode == RB_MODE_ORBIT || _mode == RB_MODE_TOP || _mode == RB_MODE_DRIVER || _mode >= RB_MODE_CUSTOM)
+        if (mode_ == RB_MODE_FIXED || mode_ == RB_MODE_ORBIT || mode_ == RB_MODE_TOP || mode_ == RB_MODE_DRIVER || mode_ >= RB_MODE_CUSTOM)
         {
-            _eye = nodeFocusPoint + cameraTargetPosition;
+            eye_ = nodeFocusPoint + cameraTargetPosition;
         }
         else
         {
-            _eye += cameraVel * static_cast<float>(dt);
+            eye_ += cameraVel_ * static_cast<float>(dt);
         }
     }
 
     // Create the view matrix
-    if (_mode >= RB_MODE_CUSTOM && custom_cam && (custom_cam->GetFixPos() || custom_cam->GetFixRot()))
+    if (mode_ >= RB_MODE_CUSTOM && custom_cam && (custom_cam->GetFixPos() || custom_cam->GetFixRot()))
     {
         osg::Vec3 cam_pos = custom_cam->GetPos();
         osg::Vec3 cam_rot = custom_cam->GetRot();
@@ -459,24 +484,24 @@ bool RubberbandManipulator::calcMovement(double dt, bool reset)
 
             if (custom_cam->GetFixPos())
             {
-                _matrix = translate * localRotation;
+                matrix_ = translate * localRotation;
             }
             else
             {
                 // Find position relative focus object
                 // Camera transform is the inverse of focus object rotation and position
-                _matrix.makeRotate(nodeRotation.inverse());
+                matrix_.makeRotate(nodeRotation.inverse());
                 osg::Matrix node_trans = osg::Matrix::translate(-nodeCenter);
-                _matrix.preMult(node_trans);
-                _matrix = _matrix * translate * localRotation;
+                matrix_.preMult(node_trans);
+                matrix_ = matrix_ * translate * localRotation;
             }
         }
         else if (custom_cam->GetFixPos())
         {
-            _matrix.makeLookAt(cam_pos, nodeFocusPoint, osg::Vec3(0, 0, 1));
+            matrix_.makeLookAt(cam_pos, nodeFocusPoint, osg::Vec3(0, 0, 1));
         }
     }
-    else if (_mode == RB_MODE_DRIVER)
+    else if (mode_ == RB_MODE_DRIVER)
     {
         // Create a view matrix for driver position, or center Front Looking Camrera (FLC)
         osg::Matrix localTx(0.0,
@@ -497,21 +522,21 @@ bool RubberbandManipulator::calcMovement(double dt, bool reset)
                             1.0);
 
         // Camera transform is the inverse of focus object rotation and position
-        _matrix.makeRotate(nodeRotation.inverse());
+        matrix_.makeRotate(nodeRotation.inverse());
         osg::Matrix trans;
         trans.makeTranslate(-nodeCenter);
-        _matrix.preMult(trans);
+        matrix_.preMult(trans);
 
         // Combine driver and camera transform
-        _matrix = _matrix * localTx;
+        matrix_ = matrix_ * localTx;
     }
-    else if (_mode == RB_MODE_TOP)
+    else if (mode_ == RB_MODE_TOP)
     {
-        _matrix.makeLookAt(_eye, nodeFocusPoint, nodeRotation * osg::Vec3(0, -1, 0));
+        matrix_.makeLookAt(eye_, nodeFocusPoint, nodeRotation * osg::Vec3(0, -1, 0));
     }
     else
     {
-        _matrix.makeLookAt(_eye, nodeFocusPoint, up);
+        matrix_.makeLookAt(eye_, nodeFocusPoint, up);
     }
 
     return true;

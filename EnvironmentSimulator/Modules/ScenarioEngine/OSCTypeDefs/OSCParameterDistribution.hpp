@@ -46,19 +46,19 @@ namespace scenarioengine
         unsigned int GetNumPermutations();
         unsigned int GetNumParameters();
         void         Reset();
-        std::string  GetFilename()
+        std::string  GetFilename() const
         {
             return filename_;
         }
-
+        std::string GetScenarioFileName() const;
         // Returns current permutation index
-        int GetIndex()
+        int GetIndex() const
         {
             return index_;
         }
         int SetIndex(unsigned int index);
         int SetRequestedIndex(unsigned int index);
-        int GetRequestedIndex()
+        int GetRequestedIndex() const
         {
             return requested_index_;
         }
@@ -68,5 +68,6 @@ namespace scenarioengine
         std::string         GetParamValue(unsigned int param_index);
         std::string         AddInfoToFilename(std::string filename);
         std::string         AddInfoToFilepath(std::string filepath);
+        bool                IsParamDist = true;
     };
 }  // namespace scenarioengine

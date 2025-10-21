@@ -16,6 +16,7 @@
 #include "Controller.hpp"
 #include "pugixml.hpp"
 #include "Parameters.hpp"
+#include "VehiclePool.hpp"
 
 #define CONTROLLER_SUMO_TYPE_NAME "SumoController"
 
@@ -26,37 +27,32 @@ namespace scenarioengine
     {
     public:
         ControllerSumo(InitArgs* args);
+        ~ControllerSumo();
 
-        static const char* GetTypeNameStatic()
+        virtual const char* GetTypeName()
         {
             return CONTROLLER_SUMO_TYPE_NAME;
         }
-        virtual const char* GetTypeName()
-        {
-            return GetTypeNameStatic();
-        }
-        static int GetTypeStatic()
+        virtual int GetType()
         {
             return CONTROLLER_TYPE_SUMO;
         }
-        virtual int GetType()
-        {
-            return GetTypeStatic();
-        }
 
-        void Init();
-        void Step(double time);
-        void Activate(DomainActivation lateral, DomainActivation longitudinal);
+        void Step(double timeStep);
+        int  Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)]);
 
-        void SetSumoVehicle(Object* object);
+        void               SetSumoVehicle(Object* object);
+        static std::string SUMOVClass2OSCVehicleCategory(const std::string& vclass);
 
     private:
-        float              sumo_x_offset_;
-        float              sumo_y_offset_;
-        double             time_;
+        float              sumo_x_offset_ = 0.0f;
+        float              sumo_y_offset_ = 0.0f;
+        double             time_          = 0.0;
         pugi::xml_document docsumo_;
         std::string        model_filepath_;
-        Object*            template_vehicle_;
+        Object*            template_vehicle_ = nullptr;
+        VehiclePool        vehicle_pool_;
+        EntityScaleMode    scale_mode_ = EntityScaleMode::UNDEFINED;
     };
 
     Controller* InstantiateControllerSumo(void* args);

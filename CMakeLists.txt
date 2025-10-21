@@ -2,6 +2,11 @@ message(
     STATUS "CMake version: "
            ${CMAKE_VERSION})
 
+cmake_minimum_required(
+    VERSION 3.10 # include_guard command was introduced
+    # VERSION 3.11 for VS 2017 generator, 3.14 for VS 2019, 3.21 for VS 2022
+    FATAL_ERROR)
+
 # ############################# Project generate options ###########################################################
 
 project(
@@ -35,8 +40,9 @@ set(ENABLE_SANITIZERS
     CACHE BOOL
           "Enable sanitizers (Only valid for Linux and Mac OS)")
 
+# static code analysis not in works yet, need prep e.g. excluding external modules
 set(ENABLE_STATIC_ANALYSIS
-    ON
+    OFF
     CACHE BOOL
           "Enable CppCheck and clang-tidy")
 
@@ -44,6 +50,11 @@ set(ENABLE_INCLUDE_WHAT_YOU_USE
     ON
     CACHE BOOL
           "Enable iwyu")
+
+set(DOWNLOAD_EXTERNALS
+    ON
+    CACHE BOOL
+          "Download external packages")
 
 set(USE_OSG
     ON
@@ -75,23 +86,36 @@ set(USE_IMPLOT
     CACHE BOOL
           "If implot for real-time plotting should be compiled.")
 
+set(BUILD_ODRPLOT
+    ON
+    CACHE BOOL
+          "If odrplot should be compiled.")
+
+set(BUILD_REPLAYER
+    ON
+    CACHE BOOL
+          "If replayer should be compiled.")
+
+set(BUILD_EXAMPLES
+    ON
+    CACHE BOOL
+          "If examples should be compiled.")
+
 set(ESMINI_BUILD_VERSION
     "N/A - client build"
     CACHE STRING
           "Esmini CI Build Version")
 
-# ############################### Setting project rules ############################################################
+set(CMAKE_BUILD_TYPE
+    "Release"
+    CACHE STRING
+          "build mode")
+set(FMT_INSTALL
+    OFF
+    CACHE BOOL
+          "If FMT should be installed")
 
-if(WIN32)
-    cmake_minimum_required(
-        VERSION 3.7.1 # for cmake generator VisualStudio 2017 support
-        # VERSION 3.14   # for cmake generator VisualStudio 2019 support VERSION 3.19   # for cmake presets support
-        FATAL_ERROR)
-else()
-    cmake_minimum_required(
-        VERSION 2.8.12
-        FATAL_ERROR)
-endif()
+# ############################### Setting project rules ############################################################
 
 set_property(
     GLOBAL
@@ -140,13 +164,6 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/support/cmake/utils/set_folder.cmake)
 
 # ############################### Downloading cloud packages #########################################################
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/support/cmake/cloud/set_cloud_links.cmake)
-set_cloud_links()
-
-include(${CMAKE_CURRENT_SOURCE_DIR}/support/cmake/cloud/download.cmake)
-
-message(STATUS "Downloading dependencies...")
-
 if(USE_OSG)
     include(${CMAKE_CURRENT_SOURCE_DIR}/support/cmake/external/osg.cmake)
     set_osg_libs()
@@ -167,9 +184,26 @@ if(USE_IMPLOT)
     set_implot_libs()
 endif()
 
-# ############################### Compiling targets ##################################################################
+# ############################### Add submodules #####################################################################
 
-add_subdirectory(EnvironmentSimulator)
+set(YAML_LIBRARIES
+    yaml)
+set(FMT_LIBRARIES
+    fmt)
+set(CMAKE_POSITION_INDEPENDENT_CODE
+    ON)
+set(FMT_SHARED
+    OFF)
+
+if(LINUX)
+    set(FMT_LIBRARIES
+        ${FMT_LIBRARIES}
+        "-lstdc++fs")
+endif()
+
+add_subdirectory(externals/fmt)
+# target_compile_options( fmt PRIVATE -fPIC)
+# ############################### OTHERS #############################################################################
 
 # Add variables to global scope, e.g. when esmini is used as submodule
 set(EXTERNALS_PUGIXML_PATH
@@ -180,3 +214,15 @@ set(EXTERNALS_EXPR_PATH
     ${EXTERNALS_EXPR_PATH}
     CACHE INTERNAL
           "")
+set(EXTERNALS_YAML_PATH
+    ${EXTERNALS_YAML_PATH}
+    CACHE INTERNAL
+          "")
+set(EXTERNALS_FMT_PATH
+    ${EXTERNALS_FMT_PATH}
+    CACHE INTERNAL
+          "")
+
+# ############################### Compiling targets ##################################################################
+
+add_subdirectory(EnvironmentSimulator)

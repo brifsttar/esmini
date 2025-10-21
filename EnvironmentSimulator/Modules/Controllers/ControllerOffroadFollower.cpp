@@ -14,6 +14,7 @@
 #include "CommonMini.hpp"
 #include "Entities.hpp"
 #include "ScenarioGateway.hpp"
+#include "logger.hpp"
 
 #include <random>
 
@@ -42,7 +43,7 @@ ControllerOffroadFollower::ControllerOffroadFollower(InitArgs* args)
             follow_entity_ = entities_->GetObjectByName(follow_entity_str.c_str());
             if (follow_entity_ == nullptr)
             {
-                LOG("Failed to find followEntity %s", follow_entity_str.c_str());
+                LOG_ERROR("Failed to find followEntity {}", follow_entity_str);
             }
         }
 
@@ -111,7 +112,7 @@ void ControllerOffroadFollower::Step(double timeStep)
     Controller::Step(timeStep);
 }
 
-void ControllerOffroadFollower::Activate(DomainActivation lateral, DomainActivation longitudinal)
+int ControllerOffroadFollower::Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)])
 {
     if (object_)
     {
@@ -122,12 +123,11 @@ void ControllerOffroadFollower::Activate(DomainActivation lateral, DomainActivat
         vehicle_.SetMaxAcc(object_->GetMaxAcceleration());
         vehicle_.SetMaxDec(object_->GetMaxDeceleration());
         vehicle_.SetSteeringRate(steering_rate_);
+        object_->SetJunctionSelectorStrategy(roadmanager::Junction::JunctionStrategyType::SELECTOR_ANGLE);
+        object_->SetJunctionSelectorAngle(0.0);
     }
 
-    object_->SetJunctionSelectorStrategy(roadmanager::Junction::JunctionStrategyType::SELECTOR_ANGLE);
-    object_->SetJunctionSelectorAngle(0.0);
-
-    Controller::Activate(lateral, longitudinal);
+    return Controller::Activate(mode);
 }
 
 void ControllerOffroadFollower::ReportKeyEvent(int key, bool down)

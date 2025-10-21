@@ -1,0 +1,13 @@
+[submodule "test/OSC-ALKS-scenarios"]
+	path = test/OSC-ALKS-scenarios
+	url = https://github.com/asam-oss/OSC-ALKS-scenarios
+[submodule "externals/fmi2"]
+	path = externals/fmi2
+	url = https://github.com/modelica/fmi-standard.git
+[submodule "test/OSC-NCAP-scenarios"]
+	path = test/OSC-NCAP-scenarios
+	url = https://github.com/eknabevcc/OSC-NCAP-scenarios
+	branch = minor_modifications
+[submodule "externals/fmt"]
+	path = externals/fmt
+	url = https://github.com/fmtlib/fmt.git

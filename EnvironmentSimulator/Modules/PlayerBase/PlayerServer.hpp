@@ -59,7 +59,7 @@ namespace scenarioengine
     {
         int   id;  // id of object to perform action
         float offset;
-        float maxLateralAcc;     // 0 = distance, 1 = rate, 2 = time
+        float maxLateralAcc;
         int   transition_shape;  // 0 = cubic, 1 = linear, 2 = sinusoidal, 3 = step
     };
 
@@ -90,16 +90,22 @@ namespace scenarioengine
             player_ = player;
         }
         ~PlayerServer();
+        void Reset()
+        {
+            counter_ = 0;
+        }
 
         void InjectSpeedAction(SpeedActionStruct& action);
         void InjectLaneChangeAction(LaneChangeActionStruct& action);
         void InjectLaneOffsetAction(LaneOffsetActionStruct& action);
+        bool InjectedActionOngoing(int action_type = -1) const;
 
         int                                      AddAction(OSCAction* action);
-        void                                     DeleteAction(int index);
-        int                                      NumberOfActions();
+        void                                     DeleteAction(unsigned int index);
+        int                                      NumberOfActions() const;
         void                                     Step();
         std::string                              Type2Name(UDP_ACTION_TYPE type);
+        OSCAction::ActionType                    Type2OSCActionType(UDP_ACTION_TYPE type);
         std::vector<scenarioengine::OSCAction*>* GetInjectedActionsPtr()
         {
             return &action_;
@@ -111,6 +117,7 @@ namespace scenarioengine
     private:
         std::vector<OSCAction*> action_;
         ScenarioPlayer*         player_;
+        unsigned int            counter_ = 0;
     };
 
 }  // namespace scenarioengine

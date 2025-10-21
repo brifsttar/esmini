@@ -14,11 +14,21 @@ include(${CMAKE_SOURCE_DIR}/support/cmake/rule/enable_fpic.cmake)
 set(SOURCES
     CommonMini.cpp
     UDP.cpp
-    version.cpp)
+    version.cpp
+    logger.cpp
+    Config.cpp
+    ConfigParser.cpp
+    EnumConfig.cpp
+    ${EXTERNALS_YAML_PATH}/yaml.cpp)
 
 set(INCLUDES
     CommonMini.hpp
-    UDP.hpp)
+    UDP.hpp
+    logger.hpp
+    Config.hpp
+    ConfigParser.hpp
+    EnumConfig.hpp
+    ${EXTERNALS_YAML_PATH}/yaml.hpp)
 
 # ############################### Creating library ###################################################################
 
@@ -28,9 +38,28 @@ add_library(
     ${SOURCES}
     ${INCLUDES})
 
+target_include_directories(
+    ${TARGET}
+    PRIVATE project_options
+    PUBLIC ${EXTERNALS_YAML_INCLUDES}
+           ${EXTERNALS_FMT_INCLUDES})
+
 target_link_libraries(
     ${TARGET}
-    PRIVATE project_options)
+    PUBLIC ${FMT_LIBRARIES})
+
+if(NOT
+   MSVC)
+    target_link_libraries(
+        ${TARGET}
+        PRIVATE dl)
+endif(
+    NOT
+    MSVC)
+
+install(
+    TARGETS ${TARGET}
+    DESTINATION "${INSTALL_PATH}")
 
 disable_static_analysis(${TARGET})
 disable_iwyu(${TARGET})

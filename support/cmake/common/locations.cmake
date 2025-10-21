@@ -71,6 +71,10 @@ macro(set_project_external_paths)
         ${EXTERNALS_PATH}/sumo)
     set(EXTERNALS_IMPLOT_PATH
         ${EXTERNALS_PATH}/implot)
+    set(EXTERNALS_YAML_PATH
+        ${EXTERNALS_PATH}/yaml)
+    set(EXTERNALS_FMT_PATH
+        ${EXTERNALS_PATH}/fmt)
     set(MODELS_PATH
         ${RESOURCES_PATH}/models)
 
@@ -162,6 +166,11 @@ macro(set_project_includes)
         ${EXTERNALS_IMPLOT_OS_SPECIFIC_PATH}/include/imgui
         ${EXTERNALS_IMPLOT_OS_SPECIFIC_PATH}/include/imgui/backends
         ${EXTERNALS_IMPLOT_OS_SPECIFIC_PATH}/include/glfw)
+    set(EXTERNALS_YAML_INCLUDES
+        ${EXTERNALS_YAML_PATH})
+    set(EXTERNALS_FMT_INCLUDES
+        ${EXTERNALS_FMT_PATH}/include)
+
 
 endmacro()
 

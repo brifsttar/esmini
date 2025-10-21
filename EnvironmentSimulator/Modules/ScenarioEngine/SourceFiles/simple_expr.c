@@ -168,19 +168,31 @@ static struct expr_func user_funcs[] = {
 
 ExprReturnStruct eval_expr(const char* str)
 {
-    ExprReturnStruct     rs   = {EXPR_RETURN_UNDEFINED, NAN, {0, 0}};
+    ExprReturnStruct rs = {EXPR_RETURN_UNDEFINED, NAN, {0, 0}};
+
+    // Add a few constants as variables
     struct expr_var_list vars = {0};
-    struct expr*         e    = expr_create(str, strlen(str), &vars, user_funcs);
+    struct expr_var*     c0   = expr_add_var(&vars, "pi", 2);
+    c0->value                 = 3.14159265358979323846;
+    struct expr_var* c1       = expr_add_var(&vars, "e", 1);
+    c1->value                 = 2.718281828459045;
+    struct expr* e            = expr_create(str, strlen(str), &vars, user_funcs);
+
     if (e == 0 || e->type == OP_UNKNOWN)
     {
+        expr_destroy(e, &vars);
         return rs;
     }
     else if (e->type == OP_STR)
     {
         rs.type           = EXPR_RETURN_STRING;
         rs._double        = NAN;
-        rs._string.string = e->param.str.value;
-        rs._string.len    = e->param.str.len;
+        rs._string.string = malloc(e->param.str.len + 1);
+        if (rs._string.string != 0)
+        {
+            memcpy(rs._string.string, e->param.str.value, e->param.str.len + 1);
+            rs._string.len = e->param.str.len;
+        }
     }
     else
     {
@@ -192,7 +204,7 @@ ExprReturnStruct eval_expr(const char* str)
         }
     }
 
-    expr_destroy(e, 0);
+    expr_destroy(e, &vars);
 
     return rs;
 }

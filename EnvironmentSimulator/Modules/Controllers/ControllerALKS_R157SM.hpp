@@ -93,26 +93,26 @@ namespace scenarioengine
                 ScenarioType action          = ScenarioType::None;  // set if lane change in or out from ego lane detected
             };
 
-            Model(ModelType type, double reaction_time, double max_dec_, double max_range_);
+            Model(ModelType type, double reaction_time, double max_dec, double max_range);
             virtual ~Model() = default;
 
             void SetVehicle(Vehicle* vehicle)
             {
                 veh_ = vehicle;
             }
-            double GetReactionTime()
+            double GetReactionTime() const
             {
                 return rt_;
             }
-            double GetReactionTimeCounter()
+            double GetReactionTimeCounter() const
             {
                 return rt_counter_;
             }
-            double GetMaxDec()
+            double GetMaxDec() const
             {
                 return max_dec_;
             }
-            double GetMaxRange()
+            double GetMaxRange() const
             {
                 return max_range_;
             }
@@ -136,18 +136,17 @@ namespace scenarioengine
             {
                 return ModelTypeName[type];
             }
-            ModelType GetModelType()
+            ModelType GetModelType() const
             {
                 return type_;
             }
             void      SetModelMode(ModelMode mode, bool log = true);
-            ModelMode GetModelMode()
+            ModelMode GetModelMode() const
             {
                 return model_mode_;
             }
-            void         SetScenarioEngine(ScenarioEngine* scenario_engine);
             void         SetScenarioType(ScenarioType type);
-            ScenarioType GetScenarioType()
+            ScenarioType GetScenarioType() const
             {
                 return scenario_type_;
             }
@@ -155,7 +154,7 @@ namespace scenarioengine
             {
                 full_stop_ = full_stop;
             }
-            bool GetFullStop()
+            bool GetFullStop() const
             {
                 return full_stop_;
             }
@@ -163,13 +162,13 @@ namespace scenarioengine
             {
                 always_trig_on_scenario_ = value;
             }
-            bool GetAlwaysTrigOnScenario()
+            bool GetAlwaysTrigOnScenario() const
             {
                 return always_trig_on_scenario_;
             }
 
             // Returns new speed
-            double Step(double dt);
+            double Step(double timeStep);
 
             // Scan traffic and select object to focus on, if any
             int Detect();
@@ -200,7 +199,7 @@ namespace scenarioengine
                 return ModelType2Str(type_);
             }
 
-            int GetLogLevel()
+            int GetLogLevel() const
             {
                 return log_level_;
             }
@@ -240,9 +239,8 @@ namespace scenarioengine
             bool full_stop_;
             bool always_trig_on_scenario_;
 
-            const int       deltaLaneId[3] = {-1, 0, 1};
-            const double    g              = 9.8;
-            ScenarioEngine* scenario_engine_;
+            const int    deltaLaneId[3] = {-1, 0, 1};
+            const double g              = 9.8;
 
             virtual bool CheckPerceptionCutIn()
             {
@@ -351,7 +349,7 @@ namespace scenarioengine
 
             struct AEB
             {
-                AEB() : ttc_critical_aeb_(1.5)
+                AEB()
                 {
                     Reset();
                 }
@@ -361,8 +359,10 @@ namespace scenarioengine
                     active_ = false;
                 }
 
-                double ttc_critical_aeb_;
-                bool   active_;
+                double ttc_critical_aeb_ = 1.5;
+                double max_dec_          = 0.85 * 9.81;
+                bool   active_           = false;
+                bool   available_        = true;
             };
 
             class LateralDistTrigger
@@ -375,7 +375,7 @@ namespace scenarioengine
 
                 virtual ~LateralDistTrigger() = default;
 
-                bool Active()
+                bool Active() const
                 {
                     return active_;
                 }
@@ -395,7 +395,7 @@ namespace scenarioengine
                 {
                     return model_ ? model_->GetModelName() : "";
                 }
-                int GetLogLevel()
+                int GetLogLevel() const
                 {
                     return model_ ? model_->GetLogLevel() : 0;
                 }
@@ -451,7 +451,7 @@ namespace scenarioengine
             double ReactCritical() override;
             double MinDist() override;
             void   SetPhase(Phase phase);
-            Phase  GetPhase()
+            Phase  GetPhase() const
             {
                 return phase_;
             }
@@ -530,7 +530,7 @@ namespace scenarioengine
             {
                 pedestrian_risk_eval_time_ = value;
             }
-            double GetPedestrianRiskEvaluationTime()
+            double GetPedestrianRiskEvaluationTime() const
             {
                 return pedestrian_risk_eval_time_;
             }
@@ -583,7 +583,7 @@ namespace scenarioengine
                        double bl,
                        double margin_dist,
                        double margin_safe_dist);
-            double CFS(double dist, double speed_rear, double speed_lead, double rt, double br_min, double br_max, double ar);
+            double CFS(double dist, double speed_rear, double speed_lead, double rt, double br_min, double br_max, double acc);
 
             double min_jerk_;
             double br_min_;
@@ -596,35 +596,25 @@ namespace scenarioengine
             double pfs_;
         };
 
-        Model*    model_;
-        Entities* entities_;
+        Model* model_;
 
         ControllerALKS_R157SM(InitArgs* args);
         ~ControllerALKS_R157SM();
 
-        static const char* GetTypeNameStatic()
+        virtual const char* GetTypeName()
         {
             return CONTROLLER_ALKS_R157SM_TYPE_NAME;
         }
-        virtual const char* GetTypeName()
-        {
-            return GetTypeNameStatic();
-        }
-        static int GetTypeStatic()
-        {
-            return CONTROLLER_ALKS_R157SM;
-        }
         virtual int GetType()
         {
-            return GetTypeStatic();
+            return CONTROLLER_ALKS_R157SM;
         }
 
         void Init();
         void Step(double timeStep);
-        void Assign(Object* object);
-        void Activate(DomainActivation lateral, DomainActivation longitudinal);
+        void LinkObject(Object* object);
+        int  Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)]);
         void ReportKeyEvent(int key, bool down);
-        void SetScenarioEngine(ScenarioEngine* scenario_engine) override;
     };
 
     Controller* InstantiateControllerALKS_R157SM(void* args);

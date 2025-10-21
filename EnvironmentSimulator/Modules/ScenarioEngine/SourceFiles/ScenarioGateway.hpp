@@ -25,24 +25,24 @@ namespace scenarioengine
 
     struct ObjectInfoStruct
     {
-        int            id;
-        int            model_id;
-        std::string    model3d;
-        int            obj_type;      // 0=None, 1=Vehicle, 2=Pedestrian, 3=MiscObj (see Object::Type enum)
-        int            obj_category;  // sub type for vehicle, pedestrian and miscobj
-        int            obj_role;      // role for vehicle and pedestrian
-        int            ctrl_type;     // See Controller::Type enum
-        double         timeStamp;
-        char           name[NAME_LEN];
-        double         speed;
-        double         wheel_angle;       // Only used for vehicle
-        double         wheel_rot;         // Only used for vehicle
-        double         rear_axle_z_pos;   // z coordinate of the middle of rear axle under neutral load conditions
-        double         front_axle_x_pos;  // x coordinate of the middle of front axle under neutral load conditions
-        double         front_axle_z_pos;  // z coordinate of the middle of front axle under neutral load conditions
-        OSCBoundingBox boundingbox;
-        int            scaleMode;       // 0=None, 1=BoundingBoxToModel, 2=ModelToBoundingBox (see enum EntityScaleMode)
-        int            visibilityMask;  // bitmask according to Object::Visibility (1 = Graphics, 2 = Traffic, 4 = Sensors)
+        int                    id;
+        int                    model_id;
+        std::string            model3d;
+        int                    obj_type;      // 0=None, 1=Vehicle, 2=Pedestrian, 3=MiscObj (see Object::Type enum)
+        int                    obj_category;  // sub type for vehicle, pedestrian and miscobj
+        int                    obj_role;      // role for vehicle and pedestrian
+        int                    ctrl_type;     // See Controller::Type enum
+        double                 timeStamp;
+        char                   name[NAME_LEN];
+        double                 speed;
+        double                 rear_axle_z_pos;   // z coordinate of the middle of rear axle under neutral load conditions
+        double                 front_axle_x_pos;  // x coordinate of the middle of front axle under neutral load conditions
+        double                 front_axle_z_pos;  // z coordinate of the middle of front axle under neutral load conditions
+        OSCBoundingBox         boundingbox;
+        int                    scaleMode;         // 0=None, 1=BoundingBoxToModel, 2=ModelToBoundingBox (see enum EntityScaleMode)
+        int                    visibilityMask;    // bitmask according to Object::Visibility (1 = Graphics, 2 = Traffic, 4 = Sensors)
+        std::vector<WheelData> wheel_data;        // make room for maximum number of wheels
+        std::string            source_reference;  // object preperty with same name mapping to OSI "source_reference"
     };
 
     struct ObjectStateStruct
@@ -76,7 +76,7 @@ namespace scenarioengine
         float h;
         float p;
         float r;
-        int   roadId;
+        id_t  roadId;
         int   laneId;
         float offset;
         float t;
@@ -100,25 +100,26 @@ namespace scenarioengine
     {
     public:
         ObjectState();
-        ObjectState(int                    id,
-                    std::string            name,
-                    int                    obj_type,
-                    int                    obj_category,
-                    int                    obj_role,
-                    int                    model_id,
-                    std::string            model3d,
-                    int                    ctrl_type,
-                    OSCBoundingBox         boundingbox,
-                    int                    scaleMode,
-                    int                    visibilityMask,
-                    double                 timestamp,
-                    double                 speed,
-                    double                 wheel_angle,
-                    double                 wheel_rot,
-                    double                 rear_axle_z_pos,
-                    double                 front_axle_x_pos,
-                    double                 front_axle_z_pos,
-                    roadmanager::Position *pos);
+        ObjectState(int                          id,
+                    std::string                  name,
+                    int                          obj_type,
+                    int                          obj_category,
+                    int                          obj_role,
+                    int                          model_id,
+                    std::string                  model3d,
+                    int                          ctrl_type,
+                    OSCBoundingBox               boundingbox,
+                    int                          scaleMode,
+                    int                          visibilityMask,
+                    double                       timestamp,
+                    double                       speed,
+                    double                       wheel_angle,
+                    double                       wheel_rot,
+                    double                       rear_axle_z_pos,
+                    double                       front_axle_x_pos,
+                    double                       front_axle_z_pos,
+                    const roadmanager::Position *pos,
+                    std::string                  source_reference);
         ObjectState(int            id,
                     std::string    name,
                     int            obj_type,
@@ -155,7 +156,7 @@ namespace scenarioengine
                     double         wheel_angle,
                     double         wheel_rot,
                     double         rear_axle_z_pos,
-                    int            roadId,
+                    id_t           roadId,
                     int            laneId,
                     double         laneOffset,
                     double         s);
@@ -174,14 +175,14 @@ namespace scenarioengine
                     double         wheel_angle,
                     double         wheel_rot,
                     double         rear_axle_z_pos,
-                    int            roadId,
+                    id_t           roadId,
                     double         lateralOffset,
                     double         s);
 
         ObjectState(const ObjectState &)            = default;
         ObjectState &operator=(const ObjectState &) = default;
 
-        ObjectStateStruct getStruct()
+        ObjectStateStruct getStruct() const
         {
             return state_;
         }
@@ -223,7 +224,8 @@ namespace scenarioengine
                          double                 rear_axle_z_pos,
                          double                 front_axle_x_pos,
                          double                 front_axle_z_pos,
-                         roadmanager::Position *pos);
+                         roadmanager::Position *pos,
+                         std::string            source_reference);
 
         int reportObject(int            id,
                          std::string    name,
@@ -281,7 +283,7 @@ namespace scenarioengine
                          double         wheel_angle,
                          double         wheel_rot,
                          double         rear_axle_z_pos,
-                         int            roadId,
+                         id_t           roadId,
                          int            laneId,
                          double         laneOffset,
                          double         s);
@@ -301,13 +303,13 @@ namespace scenarioengine
                          double         wheel_angle,
                          double         wheel_rot,
                          double         rear_axle_z_pos,
-                         int            roadId,
+                         id_t           roadId,
                          double         lateralOffset,
                          double         s);
 
-        int updateObjectPos(int id, double timestamp, roadmanager::Position *pos);
-        int updateObjectRoadPos(int id, double timestamp, int roadId, double lateralOffset, double s);
-        int updateObjectLanePos(int id, double timestamp, int roadId, int laneId, double offset, double s);
+        int updateObjectPos(int id, double timestamp, const roadmanager::Position *pos);
+        int updateObjectRoadPos(int id, double timestamp, id_t roadId, double lateralOffset, double s);
+        int updateObjectLanePos(int id, double timestamp, id_t roadId, int laneId, double offset, double s);
         int updateObjectWorldPos(int id, double timestamp, double x, double y, double z, double h, double p, double r);
         int updateObjectWorldPosMode(int id, double timestamp, double x, double y, double z, double h, double p, double r, int mode);
         int updateObjectWorldPosXYH(int id, double timestamp, double x, double y, double h);
@@ -318,8 +320,12 @@ namespace scenarioengine
         int updateObjectAngularVel(int id, double timestamp, double h_rate, double p_rate, double r_rate);
         int updateObjectAngularAcc(int id, double timestamp, double h_acc, double p_acc, double r_acc);
         int updateObjectWheelAngle(int id, double timestamp, double wheelAngle);
+        int updateObjectLaneTypeSnapMask(int id, double timestamp, int laneTypeMask);
         int updateObjectWheelRotation(int id, double timestamp, double wheelRotation);
         int updateObjectVisibilityMask(int id, int visibilityMask);
+        int updateObjectControllerType(int id, int controllerType);
+        int updateObjectBoundingBox(int id, OSCBoundingBox bb);
+        int updateObjectWheelData(int id, std::vector<WheelData> wheel_data);
 
         /**
         Specify if and how position object will align to the road. The setting is done for individual components:
@@ -348,11 +354,11 @@ namespace scenarioengine
 
         void removeObject(int id);
         void removeObject(std::string name);
-        int  getNumberOfObjects()
+        int  getNumberOfObjects() const
         {
             return static_cast<int>(objectState_.size());
         }
-        ObjectState getObjectStateByIdx(int idx)
+        ObjectState getObjectStateByIdx(int idx) const
         {
             return *objectState_[static_cast<unsigned int>(idx)];
         }
@@ -361,7 +367,7 @@ namespace scenarioengine
             return objectState_[static_cast<unsigned int>(idx)].get();
         }
         ObjectState *getObjectStatePtrById(int id);
-        int          getObjectStateById(int idx, ObjectState &objState);
+        int          getObjectStateById(int id, ObjectState &objectState) const;
         void         WriteStatesToFile();
         int          RecordToFile(std::string filename, std::string odr_filename, std::string model_filename);
 

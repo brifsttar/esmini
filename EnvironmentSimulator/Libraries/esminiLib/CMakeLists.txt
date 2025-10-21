@@ -29,6 +29,23 @@ add_library(
     ${SOURCES}
     ${INCLUDES})
 
+# embed $origin (location of exe file) as execution dyn lib search paths
+set(RPATH_DIRS
+    "$ORIGIN")
+
+if(DYN_PROTOBUF)
+    # add OSI library folder to execution lib search paths
+    set(RPATH_DIRS
+        ${RPATH_DIRS}:${EXTERNALS_OSI_LIBRARY_PATH}/$<IF:$<CONFIG:Debug>,debug,release>)
+endif()
+
+set_target_properties(
+    ${TARGET_SHARED}
+    PROPERTIES BUILD_WITH_INSTALL_RPATH
+               true
+               INSTALL_RPATH
+               "${RPATH_DIRS}")
+
 add_library(
     ${TARGET_STATIC}
     STATIC
@@ -61,6 +78,7 @@ foreach(
                ${EXTERNALS_OSI_INCLUDES}
                ${EXTERNALS_OSG_INCLUDES}
                ${EXTERNALS_PUGIXML_PATH})
+    # ${EXTERNALS_FMT_INCLUDES})
 
     target_link_libraries(
         ${TARGET}
@@ -69,6 +87,7 @@ foreach(
                 CommonMini
                 Controllers
                 RoadManager
+                # ${FMT_LIBRARIES}
                 ${TIME_LIB}
                 ${SOCK_LIB})
 
@@ -76,6 +95,7 @@ foreach(
         target_link_libraries(
             ${TARGET}
             PRIVATE ViewerBase
+                    RoadGeom
                     ${OSG_LIBRARIES})
     endif()
 
@@ -103,7 +123,9 @@ install(
             ${TARGET_STATIC}
     DESTINATION "${INSTALL_PATH}")
 
-install(
-    TARGETS ${TARGET_SHARED}
-            ${TARGET_STATIC}
-    DESTINATION "${CODE_EXAMPLES_BIN_PATH}")
+if(BUILD_EXAMPLES)
+    install(
+        TARGETS ${TARGET_SHARED}
+                ${TARGET_STATIC}
+        DESTINATION "${CODE_EXAMPLES_BIN_PATH}")
+endif(BUILD_EXAMPLES)

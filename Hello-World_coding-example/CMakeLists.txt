@@ -5,10 +5,13 @@
 # (exact filename depending on platform) is available, either in this folder or in
 # the original location (relative this folder).
 
-set(TARGET esmini-player)
+cmake_minimum_required(VERSION 3.7.1)
 
-include_directories(. ${CMAKE_CURRENT_SOURCE_DIR}/../EnvironmentSimulator/Libraries/esminiLib)
-link_directories(. ${CMAKE_CURRENT_SOURCE_DIR}/../bin)
+set(TARGET esmini-player)
+set(LINK_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}/../bin)
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../EnvironmentSimulator/Libraries/esminiLib)
+link_directories(${LINK_DIRECTORIES})
 
 project(${TARGET})
 
@@ -16,5 +19,12 @@ project(${TARGET})
 # set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup")
 
 add_executable(${TARGET} main.cpp)
+
+# embed $origin (location of exe file) and link dirs as execution dyn lib search paths
+set_target_properties(${TARGET}
+     PROPERTIES
+     BUILD_WITH_INSTALL_RPATH true
+     INSTALL_RPATH "$ORIGIN:${LINK_DIRECTORIES}"
+)
 
 target_link_libraries(${TARGET} esminiLib)

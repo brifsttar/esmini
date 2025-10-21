@@ -24,6 +24,7 @@
 #include "osi_common.pb.h"
 #include "osi_trafficcommand.pb.h"
 #include "osi_trafficupdate.pb.h"
+#include "osi_version.pb.h"
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -48,6 +49,13 @@ public:
         StoryBoardElement::Transition transition;
     } TrafficCommandStateChange;
 
+    enum class OSIStaticReportMode
+    {
+        DEFAULT,
+        API,
+        API_AND_LOG,
+    };
+
     /**
     Creates and opens osi file
     @param filename Optional filename, including path. Set to 0 to use default.
@@ -66,9 +74,9 @@ public:
     */
     void FlushOSIFile();
     /**
-    Clears groundtruth osi
+    Decide how the static data should be handled during each frame
     */
-    int ClearOSIGroundTruth();
+    void SetOSIStaticReportMode(OSIStaticReportMode mode);
     /**
     Calls UpdateOSIStaticGroundTruth and UpdateOSIDynamicGroundTruth
     */
@@ -80,11 +88,11 @@ public:
     /**
     Fills up the osi message with dynamic GroundTruth
     */
-    int UpdateOSIDynamicGroundTruth(const std::vector<std::unique_ptr<ObjectState>>& objectState, bool reportGhost = true);
+    int UpdateOSIDynamicGroundTruth(const std::vector<std::unique_ptr<ObjectState>>& objectState);
     /**
     Fills up the osi message with Stationary Object from the OpenDRIVE description
     */
-    int UpdateOSIStationaryObjectODR(int road_id, roadmanager::RMObject* object);
+    int UpdateOSIStationaryObjectODR(roadmanager::RMObject* object);
     /**
     Fills up the osi message with Stationary Object
     */
@@ -117,6 +125,51 @@ public:
     Fills the Traffic Commands (scenario events)
     */
     int UpdateOSITrafficCommand();
+    /**
+    Crops the dynamic groundtruth around an object
+    */
+    void CropOSIDynamicGroundTruth(const int id, const double radius);
+
+    void ExcludeGhost()
+    {
+        report_ghost_ = false;
+        LOG_INFO("Excluding ghost from ground truth");
+    }
+
+    /**
+    Fills the Environment_condition
+    */
+    void UpdateEnvironment(const OSCEnvironment& environment);
+
+    /**
+    Fills the Weather_condition
+    */
+    void UpdateEnvironmentWeather(const OSCEnvironment& environment);
+
+    /**
+    Fills the fractional cloud state
+    */
+    void UpdateEnvironmentFractionalCloudState(const OSCEnvironment& environment);
+
+    /**
+    Fills the Sun
+    */
+    void UpdateEnvironmentSun(const OSCEnvironment& environment);
+
+    /**
+    Fills the TimeOfDay
+    */
+    void UpdateEnvironmentTimeOfDay(const OSCEnvironment& environment);
+
+    /**
+    Fills the Fog
+    */
+    void UpdateEnvironmentFog(const double visibility_range);
+
+    /**
+    Fills the precipitation
+    */
+    void UpdateEnvironmentPrecipitation(const double precipitation_intensity);
 
     std::vector<TrafficCommandStateChange> traffic_command_state_changes_;
 
@@ -140,40 +193,60 @@ public:
     const char*       GetOSITrafficCommandRaw();
     const char*       GetOSIRoadLane(const std::vector<std::unique_ptr<ObjectState>>& objectState, int* size, int object_id);
     const char*       GetOSIRoadLaneBoundary(int* size, int global_id);
-    void              GetOSILaneBoundaryIds(const std::vector<std::unique_ptr<ObjectState>>& objectState, std::vector<int>& ids, int object_id);
+    void              GetOSILaneBoundaryIds(const std::vector<std::unique_ptr<ObjectState>>& objectState, std::vector<id_t>& ids, int object_id);
     const char*       GetOSISensorDataRaw();
     osi3::SensorView* GetSensorView();
+    void              CheckDynamicTypeAndUpdate(const std::unique_ptr<ObjectState>& objectState);
     bool              IsCentralOSILane(int lane_idx);
-    int               GetLaneIdxfromIdOSI(int lane_id);
+    idx_t             GetLaneIdxfromIdOSI(id_t lane_id);
+    osi3::Lane*       GetOSILaneFromGlobalId(id_t lane_global_id);
     SE_SOCKET         OpenSocket(std::string ipaddr);
+    void              SerializeDynamicData();
+    void              SerializeDynamicAndStaticData();
     int               GetUDPClientStatus()
     {
         return (udp_client_ ? udp_client_->GetStatus() : -1);
     }
-    bool IsFileOpen()
+    bool IsFileOpen() const
     {
         return osi_file.is_open();
     }
     void ReportSensors(std::vector<ObjectSensor*> sensor);
-
-    void IncrementCounter()
-    {
-        osi_update_counter_++;
-    }
 
     void SetUpdated(bool value)
     {
         osi_updated_ = value;
     }
 
-    bool GetUpdated()
+    bool GetUpdated() const
     {
         return osi_updated_;
     }
 
-    int GetCounter()
+    void SetCounterPtr(int* counter)
     {
-        return osi_update_counter_;
+        osi_update_counter_ = counter;
+    }
+
+    int GetCounter() const
+    {
+        return osi_update_counter_ == nullptr ? -1 : *osi_update_counter_;
+    }
+
+    void UpdateCounterOffset()
+    {
+        counter_offset_ = GetCounter() + 1;  // Add 1, since counter is incremented before next OSI update
+    }
+
+    void SetOSIFrequency(int freq)
+    {
+        osi_freq_ = freq;
+        UpdateCounterOffset();
+    }
+
+    int GetOSIFrequency() const
+    {
+        return osi_freq_;
     }
 
     /**
@@ -181,20 +254,22 @@ public:
     @param nanoseconds Nano (1e-9) seconds since 1970-01-01 (epoch time)
     @return 0 if successful, -1 if not
     */
-    int  SetOSITimeStampExplicit(unsigned long long int nanoseconds);
-    bool IsTimeStampSetExplicit()
-    {
-        return nanosec_ != 0xffffffffffffffff;
-    }
+    int SetOSITimeStampExplicit(unsigned long long nanoseconds);
 
 private:
-    UDPClient*             udp_client_;
-    ScenarioEngine*        scenario_engine_;
-    unsigned long long int nanosec_;
-    std::ofstream          osi_file;
-    int                    osi_update_counter_;
-    std::string            stationary_model_reference;
-    void                   CreateMovingObjectFromSensorData(const osi3::SensorData& sd, int obj_nr);
-    void                   CreateLaneBoundaryFromSensordata(const osi3::SensorData& sd, int lane_boundary_nr);
-    bool                   osi_updated_ = false;
+    UDPClient*                          udp_client_;
+    ScenarioEngine*                     scenario_engine_;
+    std::ofstream                       osi_file;
+    int*                                osi_update_counter_ = nullptr;
+    int                                 counter_offset_     = 0;
+    int                                 osi_freq_           = 0;
+    std::string                         stationary_model_reference;
+    void                                CreateMovingObjectFromSensorData(const osi3::SensorData& sd, int obj_nr);
+    void                                CreateLaneBoundaryFromSensordata(const osi3::SensorData& sd, int lane_boundary_nr);
+    bool                                osi_updated_        = false;
+    bool                                osi_initialized_    = false;
+    bool                                report_ghost_       = true;
+    OSIStaticReportMode                 static_update_mode_ = OSIStaticReportMode::DEFAULT;
+    std::vector<std::pair<int, double>> osi_crop_           = {};       // id, radius
+    std::optional<int64_t>              environment_timestamp_offset_;  // Offset to apply to environment timestamp, in seconds
 };

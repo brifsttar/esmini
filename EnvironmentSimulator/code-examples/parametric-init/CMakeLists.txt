@@ -43,10 +43,19 @@ foreach(
 
     target_link_libraries(
         ${target}
-        PRIVATE esminiLib
+        PRIVATE project_options
+                esminiLib
                 CommonMini
                 RoadManager
                 ${TIME_LIB})
+
+    # embed $origin (location of exe file) and linked lib dirs as execution dyn lib search paths
+    set_target_properties(
+        ${target}
+        PROPERTIES BUILD_WITH_INSTALL_RPATH
+                   true
+                   INSTALL_RPATH
+                   $ORIGIN:${INSTALL_PATH})
 
     set_folder(
         ${target}

@@ -18,6 +18,7 @@
 #include "PlayerServer.hpp"
 #include "playerbase.hpp"
 #include "UDP.hpp"
+#include "logger.hpp"
 
 using namespace scenarioengine;
 
@@ -47,41 +48,40 @@ namespace scenarioengine
 
     int PlayerServer::AddAction(OSCAction *action)
     {
-        // add only if no action of the same type is already running
-        for (size_t i = 0; i < action_.size(); i++)
+        LOG_INFO("Adding action {}", action->GetName());
+
+        // abort any action of same type and object
+        for (auto &a : action_)
         {
-            if (action_[i]->type_ == action->type_)
+            if (a->action_type_ == action->action_type_ &&
+                ((a->GetBaseType() != OSCAction::BaseType::PRIVATE) ||
+                 (static_cast<OSCPrivateAction *>(a)->object_ == static_cast<OSCPrivateAction *>(action)->object_)))
             {
-                if (action->base_type_ == OSCAction::BaseType::PRIVATE &&
-                    ((reinterpret_cast<scenarioengine::OSCPrivateAction *>(action_[i]))->object_ ==
-                     (reinterpret_cast<scenarioengine::OSCPrivateAction *>(action))->object_))
-                {
-                    LOG("UDP action of type %s already ongoing for object %d / %s. Skipping UDP %s action.",
-                        action->Type2Str().c_str(),
-                        (reinterpret_cast<scenarioengine::OSCPrivateAction *>(action))->object_->GetId(),
-                        (reinterpret_cast<scenarioengine::OSCPrivateAction *>(action))->object_->GetName().c_str(),
-                        action_[i]->GetName().c_str());
-                }
-                else
-                {
-                    LOG("UDP action of type %s already ongoing. Skipping UDP %s action.", action->Type2Str().c_str(), action_[i]->GetName().c_str());
-                }
-                return -1;
+                LOG_WARN("Action {} of type {} already ongoing{}, stopping it",
+                         a->GetName(),
+                         a->Type2Str(),
+                         a->GetBaseType() == OSCAction::BaseType::PRIVATE ? (" for " + static_cast<OSCPrivateAction *>(a)->object_->GetName()) : "");
+                a->End();
             }
         }
 
-        LOG("Adding action %s", action->GetName().c_str());
         action_.push_back(action);
+
+        counter_++;
 
         return 0;
     }
 
-    void PlayerServer::DeleteAction(int index)
+    void PlayerServer::DeleteAction(unsigned int index)
     {
+        if (index < action_.size())
+        {
+            delete action_[index];
+        }
         action_.erase(action_.begin() + index);
     }
 
-    int PlayerServer::NumberOfActions()
+    int PlayerServer::NumberOfActions() const
     {
         return static_cast<int>(action_.size());
     }
@@ -92,8 +92,8 @@ namespace scenarioengine
         {
             if (action_[i]->GetCurrentState() == OSCAction::State::COMPLETE)
             {
-                LOG("UDP action %s finished", action_[i]->GetName().c_str());
-                DeleteAction(static_cast<int>(i));
+                LOG_INFO("Injected action {} finished", action_[i]->GetName().c_str());
+                DeleteAction(static_cast<unsigned int>(i));
                 i++;
             }
         }
@@ -114,6 +114,21 @@ namespace scenarioengine
         }
     }
 
+    OSCAction::ActionType PlayerServer::Type2OSCActionType(UDP_ACTION_TYPE type)
+    {
+        switch (type)
+        {
+            case UDP_ACTION_TYPE::LANE_CHANGE_ACTION:
+                return OSCAction::ActionType::LAT_LANE_CHANGE;
+            case UDP_ACTION_TYPE::LANE_OFFSET_ACTION:
+                return OSCAction::ActionType::LAT_LANE_OFFSET;
+            case UDP_ACTION_TYPE::SPEED_ACTION:
+                return OSCAction::ActionType::LONG_SPEED;
+            default:
+                return OSCAction::ActionType::UNDEFINED;
+        }
+    }
+
     static void SetTransitionShape(OSCPrivateAction::TransitionDynamics &t, int shape)
     {
         switch (shape)
@@ -131,7 +146,7 @@ namespace scenarioengine
                 t.shape_ = OSCPrivateAction::DynamicsShape::STEP;
                 break;
             default:
-                LOG("Unsupported transition shape: %d", shape);
+                LOG_ERROR("Unsupported transition shape: {}", shape);
         }
     }
 
@@ -149,14 +164,14 @@ namespace scenarioengine
                 t.dimension_ = OSCPrivateAction::DynamicsDimension::TIME;
                 break;
             default:
-                LOG("Unsupported transition dimension: %d", dimension);
+                LOG_ERROR("Unsupported transition dimension: {}", dimension);
         }
     }
 
     void PlayerServer::InjectSpeedAction(SpeedActionStruct &action)
     {
         LongSpeedAction *a = new LongSpeedAction(nullptr);
-        a->SetName("SpeedAction");
+        a->SetName("SpeedAction_" + std::to_string(counter_));
         a->object_ = player_->scenarioEngine->entities_.GetObjectById(action.id);
 
         SetTransitionShape(a->transition_, action.transition_shape);
@@ -174,7 +189,7 @@ namespace scenarioengine
     void PlayerServer::InjectLaneChangeAction(LaneChangeActionStruct &action)
     {
         LatLaneChangeAction *a = new LatLaneChangeAction(nullptr);
-        a->SetName("LaneChangeAction");
+        a->SetName("LaneChangeAction_" + std::to_string(counter_));
         a->object_ = player_->scenarioEngine->entities_.GetObjectById(action.id);
 
         SetTransitionShape(a->transition_, action.transition_shape);
@@ -186,14 +201,14 @@ namespace scenarioengine
         {
             LatLaneChangeAction::TargetAbsolute *target = new LatLaneChangeAction::TargetAbsolute;
             target->value_                              = action.target;
-            a->target_.reset(target);
+            a->target_                                  = target;
         }
         else
         {
             LatLaneChangeAction::TargetRelative *target = new LatLaneChangeAction::TargetRelative;
             target->object_                             = a->object_;
             target->value_                              = action.target;
-            a->target_.reset(target);
+            a->target_                                  = target;
         }
 
         AddAction(a);
@@ -202,7 +217,7 @@ namespace scenarioengine
     void PlayerServer::InjectLaneOffsetAction(LaneOffsetActionStruct &action)
     {
         LatLaneOffsetAction *a = new LatLaneOffsetAction(nullptr);
-        a->SetName("LaneOffsetAction");
+        a->SetName("LaneOffsetAction_" + std::to_string(counter_));
         a->object_ = player_->scenarioEngine->entities_.GetObjectById(action.id);
 
         SetTransitionShape(a->transition_, action.transition_shape);
@@ -216,6 +231,26 @@ namespace scenarioengine
         AddAction(a);
     }
 
+    bool PlayerServer::InjectedActionOngoing(int action_type) const
+    {
+        if (action_type < 0)
+        {
+            return action_.size() > 0;
+        }
+        else
+        {
+            for (size_t i = 0; i < action_.size(); i++)
+            {
+                if (action_[i]->action_type_ == static_cast<OSCAction::ActionType>(action_type))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     static void ServerThread(void *args)
     {
         ScenarioPlayer           *player  = reinterpret_cast<ScenarioPlayer *>(args);
@@ -226,13 +261,11 @@ namespace scenarioengine
         UDPServer *udpServer = new UDPServer(ESMINI_DEFAULT_ACTION_INPORT);
         if (udpServer->GetStatus() != 0)
         {
-            LOG("PlayerServer: Failed to open UDP socket");
+            LOG_ERROR("PlayerServer: Failed to open UDP socket");
             return;
         }
 
-        LOG("PlayerServer listening on port %d", ESMINI_DEFAULT_ACTION_INPORT);
-
-        player->scenarioEngine->SetInjectedActionsPtr(player->player_server_->GetInjectedActionsPtr());
+        LOG_INFO("PlayerServer listening on port {}", ESMINI_DEFAULT_ACTION_INPORT);
 
         state = SERV_RUNNING;
 
@@ -274,7 +307,7 @@ namespace scenarioengine
                         player->SetQuitRequest(true);
                         break;
                     default:
-                        LOG("Action of type %d not supported", buf.action_type);
+                        LOG_ERROR("Action of type {} not supported", buf.action_type);
                 }
             }
         }
@@ -306,6 +339,8 @@ namespace scenarioengine
 
         // Wait/block until UDP server closed gracefully
         thread.Wait();
+
+        Reset();
     }
 
 }  // namespace scenarioengine

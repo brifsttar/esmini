@@ -26,7 +26,6 @@ Object::Object(Type type)
       speed_(0),
       wheel_angle_(0),
       wheel_rot_(0),
-      model3d_(""),
       ghost_trail_s_(0),
       trail_follow_index_(0),
       odometer_(0),
@@ -34,7 +33,6 @@ Object::Object(Type type)
       off_road_timestamp_(0.0),
       stand_still_timestamp_(0),
       reset_(0),
-      controller_(0),
       headstart_time_(0),
       ghost_(0),
       ghost_Ego_(0),
@@ -44,7 +42,9 @@ Object::Object(Type type)
       nextJunctionSelectorAngle_(0.0),
       scaleMode_(EntityScaleMode::NONE),
       dirty_(0),
-      is_active_(false)
+      is_active_(false),
+      model3d_full_path_(""),
+      source_reference_("")
 {
     sensor_pos_[0] = 0;
     sensor_pos_[1] = 0;
@@ -58,6 +58,7 @@ Object::Object(Type type)
     state_old.h_rate = 0;
 
     trail_closest_pos_ = {0, 0, 0, 0, 0, 0, false};
+    trail_.SetInterpolationMode(PolyLineBase::InterpolationMode::INTERPOLATE_SEGMENT);
 
     // initialize override vector
     for (int i = 0; i < OVERRIDE_NR_TYPES; i++)
@@ -74,8 +75,9 @@ Object::Object(Type type)
         SetJunctionSelectorAngleRandom();
     }
 
-    front_axle_ = {0.0, 0.0, 0.0, 0.0, 0.0};
-    rear_axle_  = {0.0, 0.0, 0.0, 0.0, 0.0};
+    front_axle_       = {0.0, 0.0, 0.0, 0.0, 0.0};
+    rear_axle_        = {0.0, 0.0, 0.0, 0.0, 0.0};
+    model3d_x_offset_ = 0.0;
 }
 
 void Object::SetEndOfRoad(bool state, double time)
@@ -119,85 +121,184 @@ Position::ReturnCode Object::MoveAlongS(double ds, bool actualDistance)
     return pos_.MoveAlongS(ds, 0.0, GetJunctionSelectorAngle(), actualDistance, Position::MoveDirectionMode::HEADING_DIRECTION, true);
 }
 
-int Object::GetAssignedControllerType()
+void Object::AssignController(Controller* controller)
 {
-    if (controller_)
-    {
-        return controller_->GetType();
-    }
-    else
-    {
-        // Report 0 (DefaultController) if not assigned or not activated on any domain
-        return Controller::Type::CONTROLLER_TYPE_DEFAULT;
-    }
+    // if already assigned, first remove it from list of assigned controllers
+    controllers_.erase(std::remove(controllers_.begin(), controllers_.end(), controller), controllers_.end());
+
+    // add assigned controller to the end of list, which indicates the last assigned controller
+    controllers_.push_back(controller);
 }
 
-int Object::GetActivatedControllerType()
+void Object::UnassignController(Controller* controller)
 {
-    if (controller_ && (controller_->GetDomain() != ControlDomains::DOMAIN_NONE))
+    std::vector<Controller*>::iterator itr =
+        std::find_if(controllers_.begin(), controllers_.end(), [&controller](const Controller* ctrl) { return ctrl == controller; });
+    if (itr != controllers_.end())
     {
-        return controller_->GetType();
+        controller->UnlinkObject();
+        controller->Deactivate();
     }
-    else
+    controllers_.erase(std::remove(controllers_.begin(), controllers_.end(), controller), controllers_.end());
+}
+
+void Object::UnassignControllers()
+{
+    for (auto ctrl : controllers_)
     {
-        if (IsGhost())
+        ctrl->Deactivate();
+    }
+    controllers_.clear();
+}
+
+bool Object::IsControllerActiveOnDomains(unsigned int domainMask, Controller::Type type)
+{
+    for (auto ctrl : controllers_)
+    {
+        if (ctrl->IsActiveOnDomains(domainMask))
         {
-            return Controller::Type::GHOST_RESERVED_TYPE;
+            if (type == Controller::Type::CONTROLLER_TYPE_UNDEFINED || ctrl->GetType() == ctrl->GetType())
+            {
+                return true;
+            }
         }
-        else
+    }
+
+    return false;
+}
+
+bool Object::IsControllerActiveOnAnyOfDomains(unsigned int domainMask, Controller::Type type)
+{
+    for (auto ctrl : controllers_)
+    {
+        if (ctrl->IsActiveOnAnyOfDomains(domainMask))
         {
-            // Report 0 if not assigned or not activated on any domain
-            return 0;
+            if (type == Controller::Type::CONTROLLER_TYPE_UNDEFINED || ctrl->GetType() == ctrl->GetType())
+            {
+                return true;
+            }
         }
     }
+
+    return false;
 }
 
-bool Object::IsControllerActiveOnDomains(ControlDomains domainMask)
+bool Object::IsControllerModeOnDomains(ControlOperationMode mode, unsigned int domainMask, Controller::Type type)
 {
-    if (controller_)
+    for (auto ctrl : controllers_)
     {
-        return controller_->IsActiveOnDomains(domainMask);
+        if (ctrl->IsActiveOnDomains(domainMask))
+        {
+            if (ctrl->GetMode() == mode && (type == Controller::Type::CONTROLLER_TYPE_UNDEFINED || ctrl->GetType() == ctrl->GetType()))
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
     }
-    else
-    {
-        return false;
-    }
+
+    return false;
 }
 
-bool Object::IsControllerActiveOnAnyOfDomains(ControlDomains domainMask)
+bool Object::IsControllerModeOnAnyOfDomains(ControlOperationMode mode, unsigned int domainMask, Controller::Type type)
 {
-    if (controller_)
+    for (auto ctrl : controllers_)
     {
-        return controller_->IsActiveOnAnyOfDomains(domainMask);
+        if (ctrl->IsActiveOnAnyOfDomains(domainMask))
+        {
+            if (ctrl->GetMode() == mode && (type == Controller::Type::CONTROLLER_TYPE_UNDEFINED || ctrl->GetType() == ctrl->GetType()))
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
     }
-    else
-    {
-        return false;
-    }
+
+    return false;
 }
 
-bool Object::IsControllerActive()
+scenarioengine::Controller* scenarioengine::Object::GetAssignedControllerOftype(Controller::Type type)
 {
-    if (controller_)
+    std::vector<Controller*>::iterator itr =
+        std::find_if(controllers_.begin(), controllers_.end(), [&type](Controller* ctrl) { return ctrl->GetType() == type; });
+    if (itr != controllers_.end())
     {
-        return controller_->IsActive();
+        return *itr;
     }
-    else
-    {
-        return false;
-    }
+    return nullptr;
 }
 
-int Object::GetControllerMode()
+bool scenarioengine::Object::IsAnyAssignedControllerOfType(Controller::Type type)
 {
-    if (controller_)
+    std::vector<Controller*>::iterator itr =
+        std::find_if(controllers_.begin(), controllers_.end(), [&type](Controller* ctrl) { return ctrl->GetType() == type; });
+    if (itr != controllers_.end())
     {
-        return controller_->GetMode();
+        return true;
     }
-    else
+    return false;
+}
+
+bool Object::IsAnyActiveControllerOfType(Controller::Type type)
+{
+    std::vector<Controller*>::iterator itr =
+        std::find_if(controllers_.begin(), controllers_.end(), [&type](Controller* ctrl) { return ctrl->IsActive() && ctrl->GetType() == type; });
+    if (itr != controllers_.end())
     {
-        return 0;  // default
+        return true;
     }
+    return false;
+}
+
+scenarioengine::Controller* Object::GetControllerActiveOnDomainMask(ControlDomainMasks domain_mask)
+{
+    std::vector<Controller*>::iterator itr =
+        std::find_if(controllers_.begin(),
+                     controllers_.end(),
+                     [&domain_mask](Controller* ctrl) { return ctrl->IsActiveOnDomains(static_cast<unsigned int>(domain_mask)); });
+    if (itr != controllers_.end())
+    {
+        return *itr;
+    }
+    return nullptr;
+}
+
+scenarioengine::Controller* Object::GetControllerActiveOnDomain(ControlDomains domain)
+{
+    return GetControllerActiveOnDomainMask(ControlDomain2DomainMask(domain));
+}
+
+scenarioengine::Controller::Type Object::GetControllerTypeActiveOnDomain(ControlDomains domain)
+{
+    scenarioengine::Controller* ctrl = GetControllerActiveOnDomain(domain);
+
+    if (ctrl != nullptr)
+    {
+        return static_cast<Controller::Type>(ctrl->GetType());
+    }
+    else if (IsGhost())
+    {
+        return Controller::Type::GHOST_RESERVED_TYPE;
+    }
+
+    return Controller::Type::CONTROLLER_TYPE_DEFAULT;
+}
+
+scenarioengine::Controller* Object::GetController(std::string name)
+{
+    std::vector<Controller*>::iterator itr =
+        std::find_if(controllers_.begin(), controllers_.end(), [&name](Controller* ctrl) { return ctrl->GetName() == name; });
+    if (itr != controllers_.end())
+    {
+        return *itr;
+    }
+    return nullptr;
 }
 
 void Object::SetVisibilityMask(int mask)
@@ -374,7 +475,7 @@ bool Object::CollisionAndRelativeDistLatLong(Object* target, double* distLat, do
                 gap = true;
                 if (distLong == nullptr && distLat == nullptr)
                 {
-                    return !gap;
+                    return false;
                 }
                 else
                 {
@@ -663,13 +764,13 @@ int Object::FreeSpaceDistancePointRoadLane(double x, double y, double* latDist, 
 
     if (cs != CoordinateSystem::CS_LANE && cs != CoordinateSystem::CS_ROAD)
     {
-        LOG("Unexpected coordinateSystem (%d). %d or %d expected.", CoordinateSystem::CS_LANE, CoordinateSystem::CS_ROAD);
+        LOG_ERROR("Unexpected coordinateSystem ({}). {} or {} expected.", CoordinateSystem::CS_LANE, CoordinateSystem::CS_ROAD);
         return -1;
     }
 
     if (cs == CoordinateSystem::CS_LANE)
     {
-        LOG("freespace LANE coordinateSystem not supported yet, falling back to freespace ROAD");
+        LOG_WARN("freespace LANE coordinateSystem not supported yet, falling back to freespace ROAD");
         cs = CoordinateSystem::CS_ROAD;
     }
 
@@ -766,7 +867,7 @@ int Object::FreeSpaceDistanceObjectRoadLane(Object* target, PositionDiff* posDif
 {
     if (posDiff == nullptr)
     {
-        LOG("FreeSpaceDistanceObjectRoadLane: PositionDiff is NULL");
+        LOG_ERROR("FreeSpaceDistanceObjectRoadLane: PositionDiff is NULL");
         return -1;
     }
 
@@ -785,13 +886,13 @@ int Object::FreeSpaceDistanceObjectRoadLane(Object* target, PositionDiff* posDif
 
     if (cs != CoordinateSystem::CS_LANE && cs != CoordinateSystem::CS_ROAD)
     {
-        LOG("Unexpected coordinateSystem (%d). %d or %d expected.", CoordinateSystem::CS_LANE, CoordinateSystem::CS_ROAD);
+        LOG_ERROR("Unexpected coordinateSystem ({}). {} or {} expected.", CoordinateSystem::CS_LANE, CoordinateSystem::CS_ROAD);
         return -1;
     }
 
     if (cs == CoordinateSystem::CS_LANE)
     {
-        LOG("freespace LANE coordinateSystem not supported yet, falling back to freespace ROAD");
+        LOG_WARN("freespace LANE coordinateSystem not supported yet, falling back to freespace ROAD");
         cs = CoordinateSystem::CS_ROAD;
     }
 
@@ -925,27 +1026,112 @@ int Object::Distance(Object*                           target,
             relDistType == RelativeDistanceType::REL_DIST_CARTESIAN)
         {
             // Get Cartesian/Euclidian distance
-            dist = FreeSpaceDistance(target, &latDist, &longDist);
+
+            // check objects and any trailers for minimum distance
+            int     iterations       = 0;
+            Object* pivot_obj        = this;
+            Object* target_obj       = target;
+            Object* target_front_obj = target_obj;
+            struct
+            {
+                double dist;
+                double lat_dist;
+                double long_dist;
+            } candidate_info = {LARGE_NUMBER, LARGE_NUMBER, LARGE_NUMBER};
+
+            // start measuring from frontmost towing vehicle
+            while (pivot_obj->TowVehicle())
+            {
+                pivot_obj = pivot_obj->TowVehicle();
+            }
+            while (target_obj->TowVehicle())
+            {
+                target_front_obj = target_front_obj->TowVehicle();
+            }
+
+            while (pivot_obj && iterations < 100 && candidate_info.dist > 0.0)
+            {
+                target_obj = target_front_obj;
+                while (target_obj && iterations++ < 100 && fabs(candidate_info.dist) > 0.0)
+                {
+                    dist = pivot_obj->FreeSpaceDistance(target_obj, &latDist, &longDist);
+                    if (fabs(dist) < fabs(candidate_info.dist))
+                    {
+                        candidate_info.dist      = dist;
+                        candidate_info.lat_dist  = latDist;
+                        candidate_info.long_dist = longDist;
+                    }
+                    target_obj = target_obj->TrailerVehicle();
+                }
+                pivot_obj = pivot_obj->TrailerVehicle();
+            }
 
             // sign indicates target being in front (+) or behind (-)
-            dist *= SIGN(longDist);
+            dist = candidate_info.dist * SIGN(candidate_info.long_dist);
 
             if (cs == roadmanager::CoordinateSystem::CS_ENTITY)
             {
                 if (relDistType == roadmanager::RelativeDistanceType::REL_DIST_LATERAL)
                 {
-                    dist = latDist;
+                    dist = candidate_info.lat_dist;
                 }
                 else if (relDistType == roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL)
                 {
-                    dist = longDist;
+                    dist = candidate_info.long_dist;
                 }
             }
         }
         else if (cs == CoordinateSystem::CS_ROAD || cs == CoordinateSystem::CS_LANE)
         {
             roadmanager::PositionDiff pos_diff;
-            if (FreeSpaceDistanceObjectRoadLane(target, &pos_diff, cs) != 0)
+
+            // check objects and any trailers for minimum distance
+            int     iterations       = 0;
+            Object* pivot_obj        = this;
+            Object* target_obj       = target;
+            Object* target_front_obj = target_obj;
+            struct
+            {
+                int                       return_value = -1;
+                roadmanager::PositionDiff pos_diff     = {LARGE_NUMBER, LARGE_NUMBER, 0, 0.0, 0.0, false, false};
+            } candidate_info;
+
+            // start measuring from frontmost towing vehicle
+            while (pivot_obj->TowVehicle())
+            {
+                pivot_obj = pivot_obj->TowVehicle();
+            }
+            while (target_obj->TowVehicle())
+            {
+                target_front_obj = target_front_obj->TowVehicle();
+            }
+
+            while (pivot_obj && iterations < 100 &&
+                   ((relDistType == RelativeDistanceType::REL_DIST_LATERAL && fabs(candidate_info.pos_diff.dt) > 0.0) ||
+                    (relDistType == RelativeDistanceType::REL_DIST_LONGITUDINAL && fabs(candidate_info.pos_diff.ds) > 0.0)))
+            {
+                target_obj = target_front_obj;
+
+                while (target_obj && ++iterations < 100 &&
+                       ((relDistType == RelativeDistanceType::REL_DIST_LATERAL && fabs(candidate_info.pos_diff.dt) > 0.0) ||
+                        (relDistType == RelativeDistanceType::REL_DIST_LONGITUDINAL && fabs(candidate_info.pos_diff.ds) > 0.0)))
+                {
+                    int return_value = pivot_obj->FreeSpaceDistanceObjectRoadLane(target, &pos_diff, cs);
+                    if (return_value == 0)
+                    {
+                        if ((relDistType == RelativeDistanceType::REL_DIST_LATERAL && fabs(pos_diff.dt) < fabs(candidate_info.pos_diff.dt)) ||
+                            (relDistType == RelativeDistanceType::REL_DIST_LONGITUDINAL && fabs(pos_diff.ds) < fabs(candidate_info.pos_diff.ds)))
+                        {
+                            candidate_info.return_value = return_value;
+                            candidate_info.pos_diff     = pos_diff;
+                        }
+                    }
+                    target_obj = target_obj->TrailerVehicle();
+                }
+                pivot_obj = pivot_obj->TrailerVehicle();
+            }
+
+            if (candidate_info.return_value != 0)
             {
                 return -1;
             }
@@ -953,22 +1139,22 @@ int Object::Distance(Object*                           target,
             {
                 if (relDistType == RelativeDistanceType::REL_DIST_LATERAL)
                 {
-                    dist = pos_diff.dt;
+                    dist = candidate_info.pos_diff.dt;
                 }
                 else if (relDistType == RelativeDistanceType::REL_DIST_LONGITUDINAL)
                 {
-                    dist = pos_diff.ds;
+                    dist = candidate_info.pos_diff.ds;
                 }
                 else
                 {
-                    LOG("Unexpected relativeDistanceType: %d", relDistType);
+                    LOG_ERROR("Unexpected relativeDistanceType: {}", relDistType);
                     return -1;
                 }
             }
         }
         else
         {
-            LOG("Unhandled case: cs %d reDistType %d freeSpace %d\n", cs, relDistType, freeSpace);
+            LOG_ERROR("Unhandled case: cs {} reDistType {} freeSpace {}\n", cs, relDistType, freeSpace);
             return -1;
         }
     }
@@ -996,26 +1182,87 @@ int Object::Distance(double                            x,
             relDistType == RelativeDistanceType::REL_DIST_CARTESIAN)
         {
             // Get Cartesian/Euclidian distance
-            dist = FreeSpaceDistancePoint(x, y, &latDist, &longDist);
+
+            // check objects and any trailers for minimum distance
+            int     iterations = 0;
+            Object* pivot_obj  = this;
+            struct
+            {
+                double dist      = LARGE_NUMBER;
+                double lat_dist  = LARGE_NUMBER;
+                double long_dist = LARGE_NUMBER;
+            } candidate_info;
+
+            // start measuring from frontmost towing vehicle
+            while (pivot_obj->TowVehicle())
+            {
+                pivot_obj = pivot_obj->TowVehicle();
+            }
+
+            while (pivot_obj && iterations++ < 100 && fabs(candidate_info.dist) > 0.0)
+            {
+                double tmp_dist = pivot_obj->FreeSpaceDistancePoint(x, y, &latDist, &longDist);
+                if (fabs(tmp_dist) < fabs(candidate_info.dist))
+                {
+                    candidate_info.dist      = tmp_dist;
+                    candidate_info.lat_dist  = latDist;
+                    candidate_info.long_dist = longDist;
+                }
+                pivot_obj = pivot_obj->TrailerVehicle();
+            }
 
             // sign indicates target being in front (+) or behind (-)
-            dist *= SIGN(longDist);
+            dist = candidate_info.dist * SIGN(candidate_info.long_dist);
 
             if (cs == roadmanager::CoordinateSystem::CS_ENTITY)
             {
                 if (relDistType == roadmanager::RelativeDistanceType::REL_DIST_LATERAL)
                 {
-                    dist = latDist;
+                    dist = candidate_info.lat_dist;
                 }
                 else if (relDistType == roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL)
                 {
-                    dist = longDist;
+                    dist = candidate_info.long_dist;
                 }
             }
         }
         else if (cs == CoordinateSystem::CS_ROAD || cs == CoordinateSystem::CS_LANE)
         {
-            if (FreeSpaceDistancePointRoadLane(x, y, &latDist, &longDist, cs) != 0)
+            // check objects and any trailers for minimum distance
+            int     iterations = 0;
+            Object* pivot_obj  = this;
+            struct
+            {
+                int    return_value = -1;
+                double lat_dist     = LARGE_NUMBER;
+                double long_dist    = LARGE_NUMBER;
+            } candidate_info;
+
+            // start measuring from frontmost towing vehicle
+            while (pivot_obj->TowVehicle())
+            {
+                pivot_obj = pivot_obj->TowVehicle();
+            }
+
+            while (pivot_obj && iterations++ < 100 &&
+                   ((relDistType == RelativeDistanceType::REL_DIST_LATERAL && fabs(candidate_info.lat_dist) > 0.0) ||
+                    (relDistType == RelativeDistanceType::REL_DIST_LONGITUDINAL && fabs(candidate_info.long_dist) > 0.0)))
+            {
+                int return_value = pivot_obj->FreeSpaceDistancePointRoadLane(x, y, &latDist, &longDist, cs);
+                if (return_value == 0)
+                {
+                    if ((relDistType == RelativeDistanceType::REL_DIST_LATERAL && fabs(latDist) < fabs(candidate_info.lat_dist)) ||
+                        (relDistType == RelativeDistanceType::REL_DIST_LONGITUDINAL && fabs(longDist) < fabs(candidate_info.long_dist)))
+                    {
+                        candidate_info.return_value = return_value;
+                        candidate_info.lat_dist     = latDist;
+                        candidate_info.long_dist    = longDist;
+                    }
+                }
+                pivot_obj = pivot_obj->TrailerVehicle();
+            }
+
+            if (candidate_info.return_value != 0)
             {
                 return -1;
             }
@@ -1023,22 +1270,22 @@ int Object::Distance(double                            x,
             {
                 if (relDistType == RelativeDistanceType::REL_DIST_LATERAL)
                 {
-                    dist = latDist;
+                    dist = candidate_info.lat_dist;
                 }
                 else if (relDistType == RelativeDistanceType::REL_DIST_LONGITUDINAL)
                 {
-                    dist = longDist;
+                    dist = candidate_info.long_dist;
                 }
                 else
                 {
-                    LOG("Unexpected relativeDistanceType: %d", relDistType);
+                    LOG_ERROR("Unexpected relativeDistanceType: {}", relDistType);
                     return -1;
                 }
             }
         }
         else
         {
-            LOG("Unhandled case: cs %d reDistType %d freeSpace %d\n", cs, relDistType, freeSpace);
+            LOG_ERROR("Unhandled case: cs {} reDistType {} freeSpace {}\n", cs, relDistType, freeSpace);
             return -1;
         }
     }
@@ -1046,6 +1293,27 @@ int Object::Distance(double                            x,
     {
         return pos_.Distance(x, y, cs, relDistType, dist, maxDist);
     }
+
+    return 0;
+}
+
+int Object::TimeHeadway(Object*                           target,
+                        roadmanager::CoordinateSystem     cs,
+                        roadmanager::RelativeDistanceType relDistType,
+                        bool                              freeSpace,
+                        double&                           thw,
+                        double                            maxDist)
+{
+    double rel_dist;
+    if (this->Distance(target, cs, relDistType, freeSpace, rel_dist, maxDist) != 0)
+    {
+        rel_dist = LARGE_NUMBER;
+    }
+
+    // Headway time not defined for cases:
+    //  - when target object is behind
+    //  - when object is still or going reverse
+    (rel_dist < 0 || this->GetSpeed() < SMALL_NUMBER) ? thw = -1 : thw = fabs(rel_dist / this->GetSpeed());
 
     return 0;
 }
@@ -1167,7 +1435,7 @@ int Entities::addObject(Object* obj, bool activate, int call_index)
     const int max_trailers = 100;
     if (call_index >= max_trailers)
     {
-        LOG_AND_QUIT("Error: addObject max recursion reached (%d). Check scenario trailer config", max_trailers);
+        LOG_ERROR_AND_QUIT("Error: addObject max recursion reached ({}). Check scenario trailer config", max_trailers);
     }
 
     obj->id_ = getNewId();
@@ -1189,7 +1457,23 @@ int Entities::addObject(Object* obj, bool activate, int call_index)
         {
             trailer_vehicle->name_ = obj->GetName() + "+";
         }
-        addObject(trailer_vehicle, activate, call_index + 1);
+
+        // avoid adding trailers twice
+        bool in_active_list  = std::find(object_.begin(), object_.end(), trailer_vehicle) != object_.end();
+        bool in_passive_list = std::find(object_pool_.begin(), object_pool_.end(), trailer_vehicle) != object_pool_.end();
+
+        if (in_active_list && !activate)
+        {
+            deactivateObject(trailer_vehicle, call_index);
+        }
+        else if (in_passive_list && activate)
+        {
+            activateObject(trailer_vehicle, call_index);
+        }
+        else if (!in_active_list && !in_passive_list)
+        {
+            addObject(trailer_vehicle, activate, call_index + 1);
+        }
     }
 
     return obj->id_;
@@ -1200,7 +1484,7 @@ int Entities::activateObject(Object* obj, int call_index)
     const int max_trailers = 100;
     if (call_index >= max_trailers)
     {
-        LOG_AND_QUIT("Error: activateObject max recursion reached (%d). Check scenario trailer config", max_trailers);
+        LOG_ERROR_AND_QUIT("Error: activateObject max recursion reached ({}). Check scenario trailer config", max_trailers);
     }
 
     int n_active_objs = static_cast<int>(std::count(object_.begin(), object_.end(), obj));
@@ -1217,12 +1501,12 @@ int Entities::activateObject(Object* obj, int call_index)
         }
         else if (n_objs > 1)
         {
-            LOG("Unexpected: %d object instances in pool when activating obj %s. Duplicate names? not supported", n_objs, obj->GetName().c_str());
+            LOG_ERROR("Unexpected: {} object instances in pool when activating obj {}. Duplicate names? not supported", n_objs, obj->GetName());
             return -1;
         }
         else
         {
-            LOG("Unexpected finding: Object %s missing in pool empty when activating.", obj->GetName().c_str());
+            LOG_ERROR("Unexpected finding: Object {} missing in pool empty when activating.", obj->GetName());
         }
 
         Vehicle* trailer_vehicle = static_cast<Vehicle*>(obj->TrailerVehicle());
@@ -1233,7 +1517,7 @@ int Entities::activateObject(Object* obj, int call_index)
     }
     else
     {
-        LOG("Failed to activate obj %s. Already active (%d instances in active list) or duplicate name?", obj->GetName().c_str(), n_active_objs);
+        LOG_ERROR("Failed to activate obj {}. Already active ({} instances in active list) or duplicate name?", obj->GetName(), n_active_objs);
         return -1;
     }
 
@@ -1245,7 +1529,7 @@ int Entities::deactivateObject(Object* obj, int call_index)
     const int max_trailers = 100;
     if (call_index >= max_trailers)
     {
-        LOG_AND_QUIT("Error: deactivateObject max recursion reached (%d). Check scenario trailer config", max_trailers);
+        LOG_ERROR_AND_QUIT("Error: deactivateObject max recursion reached ({}). Check scenario trailer config", max_trailers);
     }
 
     int n_active_objs = static_cast<int>(std::count(object_.begin(), object_.end(), obj));
@@ -1262,7 +1546,7 @@ int Entities::deactivateObject(Object* obj, int call_index)
         }
         else
         {
-            LOG("Unexpected: Object %s already in pool (%d instances) when deactivating it.", obj->GetName().c_str(), n_objs);
+            LOG_ERROR("Unexpected: Object {} already in pool ({} instances) when deactivating it.", obj->GetName(), n_objs);
         }
 
         Vehicle* trailer_vehicle = static_cast<Vehicle*>(obj->TrailerVehicle());
@@ -1273,12 +1557,12 @@ int Entities::deactivateObject(Object* obj, int call_index)
     }
     else if (n_active_objs > 1)
     {
-        LOG("Unexpected: %d object instances found when deactivating obj %s. Duplicate names? not supported", n_active_objs, obj->GetName().c_str());
+        LOG_ERROR("Unexpected: {} object instances found when deactivating obj {}. Duplicate names? not supported", n_active_objs, obj->GetName());
         return -1;
     }
     else
     {
-        LOG("Failed to deactivate obj %s. Already inactive (0 in active list).", obj->GetName().c_str());
+        LOG_ERROR("Failed to deactivate obj {}. Already inactive (0 in active list).", obj->GetName());
         return -1;
     }
 
@@ -1336,7 +1620,7 @@ void Entities::removeObject(Object* object, bool recursive)
     return;
 }
 
-bool Entities::nameExists(std::string name)
+bool Entities::nameExists(std::string name) const
 {
     for (size_t i = 0; i < object_.size(); i++)
     {
@@ -1348,7 +1632,7 @@ bool Entities::nameExists(std::string name)
     return false;
 }
 
-bool Entities::indexExists(int id)
+bool Entities::indexExists(int id) const
 {
     for (size_t i = 0; i < object_.size(); i++)
     {
@@ -1470,50 +1754,50 @@ std::string Vehicle::Category2String(int category)
     switch (category)
     {
         case Category::BICYCLE:
-            return "BICYCLE";
+            return "bicycle";
         case Category::BUS:
-            return "BUS";
+            return "bus";
         case Category::CAR:
-            return "CAR";
+            return "car";
         case Category::MOTORBIKE:
-            return "MOTORBIKE";
+            return "motorbike";
         case Category::SEMITRAILER:
-            return "SEMITRAILER";
+            return "semitrailer";
         case Category::TRAILER:
-            return "TRAILER";
+            return "trailer";
         case Category::TRAIN:
-            return "TRAIN";
+            return "train";
         case Category::TRAM:
-            return "TRAM";
+            return "tram";
         case Category::TRUCK:
-            return "TRUCK";
+            return "truck";
         case Category::VAN:
-            return "VAN";
+            return "van";
         default:
             return "Unknown";
     }
 }
 
-std::string Vehicle::Role2String(int role)
+std::string Object::Role2String(int role)
 {
-    switch (role)
+    switch (static_cast<Object::Role>(role))
     {
         case Role::AMBULANCE:
-            return "AMBULANCE";
+            return "ambulance";
         case Role::CIVIL:
-            return "CIVIL";
+            return "civil";
         case Role::FIRE:
-            return "FIRE";
+            return "fire";
         case Role::MILITARY:
-            return "MILITARY";
+            return "military";
         case Role::NONE:
-            return "NONE";
+            return "none";
         case Role::POLICE:
-            return "POLICE";
+            return "police";
         case Role::PUBLIC_TRANSPORT:
-            return "PUBLIC_TRANSPORT";
+            return "public_transport";
         case Role::ROAD_ASSISTANCE:
-            return "ROAD_ASSISTANCE";
+            return "road_assistance";
         default:
             return "Unknown";
     }
@@ -1537,7 +1821,7 @@ Object* Entities::GetObjectByName(std::string name)
         }
     }
 
-    LOG("Failed to find object %s", name.c_str());
+    LOG_ERROR("Failed to find object {}", name);
 
     return 0;
 }
@@ -1560,7 +1844,7 @@ Object* Entities::GetObjectById(int id)
         }
     }
 
-    LOG("Failed to find object with id %d", id);
+    LOG_ERROR("Failed to find object with id {}", id);
 
     return 0;
 }
@@ -1594,7 +1878,7 @@ std::vector<OSCPrivateAction*> Object::getPrivateActions()
         for (size_t n = 0; n < event->action_.size(); n++)
         {
             OSCAction* action = event->action_[n];
-            if (action->base_type_ == OSCAction::BaseType::PRIVATE)
+            if (action->GetBaseType() == OSCAction::BaseType::PRIVATE)
             {
                 OSCPrivateAction* pa = static_cast<OSCPrivateAction*>(action);
                 if (pa->GetCurrentState() == StoryBoardElement::State::RUNNING || pa->GetCurrentState() == StoryBoardElement::State::STANDBY)
@@ -1621,9 +1905,9 @@ Object* Object::TowVehicle()
                 if (vehicle->trailer_coupler_->tow_vehicle_->type_ == Object::Type::VEHICLE)
                 {
                     tow_vehicle = static_cast<Vehicle*>(vehicle->trailer_coupler_->tow_vehicle_);
-                    if (tow_vehicle != nullptr && tow_vehicle->trailer_hitch_ == nullptr)
+                    if (tow_vehicle->trailer_hitch_ == nullptr)
                     {
-                        LOG_ONCE("Warning: Tow vehicle %s lacks hitch", tow_vehicle->GetName().c_str());
+                        LOG_WARN_ONCE("Tow vehicle {} lacks hitch", tow_vehicle->GetName());
                         tow_vehicle = nullptr;
                     }
                 }
@@ -1648,9 +1932,9 @@ Object* Object::TrailerVehicle()
                 if (vehicle->trailer_hitch_->trailer_vehicle_->type_ == Object::Type::VEHICLE)
                 {
                     trailer_vehicle = static_cast<Vehicle*>(vehicle->trailer_hitch_->trailer_vehicle_);
-                    if (trailer_vehicle != nullptr && trailer_vehicle->trailer_coupler_ == nullptr)
+                    if (trailer_vehicle->trailer_coupler_ == nullptr)
                     {
-                        LOG_ONCE("Warning: Trailer vehicle %s lacks coupler", trailer_vehicle->GetName().c_str());
+                        LOG_WARN_ONCE("Trailer vehicle {} lacks coupler", trailer_vehicle->GetName());
                         trailer_vehicle = nullptr;
                     }
                 }
@@ -1666,13 +1950,13 @@ std::string Object::Type2String(int type)
     switch (type)
     {
         case Type::MISC_OBJECT:
-            return "MISC_OBJEC";
+            return "misc_objec";
         case Type::PEDESTRIAN:
-            return "PEDESTRIAN";
+            return "pedestrian";
         case Type::VEHICLE:
-            return "VEHICLE";
+            return "vehicle";
         case Type::TYPE_NONE:
-            return "NONE";
+            return "none";
         default:
             return "Unknown";
     }
@@ -1683,11 +1967,11 @@ std::string Pedestrian::Category2String(int category)
     switch (category)
     {
         case Category::ANIMAL:
-            return "ANIMAL";
+            return "animal";
         case Category::PEDESTRIAN:
-            return "PEDESTRIAN";
+            return "pedestrian";
         case Category::WHEELCHAIR:
-            return "WHEELCHAIR";
+            return "wheelchair";
         default:
             return "Unknown";
     }
@@ -1698,39 +1982,39 @@ std::string MiscObject::Category2String(int category)
     switch (category)
     {
         case Category::BARRIER:
-            return "BARRIER";
+            return "barrier";
         case Category::BUILDING:
-            return "BUILDING";
+            return "building";
         case Category::CROSSWALK:
-            return "CROSSWALK";
+            return "crosswalk";
         case Category::GANTRY:
-            return "GANTRY";
+            return "gantry";
         case Category::NONE:
-            return "NONE";
+            return "none";
         case Category::OBSTACLE:
-            return "OBSTACLE";
+            return "obstacle";
         case Category::PARKINGSPACE:
-            return "PARKINGSPACE";
+            return "parkingspace";
         case Category::PATCH:
-            return "PATCH";
+            return "patch";
         case Category::POLE:
-            return "POLE";
+            return "pole";
         case Category::RAILING:
-            return "RAILING";
+            return "railing";
         case Category::ROADMARK:
-            return "ROADMARK";
+            return "roadmark";
         case Category::SOUNDBARRIER:
-            return "SOUNDBARRIER";
+            return "soundbarrier";
         case Category::STREETLAMP:
-            return "STREETLAMP";
+            return "streetlamp";
         case Category::TRAFFICISLAND:
-            return "TRAFFICISLAND";
+            return "trafficisland";
         case Category::TREE:
-            return "TREE";
+            return "tree";
         case Category::VEGETATION:
-            return "VEGETATION";
+            return "vegetation";
         case Category::WIND:
-            return "WIND";
+            return "wind";
         default:
             return "Unknown";
     }

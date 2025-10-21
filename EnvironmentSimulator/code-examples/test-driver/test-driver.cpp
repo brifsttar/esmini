@@ -22,15 +22,12 @@ int main(int argc, char* argv[])
     const float  duration           = 35.0f;
     bool         ghostMode[3]       = {false, true, true};
 
-    void*                  vehicleHandle = 0;
-    SE_SimpleVehicleState  vehicleState  = {0, 0, 0, 0, 0, 0, 0, 0};
+    SE_SimpleVehicleState  vehicleState = {0, 0, 0, 0, 0, 0, 0, 0};
     SE_ScenarioObjectState objectState;
     SE_RoadInfo            roadInfo;
 
     for (int i = 0; i < 3; i++)
     {
-        float dt = 0.0f;
-
         SE_RegisterParameterDeclarationCallback(paramDeclCB, &ghostMode[i]);
 
         if (SE_Init("../EnvironmentSimulator/code-examples/test-driver/test-driver.xosc", 0, 1, 0, 0) != 0)
@@ -45,7 +42,7 @@ int main(int argc, char* argv[])
 
         // Initialize the vehicle model, fetch initial state from the scenario
         SE_GetObjectState(0, &objectState);
-        vehicleHandle = SE_SimpleVehicleCreate(objectState.x, objectState.y, objectState.h, 4.0, 0.0);
+        void* vehicleHandle = SE_SimpleVehicleCreate(objectState.x, objectState.y, objectState.h, 4.0, 0.0);
         SE_SimpleVehicleSteeringRate(vehicleHandle, 6.0f);
 
         // show some road features, including road sensor
@@ -55,7 +52,7 @@ int main(int argc, char* argv[])
         while (SE_GetSimulationTime() < duration && SE_GetQuitFlag() != 1)
         {
             // Get simulation delta time since last call (first will be minimum timestep)
-            dt = SE_GetSimTimeStep();
+            float dt = SE_GetSimTimeStep();
 
             // Get road information at a point some speed dependent distance ahead
             double targetSpeed;
@@ -63,6 +60,7 @@ int main(int argc, char* argv[])
             {
                 // ghost version
                 float ghost_speed = 0.0f;
+                float timestamp   = 0.0f;
 
                 if (i % 2 == 0)  // alternate between time based and position based look ahead modes
                 {
@@ -72,7 +70,7 @@ int main(int argc, char* argv[])
                 else
                 {
                     // Position based Time based look ahead
-                    SE_GetRoadInfoAlongGhostTrail(0, 5 + 0.75f * vehicleState.speed, &roadInfo, &ghost_speed);
+                    SE_GetRoadInfoAlongGhostTrail(0, 5 + 0.75f * vehicleState.speed, &roadInfo, &ghost_speed, &timestamp);
                 }
                 targetSpeed = ghost_speed;
             }
@@ -85,15 +83,14 @@ int main(int argc, char* argv[])
                 targetSpeed = defaultTargetSpeed / (1 + curveWeight * static_cast<double>(fabs(roadInfo.angle)));
             }
 
-            // Steer towards where the point
-            double steerAngle = roadInfo.angle;
-
             // Accelerate or decelerate towards target speed - THROTTLE_WEIGHT tunes magnitude
             double throttle = throttleWeight * (targetSpeed - static_cast<double>(vehicleState.speed));
 
             // Step vehicle model with driver input, but wait until time > 0
             if (SE_GetSimulationTime() > 0 && !SE_GetPauseFlag())
             {
+                // Steer towards where the point
+                double steerAngle = roadInfo.angle;
                 SE_SimpleVehicleControlAnalog(vehicleHandle, dt, throttle, steerAngle);
             }
 

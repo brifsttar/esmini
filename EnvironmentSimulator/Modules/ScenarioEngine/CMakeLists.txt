@@ -3,9 +3,6 @@
 set(TARGET
     ScenarioEngine)
 
-set(EXTERNAL_TARGET
-    Externals)
-
 # ############################### Loading desired rules ##############################################################
 
 include(${CMAKE_SOURCE_DIR}/support/cmake/rule/disable_static_analysis.cmake)
@@ -29,11 +26,13 @@ if(NOT
     list(
         REMOVE_ITEM
         SRC_SOURCEFILES
-        "${CMAKE_CURRENT_LIST_DIR}/SourceFiles/OSIReporter.hpp")
+        "${CMAKE_CURRENT_LIST_DIR}/SourceFiles/OSIReporter.hpp"
+        "${CMAKE_CURRENT_LIST_DIR}/SourceFiles/OSITrafficCommand.hpp")
     list(
         REMOVE_ITEM
         SRC_SOURCEFILES
-        "${CMAKE_CURRENT_LIST_DIR}/SourceFiles/OSIReporter.cpp")
+        "${CMAKE_CURRENT_LIST_DIR}/SourceFiles/OSIReporter.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/SourceFiles/OSITrafficCommand.cpp")
 endif(
     NOT
     USE_OSI)
@@ -52,11 +51,6 @@ source_group(
     FILES ${SRC_ADDITIONAL})
 
 # ############################### Creating library ###################################################################
-
-add_library(
-    ${EXTERNAL_TARGET}
-    STATIC
-    ${SRC_ADDITIONAL})
 
 add_library(
     ${TARGET}
@@ -83,11 +77,12 @@ target_include_directories(
            ${EXTERNALS_OSI_INCLUDES}
            ${EXTERNALS_SUMO_INCLUDES}
            ${EXTERNALS_PUGIXML_PATH}
-           ${EXTERNALS_EXPR_PATH})
+           ${EXTERNALS_EXPR_PATH}
+           ${EXTERNALS_FMT_INCLUDES})
 
 target_link_libraries(
     ${TARGET}
-    PRIVATE ${EXTERNAL_TARGET})
+    PRIVATE CommonMini)
 
 disable_static_analysis(${TARGET})
 disable_iwyu(${TARGET})

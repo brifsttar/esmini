@@ -22,37 +22,37 @@ Replay::Replay(std::string filename, bool clean) : time_(0.0), index_(0), repeat
     file_.open(filename, std::ofstream::binary);
     if (file_.fail())
     {
-        LOG("Cannot open file: %s", filename.c_str());
+        LOG_ERROR("Cannot open file: {}", filename);
         throw std::invalid_argument(std::string("Cannot open file: ") + filename);
     }
 
     file_.read(reinterpret_cast<char*>(&header_), sizeof(header_));
-    LOG("Recording %s opened. dat version: %d odr: %s model: %s",
-        FileNameOf(filename).c_str(),
-        header_.version,
-        FileNameOf(header_.odr_filename).c_str(),
-        FileNameOf(header_.model_filename).c_str());
+    LOG_INFO("Recording {} opened. dat version: {} odr: {} model: {}",
+             FileNameOf(filename),
+             header_.version,
+             FileNameOf(header_.odr_filename),
+             FileNameOf(header_.model_filename));
 
     if (header_.version != DAT_FILE_FORMAT_VERSION)
     {
-        LOG_AND_QUIT("Version mismatch. %s is version %d while supported version is %d. Please re-create dat file.",
-                     filename.c_str(),
-                     header_.version,
-                     DAT_FILE_FORMAT_VERSION);
+        LOG_ERROR_AND_QUIT("Version mismatch. {} is version {} while supported version is {}. Please re-create dat file.",
+                           filename,
+                           header_.version,
+                           DAT_FILE_FORMAT_VERSION);
     }
 
     if (header_.version != DAT_FILE_FORMAT_VERSION)
     {
-        LOG_AND_QUIT("Version mismatch. %s is version %d while supported version is %d. Please re-create dat file.",
-                     filename.c_str(),
-                     header_.version,
-                     DAT_FILE_FORMAT_VERSION);
+        LOG_ERROR_AND_QUIT("Version mismatch. {} is version {} while supported version is {}. Please re-create dat file.",
+                           filename,
+                           header_.version,
+                           DAT_FILE_FORMAT_VERSION);
     }
 
     while (!file_.eof())
     {
         ReplayEntry data;
-
+        data.odometer = 0.0;
         file_.read(reinterpret_cast<char*>(&data.state), sizeof(data.state));
 
         if (!file_.eof())
@@ -93,27 +93,27 @@ Replay::Replay(const std::string directory, const std::string scenario, std::str
         file_.open(scenarios_[i], std::ofstream::binary);
         if (file_.fail())
         {
-            LOG("Cannot open file: %s", scenarios_[i].c_str());
+            LOG_ERROR("Cannot open file: {}", scenarios_[i]);
             throw std::invalid_argument(std::string("Cannot open file: ") + scenarios_[i]);
         }
         file_.read(reinterpret_cast<char*>(&header_), sizeof(header_));
-        LOG("Recording %s opened. dat version: %d odr: %s model: %s",
-            FileNameOf(scenarios_[i]).c_str(),
-            header_.version,
-            FileNameOf(header_.odr_filename).c_str(),
-            FileNameOf(header_.model_filename).c_str());
+        LOG_INFO("Recording {} opened. dat version: {} odr: {} model: {}",
+                 FileNameOf(scenarios_[i]),
+                 header_.version,
+                 FileNameOf(header_.odr_filename),
+                 FileNameOf(header_.model_filename));
 
         if (header_.version != DAT_FILE_FORMAT_VERSION)
         {
-            LOG_AND_QUIT("Version mismatch. %s is version %d while supported version is %d. Please re-create dat file.",
-                         scenarios_[i].c_str(),
-                         header_.version,
-                         DAT_FILE_FORMAT_VERSION);
+            LOG_ERROR_AND_QUIT("Version mismatch. {} is version {} while supported version is {}. Please re-create dat file.",
+                               scenarios_[i],
+                               header_.version,
+                               DAT_FILE_FORMAT_VERSION);
         }
         while (!file_.eof())
         {
             ReplayEntry entry;
-
+            entry.odometer = 0.0;
             file_.read(reinterpret_cast<char*>(&entry.state), sizeof(entry.state));
 
             if (!file_.eof())
@@ -129,7 +129,7 @@ Replay::Replay(const std::string directory, const std::string scenario, std::str
 
     if (scenarioData.size() < 2)
     {
-        LOG_AND_QUIT("Too few scenarios loaded, use single replay feature instead\n");
+        LOG_ERROR_AND_QUIT("Too few scenarios loaded, use single replay feature instead\n");
     }
 
     // Scenario with smallest start time first
@@ -141,7 +141,7 @@ Replay::Replay(const std::string directory, const std::string scenario, std::str
     for (size_t i = 0; i < scenarioData.size(); i++)
     {
         std::string scenario_tmp = scenarioData[i].first;
-        LOG("Scenarios corresponding to IDs (%d:%d): %s", i * 100, (i + 1) * 100 - 1, FileNameOf(scenario_tmp.c_str()).c_str());
+        LOG_INFO("Scenarios corresponding to IDs ({}:{}): {}", i * 100, (i + 1) * 100 - 1, FileNameOf(scenario_tmp));
     }
 
     // Ensure increasing timestamps. Remove any other entries.
@@ -179,7 +179,7 @@ void Replay::GetReplaysFromDirectory(const std::string dir, const std::string sc
     // If no directory found, write error
     if (directory == nullptr)
     {
-        LOG_AND_QUIT("No valid directory given, couldn't open %s", dir.c_str());
+        LOG_ERROR_AND_QUIT("No valid directory given, couldn't open {}", dir);
     }
 
     // While directory is open, check the filename
@@ -192,7 +192,7 @@ void Replay::GetReplaysFromDirectory(const std::string dir, const std::string sc
             DIR* nested_dir = opendir((dir + filename).c_str());
             if (nested_dir == nullptr)
             {
-                LOG("Couldn't open nested directory %s", (dir + filename).c_str());
+                LOG_ERROR("Couldn't open nested directory {}{}", dir, filename);
             }
 
             struct dirent* nested_file;
@@ -221,11 +221,11 @@ void Replay::GetReplaysFromDirectory(const std::string dir, const std::string sc
 
     if (scenarios_.empty())
     {
-        LOG_AND_QUIT("Couldn't read any scenarios named %s in path %s", sce.c_str(), dir.c_str());
+        LOG_ERROR_AND_QUIT("Couldn't read any scenarios named {} in path {}", sce, dir);
     }
 }
 
-size_t Replay::GetNumberOfScenarios()
+size_t Replay::GetNumberOfScenarios() const
 {
     return scenarios_.size();
 }
@@ -275,11 +275,9 @@ void Replay::GoToTime(double time, bool stop_at_next_frame)
     }
     else
     {
-        size_t next_index = index_;
-
         if (time > time_)
         {
-            next_index = FindNextTimestamp();
+            size_t next_index = FindNextTimestamp();
             if (next_index > index_ && time > static_cast<double>(data_[next_index].state.info.timeStamp) &&
                 static_cast<double>(data_[next_index].state.info.timeStamp) <= GetStopTime())
             {
@@ -300,7 +298,7 @@ void Replay::GoToTime(double time, bool stop_at_next_frame)
         }
         else if (time < time_)
         {
-            next_index = FindPreviousTimestamp();
+            size_t next_index = FindPreviousTimestamp();
             if (next_index < index_ && time < static_cast<double>(data_[next_index].state.info.timeStamp))
             {
                 index_ = static_cast<unsigned int>(next_index);
@@ -328,6 +326,11 @@ void Replay::GoToDeltaTime(double dt, bool stop_at_next_frame)
 
 int Replay::GoToNextFrame()
 {
+    if (data_.empty())
+    {
+        return -1;
+    }
+
     float ctime = data_[index_].state.info.timeStamp;
     for (size_t i = index_ + 1; i < data_.size(); i++)
     {
@@ -379,7 +382,7 @@ int Replay::FindIndexAtTimestamp(double timestamp, int startSearchIndex)
     return MIN(i, static_cast<int>(data_.size()) - 1);
 }
 
-unsigned int Replay::FindNextTimestamp(bool wrap)
+unsigned int Replay::FindNextTimestamp(bool wrap) const
 {
     unsigned int index = index_ + 1;
     for (; index < data_.size(); index++)
@@ -405,7 +408,7 @@ unsigned int Replay::FindNextTimestamp(bool wrap)
     return index;
 }
 
-unsigned int Replay::FindPreviousTimestamp(bool wrap)
+unsigned int Replay::FindPreviousTimestamp(bool wrap) const
 {
     int index = static_cast<int>(index_) - 1;
 
@@ -488,6 +491,11 @@ void Replay::SetStopTime(double time)
 
 void Replay::CleanEntries(std::vector<ReplayEntry>& entries)
 {
+    if (entries.empty())
+    {
+        return;
+    }
+
     for (unsigned int i = 0; i < entries.size() - 1; i++)
     {
         if (entries[i + 1].state.info.timeStamp < entries[i].state.info.timeStamp)
@@ -581,24 +589,24 @@ void Replay::BuildData(std::vector<std::pair<std::string, std::vector<ReplayEntr
     }
 }
 
-void Replay::CreateMergedDatfile(const std::string filename)
+void Replay::CreateMergedDatfile(const std::string filename) const
 {
     std::ofstream data_file_;
     data_file_.open(filename, std::ofstream::binary);
     if (data_file_.fail())
     {
-        LOG("Cannot open file: %s", filename.c_str());
+        LOG_ERROR("Cannot open file: {}", filename);
         exit(-1);
     }
 
-    data_file_.write(reinterpret_cast<char*>(&header_), sizeof(header_));
+    data_file_.write(reinterpret_cast<const char*>(&header_), sizeof(header_));
 
     if (data_file_.is_open())
     {
         // Write status to file - for later replay
         for (size_t i = 0; i < data_.size(); i++)
         {
-            data_file_.write(reinterpret_cast<char*>(&data_[i].state), sizeof(data_[i].state));
+            data_file_.write(reinterpret_cast<const char*>(&data_[i].state), sizeof(data_[i].state));
         }
     }
 }

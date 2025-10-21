@@ -49,12 +49,12 @@ namespace scenarioengine
         double offset_;
         double factor_;
 
-        double GetValue();
-        double GetFactor()
+        double GetValue() const;
+        double GetFactor() const
         {
             return factor_;
         }
-        double GetHeading();
+        double GetHeading() const;
         void   SetFactor(double factor)
         {
             factor_ = factor;
@@ -67,26 +67,18 @@ namespace scenarioengine
     public:
         ControllerSloppyDriver(InitArgs* args);
 
-        static const char* GetTypeNameStatic()
+        virtual const char* GetTypeName()
         {
             return CONTROLLER_SLOPPY_DRIVER_TYPE_NAME;
         }
-        virtual const char* GetTypeName()
-        {
-            return GetTypeNameStatic();
-        }
-        static int GetTypeStatic()
-        {
-            return Controller::Type::CONTROLLER_TYPE_SLOPPY_DRIVER;
-        }
         virtual int GetType()
         {
-            return GetTypeStatic();
+            return Controller::Type::CONTROLLER_TYPE_SLOPPY_DRIVER;
         }
 
         void Init();
         void Step(double timeStep);
-        void Activate(DomainActivation lateral, DomainActivation longitudinal);
+        int  Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)]);
         void ReportKeyEvent(int key, bool down);
 
     private:
@@ -107,8 +99,6 @@ namespace scenarioengine
         double             tFuzz0;
         double             tFuzzTarget;
         double             currentH_;
-
-        const char* type_name_ = "SloppyDriver";
     };
 
     Controller* InstantiateControllerSloppyDriver(void* args);

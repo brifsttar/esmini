@@ -39,42 +39,29 @@ namespace scenarioengine
 
         ControllerFollowGhost(InitArgs* args);
 
-        static const char* GetTypeNameStatic()
+        virtual const char* GetTypeName()
         {
             return CONTROLLER_FOLLOW_GHOST_TYPE_NAME;
         }
-        virtual const char* GetTypeName()
-        {
-            return GetTypeNameStatic();
-        }
-        static int GetTypeStatic()
+        virtual int GetType()
         {
             return CONTROLLER_TYPE_FOLLOW_GHOST;
         }
-        virtual int GetType()
-        {
-            return GetTypeStatic();
-        }
-
-        void SetScenarioEngine(ScenarioEngine* scenarioEngine)
-        {
-            scenarioEngine_ = scenarioEngine;
-        };
 
         void Init();
         void Step(double timeStep);
-        void Activate(DomainActivation lateral, DomainActivation longitudinal);
+        int  Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)]);
         void ReportKeyEvent(int key, bool down);
 
     private:
         vehicle::Vehicle vehicle_;
         double           headstart_time_;
         FollowMode       follow_mode_;
-        ScenarioEngine*  scenarioEngine_;
         double           lookahead_speed_;
         double           min_lookahead_speed_;
         double           lookahead_steering_;
         double           min_lookahead_steering_;
+        double           steering_speed_inertia_;
     };
 
     Controller* InstantiateControllerFollowGhost(void* args);

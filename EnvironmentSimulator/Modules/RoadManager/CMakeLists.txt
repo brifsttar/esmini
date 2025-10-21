@@ -20,12 +20,9 @@ set(SOURCES
     odrSpiral.cpp
     LaneIndependentRouter.cpp)
 
-set(SRC_ADDITIONAL
+add_library(
+    pugixml_lib
     ${EXTERNALS_PUGIXML_PATH}/pugixml.cpp)
-
-source_group(
-    "External Libraries"
-    FILES ${SRC_ADDITIONAL})
 
 set(INCLUDES
     RoadManager.hpp
@@ -44,9 +41,10 @@ target_include_directories(
     ${TARGET}
     SYSTEM
     PUBLIC ${EXTERNALS_PUGIXML_PATH}
+           ${EXTERNALS_FMT_INCLUDES}
            ${ROAD_MANAGER_PATH})
 add_compile_definitions( ROADMANAGER_EXPORT )
-target_link_libraries ( RoadManager CommonMini )
+target_link_libraries ( RoadManager CommonMini pugixml_lib fmt)
 set_target_properties( RoadManager
     PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}../../../../lib"

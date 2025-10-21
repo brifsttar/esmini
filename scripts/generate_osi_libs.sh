@@ -35,13 +35,13 @@ PARALLEL_BUILDS=4
 if (( "$PARALLEL_BUILDS" < 2 )); then
     PARALLEL_ARG=""
 else
-    PARALLEL_ARG="$PARALLEL_ARG"
+    PARALLEL_ARG="$PARALLEL_BUILDS"
 fi
 
 if [ "$OSTYPE" == "msys" ]; then
     # Visual Studio 2022 using toolkit from Visual Studio 2017
     GENERATOR=("Visual Studio 17 2022")
-    GENERATOR_TOOLSET="v141"
+    GENERATOR_TOOLSET="v142"
     GENERATOR_ARGUMENTS="-A x64 -T ${GENERATOR_TOOLSET}"
 
     # Visual Studio 2019 using default toolkit
@@ -70,18 +70,16 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
 elif [[ "$OSTYPE" == "darwin"* ]]; then
     target_dir="mac"
     zfilename="osi_mac.7z"
-    z_exe=7z
+    z_exe=7zz
     macos_arch="arm64;x86_64"
 else
     echo Unknown OSTYPE: $OSTYPE
 fi
 
-if [ ! -d $target_dir ]
-then
+if [ ! -d $target_dir ]; then
     mkdir $target_dir
 fi
-if [ ! -d $target_dir/include ]
-then
+if [ ! -d $target_dir/include ]; then
     mkdir $target_dir/include
 fi
 
@@ -96,11 +94,9 @@ osi_root_dir=$(pwd)
 echo ------------------------ Installing zlib ------------------------------------
 cd $osi_root_dir
 
-if [ ! -d zlib ]
-then
-    git clone https://github.com/madler/zlib.git
+if [ ! -d zlib ]; then
+    git clone https://github.com/madler/zlib.git --depth 1 --branch v1.2.$ZIP_MIN_VERSION
     cd  zlib
-    git checkout v1.2.$ZIP_MIN_VERSION
     mkdir install
     mkdir build
     cd build
@@ -126,13 +122,11 @@ else
     echo zlib folder already exists, continue with next step...
 fi
 
-
 echo ------------------------ Installing OSI proto2cpp -----------------------------------
 
 cd $osi_root_dir
 
-if [ ! -d proto2cpp ]
-then
+if [ ! -d proto2cpp ]; then
     git clone https://github.com/OpenSimulationInterface/proto2cpp.git
 else
     echo proto2cpp folder already exists, continue with next step...
@@ -157,11 +151,9 @@ function build {
     echo ------------------------ Installing Protobuf $1 ------------------------------------
     cd $osi_root_dir
 
-    if [ ! -d protobuf$folder_postfix ]
-    then
-        git clone https://github.com/protocolbuffers/protobuf.git protobuf$folder_postfix
+    if [ ! -d protobuf$folder_postfix ]; then
+        git clone https://github.com/protocolbuffers/protobuf.git --depth 1 --branch v$PROTOBUF_VERSION protobuf$folder_postfix
         cd protobuf$folder_postfix
-        git checkout v$PROTOBUF_VERSION
         mkdir build-code
         cd build-code
 
@@ -210,23 +202,21 @@ function build {
 
     cd $osi_root_dir
 
-    if [ ! -d open-simulation-interface$folder_postfix ]
-    then
-        git clone https://github.com/OpenSimulationInterface/open-simulation-interface.git open-simulation-interface$folder_postfix
+    if [ ! -d open-simulation-interface$folder_postfix ]; then
+        git clone https://github.com/OpenSimulationInterface/open-simulation-interface.git --depth 1 --branch v$OSI_VERSION open-simulation-interface$folder_postfix
         cd open-simulation-interface$folder_postfix
-        git checkout v$OSI_VERSION
         sh ./convert-to-proto3.sh
         mkdir build
         cd build
 
-        export INSTALL_ROOT_DIR=../install
-        export INSTALL_OSI_LIB_DIR=$INSTALL_ROOT_DIR/osi-lib
-        mkdir $INSTALL_ROOT_DIR
-        mkdir $INSTALL_OSI_LIB_DIR
-        mkdir $INSTALL_OSI_LIB_DIR/lib
-        mkdir $INSTALL_OSI_LIB_DIR/include
-
+        INSTALL_ROOT_DIR=../install
+        INSTALL_INCLUDE_DIR=$INSTALL_ROOT_DIR/include
         export PATH=$PATH:../../graphviz/release/bin:../../protobuf$folder_postfix/protobuf-install/bin
+        if [ "$OSTYPE" == "msys" ]; then
+            PROTOC_EXE="../../protobuf_$1/protobuf-install/bin/protoc.exe"
+        else
+            PROTOC_EXE="../../protobuf_$1/protobuf-install/bin/protoc"
+        fi
 
         if [ $DYNAMIC_LINKING == "1" ]; then
             ADDITIONAL_CMAKE_PARAMETERS="-DCMAKE_CXX_FLAGS=-DPROTOBUF_USE_DLLS"
@@ -234,36 +224,23 @@ function build {
             ADDITIONAL_CMAKE_PARAMETERS=""
         fi
 
+        mkdir $INSTALL_ROOT_DIR
+        mkdir $INSTALL_ROOT_DIR/debug
+        mkdir $INSTALL_ROOT_DIR/release
+
+        COMMON_ARGS=".. -D CMAKE_INCLUDE_PATH=../protobuf$folder_postfix/protobuf-install/include -D PROTOBUF_SRC_ROOT_FOLDER=../../protobuf_$1/ -D Protobuf_PROTOC_EXECUTABLE=$PROTOC_EXE -D CMAKE_VERBOSE_MAKEFILE=ON -D CMAKE_LIBRARY_PATH=../protobuf$folder_postfix/protobuf-install/lib -D CMAKE_CXX_STANDARD=11"
+
         if [[ "$OSTYPE" != "darwin"* ]]; then
-            cmake .. -G "${GENERATOR[@]}" ${GENERATOR_ARGUMENTS} -DCMAKE_INCLUDE_PATH=../protobuf$folder_postfix/protobuf-install/include -DFILTER_PROTO2CPP_PY_PATH=../../proto2cpp -DINSTALL_LIB_DIR=$INSTALL_OSI_LIB_DIR/lib -DINSTALL_INCLUDE_DIR=$INSTALL_OSI_LIB_DIR/include -DCMAKE_INSTALL_PREFIX=$INSTALL_OSI_LIB_DIR -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_LIBRARY_PATH=../protobuf$folder_postfix/protobuf-install/lib -DCMAKE_CXX_STANDARD=11 $ADDITIONAL_CMAKE_PARAMETERS ..
-
-            # First bild OSI submodule separately since we need to rename the library before linking with the application
+            # Build debug variant first
+            cmake -G "${GENERATOR[@]}" ${GENERATOR_ARGUMENTS} $COMMON_ARGS -D CMAKE_BUILD_TYPE=Debug -D CMAKE_INSTALL_PREFIX=$INSTALL_ROOT_DIR/debug $ADDITIONAL_CMAKE_PARAMETERS ..
             cmake --build . $PARALLEL_ARG --config Debug --target install
-
-            if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-                if [ $DYNAMIC_LINKING == "1" ]; then
-                    mv $INSTALL_OSI_LIB_DIR/lib/osi3/libopen_simulation_interface.so $INSTALL_OSI_LIB_DIR/lib/osi3/libopen_simulation_interfaced.so
-                    mv $INSTALL_OSI_LIB_DIR/lib/osi3/libopen_simulation_interface.so.$OSI_VERSION $INSTALL_OSI_LIB_DIR/lib/osi3/libopen_simulation_interfaced.so.$OSI_VERSION
-                else
-                    mv $INSTALL_OSI_LIB_DIR/lib/osi3/libopen_simulation_interface_pic.a $INSTALL_OSI_LIB_DIR/lib/osi3/libopen_simulation_interface_picd.a
-                    mv $INSTALL_OSI_LIB_DIR/lib/osi3/libopen_simulation_interface_static.a $INSTALL_OSI_LIB_DIR/lib/osi3/libopen_simulation_interface_staticd.a
-                fi
-                touch $INSTALL_OSI_LIB_DIR/lib/osi3/kalle.txt
-            elif [ "$OSTYPE" == "msys" ]; then
-                mv $INSTALL_OSI_LIB_DIR/lib/osi3/open_simulation_interface.dll $INSTALL_OSI_LIB_DIR/lib/osi3/open_simulation_interfaced.dll
-                mv $INSTALL_OSI_LIB_DIR/lib/osi3/open_simulation_interface_pic.lib $INSTALL_OSI_LIB_DIR/lib/osi3/open_simulation_interface_picd.lib
-                mv $INSTALL_OSI_LIB_DIR/lib/osi3/open_simulation_interface_static.lib $INSTALL_OSI_LIB_DIR/lib/osi3/open_simulation_interface_staticd.lib
-            fi
-
             rm CMakeCache.txt
         else
             ADDITIONAL_CMAKE_PARAMETERS+=" -DCMAKE_OSX_ARCHITECTURES=$macos_arch"
         fi
 
-        cmake .. -G "${GENERATOR[@]}" ${GENERATOR_ARGUMENTS} -DCMAKE_INCLUDE_PATH=../protobuf$folder_postfix/protobuf-install/include -DFILTER_PROTO2CPP_PY_PATH=../../proto2cpp -DINSTALL_LIB_DIR=$INSTALL_OSI_LIB_DIR/lib -DINSTALL_INCLUDE_DIR=$INSTALL_OSI_LIB_DIR/include -DCMAKE_INSTALL_PREFIX=$INSTALL_OSI_LIB_DIR -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_LIBRARY_PATH=../protobuf$folder_postfix/protobuf-install/lib -DCMAKE_CXX_STANDARD=11 $ADDITIONAL_CMAKE_PARAMETERS ..
-
+        cmake -G "${GENERATOR[@]}" ${GENERATOR_ARGUMENTS} $COMMON_ARGS -D CMAKE_BUILD_TYPE=Release -D CMAKE_INSTALL_PREFIX=$INSTALL_ROOT_DIR/release $ADDITIONAL_CMAKE_PARAMETERS ..
         cmake --build . $PARALLEL_ARG --config Release --target install --clean-first
-
     else
         echo open-simulation-interface folder already exists, continue with next step...
     fi
@@ -272,53 +249,77 @@ function build {
 
     cd $osi_root_dir
 
-    cp open-simulation-interface$folder_postfix/install/osi-lib/include/osi3/* $target_dir/include
+    cp open-simulation-interface$folder_postfix/VERSION $target_dir
+    cp open-simulation-interface$folder_postfix/install/release/include/osi3/* $target_dir/include
     cp -r protobuf$folder_postfix/protobuf-install/include/google $target_dir/include
 
     if [ $DYNAMIC_LINKING == "1" ]; then
-        target_lib_dir="lib-dyn"
-        if [ ! -d $target_dir/$target_lib_dir ]
-        then
-            mkdir $target_dir/$target_lib_dir
-        fi
-        if [ "$OSTYPE" == "msys" ]; then
-            cp open-simulation-interface$folder_postfix/install/osi-lib/lib/osi3/open_simulation_interface*.dll $target_dir/$target_lib_dir
-            cp open-simulation-interface$folder_postfix/install/osi-lib/lib/osi3/open_simulation_interface_pic*.lib $target_dir/$target_lib_dir
-            cp protobuf$folder_postfix/protobuf-install/lib/libprotobuf*.lib $target_dir/$target_lib_dir
-        elif [[ "$OSTYPE" == "darwin"* ]]; then
-            cp -P open-simulation-interface$folder_postfix/install/osi-lib/lib/osi3/libopen_simulation_interface.dylib $target_dir/$target_lib_dir
-            cp -P open-simulation-interface$folder_postfix/install/osi-lib/lib/osi3/libopen_simulation_interfaced.dylib $target_dir/$target_lib_dir
-            cp -P protobuf$folder_postfix/protobuf-install/lib/libprotobuf.dylib $target_dir/$target_lib_dir
-            cp -P protobuf$folder_postfix/protobuf-install/lib/libprotobufd.dylib $target_dir/$target_lib_dir
-        else
-            cp -P open-simulation-interface$folder_postfix/install/osi-lib/lib/osi3/libopen_simulation_interface.so* $target_dir/$target_lib_dir
-            cp -P open-simulation-interface$folder_postfix/install/osi-lib/lib/osi3/libopen_simulation_interfaced.so* $target_dir/$target_lib_dir
-            cp -P protobuf$folder_postfix/protobuf-install/lib*/libprotobuf.so* $target_dir/$target_lib_dir
-            cp -P protobuf$folder_postfix/protobuf-install/lib*/libprotobufd.so* $target_dir/$target_lib_dir
-        fi
+        target_lib_dir_root=$target_dir/lib-dyn
     else
-        target_lib_dir="lib"
-        if [ ! -d $target_dir/$target_lib_dir ]
-        then
-            mkdir $target_dir/$target_lib_dir
-        fi
-        if [ "$OSTYPE" == "msys" ]; then
-            cp open-simulation-interface$folder_postfix/install/osi-lib/lib/osi3/*open_simulation_interface_pic*.lib $target_dir/$target_lib_dir
-            cp protobuf$folder_postfix/protobuf-install/lib/libprotobuf*.lib $target_dir/$target_lib_dir
-        else
-            cp open-simulation-interface$folder_postfix/install/osi-lib/lib/osi3/*open_simulation_interface_pic*.a $target_dir/$target_lib_dir
-            cp protobuf$folder_postfix/protobuf-install/lib*/libprotobuf*.a $target_dir/$target_lib_dir
-        fi
+        target_lib_dir_root=$target_dir/lib
     fi
+    mkdir $target_lib_dir_root
+    variants=("debug" "release")
+    for variant in "${variants[@]}"; do
 
-    rm -f $target_dir/$target_lib_dir/libprotobuf-lite*
+	if [[ "$OSTYPE" == "darwin"* ]] && [[ $variant == "debug" ]]; then
+	    continue
+	fi
+        target_lib_dir=$target_lib_dir_root/$variant
+        mkdir $target_lib_dir
 
+        if [ $DYNAMIC_LINKING == "1" ]; then
+
+            if [ "$OSTYPE" == "msys" ]; then
+                cp open-simulation-interface$folder_postfix/install/$variant/lib/osi3/open_simulation_interface.dll $target_lib_dir
+                cp open-simulation-interface$folder_postfix/install/$variant/lib/osi3/open_simulation_interface_pic.lib $target_lib_dir
+                if [ $variant == "debug" ]; then
+                    cp protobuf$folder_postfix/protobuf-install/lib/libprotobufd.lib $target_lib_dir
+                    cp protobuf$folder_postfix/protobuf-install/bin/libprotobufd.dll $target_lib_dir
+                else
+                    cp protobuf$folder_postfix/protobuf-install/lib/libprotobuf.lib $target_lib_dir
+                    cp protobuf$folder_postfix/protobuf-install/bin/libprotobuf.dll $target_lib_dir
+                fi
+            elif [[ "$OSTYPE" == "darwin"* ]]; then
+                cp -P open-simulation-interface$folder_postfix/install/$variant/lib/osi3/libopen_simulation_interface*.dylib $target_lib_dir
+                if [ $variant == "debug" ]; then
+                    cp -P protobuf$folder_postfix/protobuf-install/lib/libprotobufd*.dylib $target_lib_dir
+                else
+                    cp -P protobuf$folder_postfix/protobuf-install/lib/libprotobuf*.dylib $target_lib_dir
+                fi
+            else
+                cp -P open-simulation-interface$folder_postfix/install/$variant/lib/osi3/libopen_simulation_interface.so* $target_lib_dir
+                if [ $variant == "debug" ]; then
+                    cp -P protobuf$folder_postfix/protobuf-install/lib*/libprotobufd.so* $target_lib_dir
+                else
+                    cp -P protobuf$folder_postfix/protobuf-install/lib*/libprotobuf.so* $target_lib_dir
+                fi
+            fi
+        else
+            if [ "$OSTYPE" == "msys" ]; then
+                cp open-simulation-interface$folder_postfix/install/$variant/lib/osi3/*open_simulation_interface_pic.lib $target_lib_dir
+                if [ $variant == "debug" ]; then
+                    cp protobuf$folder_postfix/protobuf-install/lib/libprotobufd.lib $target_lib_dir
+                else
+                    cp protobuf$folder_postfix/protobuf-install/lib/libprotobuf.lib $target_lib_dir
+                fi
+            else
+                cp open-simulation-interface$folder_postfix/install/$variant/lib/osi3/*open_simulation_interface_pic.a $target_lib_dir
+                if [ $variant == "debug" ]; then
+                    cp protobuf$folder_postfix/protobuf-install/lib/libprotobufd.a $target_lib_dir
+                else
+                    cp protobuf$folder_postfix/protobuf-install/lib/libprotobuf.a $target_lib_dir
+                fi
+            fi
+        fi
+        rm -f $target_lib_dir/libprotobuf-lite*
+    done
 }
 
 build static
 build dynamic
 
-"$z_exe" a -r $zfilename -m0=LZMA -bb1 -spf $target_dir/*
+"$z_exe" a -r $zfilename -m0=LZMA -bb1 -spf -snl $target_dir/*
 # unpack with: 7z x <filename>
 
 echo ------------------------ Done ------------------------------------

@@ -58,36 +58,74 @@ namespace osgGA
             {
             }
 
-            bool GetFixPos()
+            bool GetFixPos() const
             {
                 return fixed_pos_;
             }
-            bool GetFixRot()
+            bool GetFixRot() const
             {
                 return fixed_rot_;
             }
-            bool GetOrtho()
+            bool GetOrtho() const
             {
                 return ortho_;
             }
-            osg::Vec3 GetPos()
+            osg::Vec3 GetPos() const
             {
                 return pos_;
             }
-            osg::Vec3 GetRot()
+            osg::Vec3 GetRot() const
             {
                 return rot_;
             }
 
         private:
-            osg::Vec3 pos_;
-            osg::Vec3 rot_;
-            bool      fixed_pos_;
-            bool      fixed_rot_;
-            bool      ortho_;
+            osg::Vec3d pos_;
+            osg::Vec3d rot_;
+            bool       fixed_pos_;
+            bool       fixed_rot_;
+            bool       ortho_;
         };
 
-        RubberbandManipulator(unsigned int mode = RB_MODE_RUBBER_BAND_ORBIT);
+        class ExplicitCenter
+        {
+        public:
+            ExplicitCenter() : set_(false)
+            {
+            }
+
+            void Set(osg::Vec3 center)
+            {
+                center_ = center;
+                set_    = true;
+            }
+
+            osg::Vec3 Get() const
+            {
+                return center_;
+            }
+
+            const osg::Vec3& GetRef() const
+            {
+                return center_;
+            }
+
+            void Reset()
+            {
+                set_ = false;
+            }
+
+            bool IsSet() const
+            {
+                return set_;
+            }
+
+        private:
+            osg::Vec3 center_;
+            bool      set_;
+        };
+
+        RubberbandManipulator(unsigned int mode, osg::Vec3d origin, double& time_ref);
 
         virtual const char* className() const
         {
@@ -96,8 +134,10 @@ namespace osgGA
 
         typedef std::vector<osg::observer_ptr<osg::Node> > ObserverNodePath;
 
-        void setTrackNode(osg::ref_ptr<osg::Node> node, bool calcDistance = false);
-        void setTrackTransform(osg::ref_ptr<osg::PositionAttitudeTransform> tx);
+        void             setTrackNode(osg::ref_ptr<osg::Node> node, bool calcDistance = false);
+        const osg::Node* getTrackNode() const;
+        void             setCenterAndDistance(osg::Vec3 center, double distance);
+        void             setTrackTransform(osg::ref_ptr<osg::PositionAttitudeTransform> tx);
 
         /** set the position of the matrix manipulator using a 4x4 Matrix.*/
         virtual void setByMatrix(const osg::Matrixd& matrix);
@@ -126,9 +166,9 @@ namespace osgGA
 
         void setMode(unsigned int mode);
 
-        int getMode()
+        int getMode() const
         {
-            return static_cast<int>(_mode);
+            return static_cast<int>(mode_);
         }
 
         void computeNodeCenterAndRotation(osg::Vec3d& nodeCenter, osg::Quat& nodeRotation) const;
@@ -140,16 +180,20 @@ namespace osgGA
             customCamera_.push_back(customCamera);
         }
 
-        unsigned int GetNumberOfCameraModes()
+        unsigned int GetNumberOfCameraModes() const
         {
             return static_cast<unsigned int>(CAMERA_MODE::RB_NUM_MODES + customCamera_.size() - 1);
         }
 
         CustomCamera* GetCurrentCustomCamera();
-        osg::Vec3     getRelativePos() const
+        osg::Vec3d    getRelativePos() const
         {
             return relative_pos_;
         }
+        osg::Vec3d     origin_;
+        ExplicitCenter explicitCenter_;
+
+        double GetCameraDistance() const;
 
     protected:
         virtual ~RubberbandManipulator();
@@ -160,29 +204,31 @@ namespace osgGA
         void addEvent(const GUIEventAdapter& ea);
 
         // Internal event stack comprising last two events.
-        osg::ref_ptr<const GUIEventAdapter> _ga_t1;
-        osg::ref_ptr<const GUIEventAdapter> _ga_t0;
+        osg::ref_ptr<const GUIEventAdapter> ga_t1_;
+        osg::ref_ptr<const GUIEventAdapter> ga_t0_;
 
         /** For the give mouse movement calculate the movement of the camera.
             Return true is camera has moved and a redraw is required.*/
         bool calcMovement(double dt, bool reset);
 
-        osg::ref_ptr<osg::Node>                      _node;
+        osg::ref_ptr<osg::Node>                      node_;
         osg::ref_ptr<osg::Node>                      track_node_ = nullptr;
         osg::ref_ptr<osg::PositionAttitudeTransform> track_tx_   = nullptr;
 
-        osg::Vec3d  _eye;
-        osg::Matrix _matrix;
-        osg::Vec3   cameraAcc;
-        osg::Vec3   cameraVel;
-        osg::Vec3   relative_pos_;
+        osg::Vec3d  eye_;
+        osg::Matrix matrix_;
+        osg::Vec3d  cameraAcc_;
+        osg::Vec3d  cameraVel_;
+        osg::Vec3d  relative_pos_;
 
-        float _cameraDistance;
-        float _cameraAngle;
-        float _cameraRotation;
+        double cameraBaseDistance_;
+        double cameraAngle_;
+        double cameraRotation_;
 
-        unsigned int _mode;
+        unsigned int mode_;
         bool         fix_camera_;
+        double&      time_ref_;
+        double       zoom_distance_ = 0.0;
 
         std::vector<CustomCamera> customCamera_;
     };

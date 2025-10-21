@@ -26,6 +26,7 @@
 #endif  // _USE_OSI
 #ifdef _USE_OSG
 #include "viewer.hpp"
+#include "OSISensorView.hpp"
 #endif
 
 using namespace scenarioengine;
@@ -83,9 +84,14 @@ namespace scenarioengine
 
         ScenarioPlayer(int argc, char *argv[]);
         ~ScenarioPlayer();
+
+        /**
+        Initialize the player for the specified scenario and road network
+        @return 0 on success, -1 on failure, -2 argument parse error, 1 help requested, 2 version requested
+        */
         int  Init();
         void PrintUsage();
-        bool IsQuitRequested()
+        bool IsQuitRequested() const
         {
             return quit_request;
         }
@@ -104,26 +110,33 @@ namespace scenarioengine
         @param pos_y The y coordinate of the sensor in object local coordinate system
         @param pos_z The z coordinate of the sensor in object local coordinate system
         @param heading The heading of the sensor in object local coordinate system
-        @param heading The heading of the sensor in object local coordinate system
-        @param near The distance from object reference point to start of sensor view frustum
-        @param far The distance from object reference point to end of sensor view frustum
+        @param near_dist The distance from object reference point to start of sensor view frustum
+        @param far_dist The distance from object reference point to end of sensor view frustum
         @param fovH The horizontal width, in radians, of the sensor view frustum
         @return -1 on failure, else the sensor ID (Global index of sensor)
         */
-        int AddObjectSensor(Object *obj, double pos_x, double pos_y, double pos_z, double heading, double near, double far, double fovH, int maxObj);
+        int AddObjectSensor(Object *obj,
+                            double  pos_x,
+                            double  pos_y,
+                            double  pos_z,
+                            double  heading,
+                            double  near_dist,
+                            double  far_dist,
+                            double  fovH,
+                            int     maxObj);
 
         /**
         Retrieve the total number of ideal sensors attached to any objects
         @return -1 on failure, else the number of sensors
         */
-        int GetNumberOfObjectSensors();
+        int GetNumberOfObjectSensors() const;
 
         /**
         Retrieve the number of ideal sensors attached to an object
         @param obj Pointer to the object
         @return -1 on failure, else the number of sensors attached to the object
         */
-        int GetNumberOfSensorsAttachedToObject(Object *obj);
+        int GetNumberOfSensorsAttachedToObject(const Object *obj) const;
 
 #ifdef _USE_OSG
         void InitVehicleModel(Object *obj, viewer::CarModel *model);
@@ -134,13 +147,9 @@ namespace scenarioengine
         {
             fixed_timestep_ = timestep;
         }
-        double GetFixedTimestep()
+        double GetFixedTimestep() const
         {
             return fixed_timestep_;
-        }
-        int GetOSIFreq()
-        {
-            return osi_freq_;
         }
         void        RegisterObjCallback(int id, ObjCallbackFunc func, void *data);
         void        UpdateCSV_Log();
@@ -176,15 +185,15 @@ namespace scenarioengine
         {
             state_ = state;
         }
-        PlayerState GetState()
+        PlayerState GetState() const
         {
             return state_;
         }
-        bool IsPaused()
+        bool IsPaused() const
         {
             return GetState() == PlayerState::PLAYER_STATE_PAUSE;
         }
-        int GetCounter()
+        int GetCounter() const
         {
             return frame_counter_;
         }
@@ -200,10 +209,12 @@ namespace scenarioengine
             return odr_manager;
         }
 
-        CSV_Logger      *CSV_Log;
-        ScenarioEngine  *scenarioEngine;
-        ScenarioGateway *scenarioGateway;
-        PlayerServer    *player_server_;
+        void InitControllersPostPlayer();
+
+        CSV_Logger                   *CSV_Log;
+        ScenarioEngine               *scenarioEngine;
+        ScenarioGateway              *scenarioGateway;
+        std::unique_ptr<PlayerServer> player_server_;
 
 #ifdef _USE_OSI
         OSIReporter *osiReporter;
@@ -237,7 +248,6 @@ namespace scenarioengine
         std::vector<ObjectSensor *> sensor;
         const double                maxStepSize;
         const double                minStepSize;
-        SE_Options                  opt;
         std::vector<ObjCallback>    objCallback;
         std::string                 exe_path_;
         SE_Semaphore                player_init_semaphore;
@@ -252,7 +262,6 @@ namespace scenarioengine
         bool        launch_server;
         bool        disable_controllers_;
         double      fixed_timestep_;
-        int         osi_freq_;
         int         frame_counter_;
         std::string osi_receiver_addr;
         bool        osi_updated_;

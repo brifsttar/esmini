@@ -10,6 +10,11 @@
  * https://sites.google.com/view/simulationscenarios
  */
 
+#include "logger.hpp"
+
+#include "Config.hpp"
+#include "ConfigParser.hpp"
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <cmath>
@@ -19,6 +24,10 @@
 #include <sstream>
 #include <locale>
 #include <array>
+#include <regex>
+#include <chrono>
+#include <iomanip>
+#include <string>
 
 // UDP network includes
 #ifndef _WIN32
@@ -32,7 +41,17 @@
 #include <Ws2tcpip.h>
 #endif
 
-#include "CommonMini.hpp"
+#if defined(_WIN32) || defined(__CYGWIN__)
+#include <windows.h>
+#include <timezoneapi.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <dlfcn.h>
+#elif defined(__linux__)
+#include <dlfcn.h>
+#include <unistd.h>
+#include <limits.h>
+#endif
 
 // #define DEBUG_TRACE
 
@@ -97,10 +116,12 @@ std::map<int, std::string> ParseModelIds()
     file_name_candidates.push_back(filename);
 
     // Check registered paths
-    for (size_t i = 0; i < SE_Env::Inst().GetPaths().size(); i++)
+    std::vector<std::string>& paths = SE_Env::Inst().GetOptions().GetOptionValues("path");
+    for (size_t i = 0; i < paths.size(); i++)
     {
-        file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], filename));
-        file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i] + "/../resources", filename));
+        file_name_candidates.push_back(CombineDirectoryPathAndFilepath(paths[i], filename));
+        file_name_candidates.push_back(CombineDirectoryPathAndFilepath(paths[i] + "/../resources", filename));
+        file_name_candidates.push_back(CombineDirectoryPathAndFilepath(paths[i] + "/..", filename));
     }
 
     size_t i;
@@ -125,39 +146,96 @@ std::map<int, std::string> ParseModelIds()
 
     if (i == file_name_candidates.size())
     {
-        LOG("Failed to load %s file. Tried:", filename.c_str());
+        LOG_ERROR("Failed to load {} file. Tried:", filename);
         for (unsigned int j = 0; j < file_name_candidates.size(); j++)
         {
-            LOG("  %s", file_name_candidates[j].c_str());
+            LOG_INFO("  {}", file_name_candidates[j].c_str());
         }
 
-        printf("  continue with internal hard coded list: \n");
+        LOG_INFO("  continue with internal hard coded list:");
         for (int j = 0; static_cast<unsigned int>(j) < sizeof(entityModelsFilesFallbackList_) / sizeof(char*); j++)
         {
             entity_model_map_[j] = entityModelsFilesFallbackList_[j];
-            LOG("    %2d: %s", j, entity_model_map_[j].c_str());
+            LOG_INFO("    {:>2d}: {}", j, entity_model_map_[j]);
         }
     }
 
     return entity_model_map_;
 }
 
-std::string ControlDomain2Str(ControlDomains domains)
+std::string ControlDomainMask2Str(unsigned int domain_mask)
 {
-    if (domains == ControlDomains::DOMAIN_BOTH)
+    std::string str;
+
+    if (domain_mask != static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_NONE))
     {
-        return "lateral and longitudinal";
+        if (domain_mask & static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LAT))
+        {
+            str += "Lateral";
+        }
+
+        if (domain_mask & static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LONG))
+        {
+            if (!str.empty())
+            {
+                str += " & ";
+            }
+            str += "Longitudinal";
+        }
+
+        if (domain_mask & static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LIGHT))
+        {
+            if (!str.empty())
+            {
+                str += " & ";
+            }
+            str += "lighting";
+        }
+
+        if (domain_mask & static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_ANIM))
+        {
+            if (!str.empty())
+            {
+                str += " & ";
+            }
+            str += "Animation";
+        }
     }
-    else if (domains == ControlDomains::DOMAIN_LAT)
+    else
     {
-        return "lateral";
-    }
-    else if (domains == ControlDomains::DOMAIN_LONG)
-    {
-        return "longitudinal";
+        str = "None";
     }
 
-    return "none";
+    return str;
+}
+
+ControlDomainMasks ControlDomain2DomainMask(ControlDomains domain)
+{
+    switch (domain)
+    {
+        case ControlDomains::DOMAIN_LONG:
+            return ControlDomainMasks::DOMAIN_MASK_LONG;
+        case ControlDomains::DOMAIN_LAT:
+            return ControlDomainMasks::DOMAIN_MASK_LAT;
+        case ControlDomains::DOMAIN_LIGHT:
+            return ControlDomainMasks::DOMAIN_MASK_LIGHT;
+        case ControlDomains::DOMAIN_ANIM:
+            return ControlDomainMasks::DOMAIN_MASK_ANIM;
+        default:
+            break;
+    }
+
+    return ControlDomainMasks::DOMAIN_MASK_NONE;
+}
+
+std::string ControlDomain2Str(ControlDomains domain)
+{
+    if (domain != ControlDomains::COUNT)
+    {
+        return ControlDomainMask2Str(static_cast<unsigned int>(ControlDomain2DomainMask(domain)));
+    }
+
+    return "Undefined";
 }
 
 bool FileExists(const char* fileName)
@@ -170,7 +248,7 @@ std::string CombineDirectoryPathAndFilepath(std::string dir_path, std::string fi
 {
     std::string path = file_path;
 
-    if (file_path[0] != '/' || file_path[0] != '\\' || file_path[1] != ':')
+    if (!file_path.empty() && file_path[0] != '/' && file_path[0] != '\\' && file_path[1] != ':')
     {
         // Relative path. Make sure it starts with ".." or "./"
         if (path[0] != '.')
@@ -241,7 +319,8 @@ double GetAngleDifference(double angle1, double angle2)
 
 bool IsAngleForward(double teta)
 {
-    return !(teta > M_PI_2 && teta < 3 * M_PI_2);
+    double teta_norm = GetAngleInInterval2PI(teta);
+    return !(teta_norm > M_PI_2 && teta_norm < 3 * M_PI_2);
 }
 
 double GetAngleSum(double angle1, double angle2)
@@ -307,6 +386,52 @@ int GetIntersectionOfTwoLineSegments(double  ax1,
     y3 = ay1 + t * (ay2 - ay1);
 
     return 0;
+}
+
+int GetIntersectionsOfLineAndCircle(const double (&p0)[2],
+                                    const double (&p1)[2],
+                                    const double (&cc)[2],
+                                    const double cr,
+                                    double (&i0)[2],
+                                    double (&i1)[2])
+{
+    int num_intersections = 0;
+
+    // Use the quadratic formula to find intersections
+    double dx           = p1[0] - p0[0];
+    double dy           = p1[1] - p0[1];
+    double A            = dx * dx + dy * dy;
+    double B            = 2 * (dx * (p0[0] - cc[0]) + dy * (p0[1] - cc[1]));
+    double C            = (p0[0] - cc[0]) * (p0[0] - cc[0]) + (p0[1] - cc[1]) * (p0[1] - cc[1]) - cr * cr;
+    double discriminant = B * B - 4 * A * C;
+
+    if (discriminant < -SMALL_NUMBER)
+    {
+        // No intersection
+        return 0;
+    }
+    else if (NEAR_NUMBERS(discriminant, 0))
+    {
+        // One intersection
+        double t          = -B / (2 * A);
+        i0[0]             = p0[0] + t * dx;
+        i0[1]             = p0[1] + t * dy;
+        num_intersections = 1;
+    }
+    else
+    {
+        // Two intersections
+        double sqrt_discriminant = sqrt(discriminant);
+        double t1                = (-B + sqrt_discriminant) / (2 * A);
+        double t2                = (-B - sqrt_discriminant) / (2 * A);
+        i0[0]                    = p0[0] + t1 * dx;
+        i0[1]                    = p0[1] + t1 * dy;
+        i1[0]                    = p0[0] + t2 * dx;
+        i1[1]                    = p0[1] + t2 * dy;
+        num_intersections        = 2;
+    }
+
+    return num_intersections;
 }
 
 bool PointInBetweenVectorEndpoints(double x3, double y3, double x1, double y1, double x2, double y2, double& sNorm)
@@ -416,8 +541,7 @@ double DistanceFromPointToLine2D(double x3, double y3, double x1, double y1, dou
 
 double DistanceFromPointToLine2DWithAngle(double x3, double y3, double x1, double y1, double angle)
 {
-    // https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line
-    return abs(cos(angle) * (y1 - y3) - sin(angle) * (x1 - x3));
+    return (x3 - x1) * std::sin(angle) - (y3 - y1) * std::cos(angle);
 }
 
 int PointSideOfVec(double px, double py, double vx1, double vy1, double vx2, double vy2)
@@ -488,6 +612,19 @@ void ProjectPointOnVector2D(double x0, double y0, double x1, double y1, double& 
         px = 0.0;
         py = 0.0;
     }
+}
+
+double ProjectPointOnVector2DSignedLength(double x0, double y0, double x1, double y1, double& px, double& py)
+{
+    ProjectPointOnVector2D(x0, y0, x1, y1, px, py);
+
+    double length = GetLengthOfVector2D(px, py);
+    if (SIGN(px) != SIGN(x1) || SIGN(py) != SIGN(y1))
+    {
+        length *= -1;  // projected point in opposite direction
+    }
+
+    return length;
 }
 
 bool IsPointWithinSectorBetweenTwoLines(SE_Vector p, SE_Vector l0p0, SE_Vector l0p1, SE_Vector l1p0, SE_Vector l1p1, double& sNorm)
@@ -599,6 +736,176 @@ void SwapByteOrder(unsigned char* buf, int data_type_size, int buf_size)
     }
 }
 
+bool IsNumber(const std::string& str, int max_digits)
+{
+    if (str.empty())
+    {
+        return false;
+    }
+
+    int counter = 0;
+    for (auto& c : str)
+    {
+        counter++;
+        if (!isdigit(c) || (max_digits > -1 && counter > max_digits))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool IsValidDateTimeFormat(const std::string& dateTimeString)
+{
+    std::regex pattern(R"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2})");
+    if (!std::regex_match(dateTimeString, pattern))
+    {
+        return false;  // Invalid format
+    }
+
+    std::tm           timeStruct = {};
+    std::stringstream ss(dateTimeString);
+    ss >> std::get_time(&timeStruct, "%Y-%m-%dT%H:%M:%S");
+
+    if (ss.fail())
+    {
+        return false;  // Failed to parse time
+    }
+
+    // Check for valid date/time components
+    if (timeStruct.tm_year < 0 || timeStruct.tm_year > 20000 || timeStruct.tm_mon < 0 || timeStruct.tm_mon > 11 || timeStruct.tm_mday < 1 ||
+        timeStruct.tm_mday > 31 || timeStruct.tm_hour < 0 || timeStruct.tm_hour > 23 || timeStruct.tm_min < 0 || timeStruct.tm_min > 59 ||
+        timeStruct.tm_sec < 0 || timeStruct.tm_sec > 59)
+    {
+        return false;  // Invalid date/time values
+    }
+
+    // Basic month day validation
+    if (timeStruct.tm_mon == 1 && timeStruct.tm_mday > 29)
+        return false;
+    if ((timeStruct.tm_mon == 3 || timeStruct.tm_mon == 5 || timeStruct.tm_mon == 8 || timeStruct.tm_mon == 10) && timeStruct.tm_mday > 30)
+        return false;
+
+    // Check Leap year for february
+    if (timeStruct.tm_mon == 1 && timeStruct.tm_mday == 29)
+    {
+        int year = timeStruct.tm_year + 1900;
+        if (year % 4 != 0)
+            return false;
+        if (year % 100 == 0 && year % 400 != 0)
+            return false;
+    }
+
+    // Check milliseconds
+    std::string millisecondsStr = dateTimeString.substr(20, 3);
+    try
+    {
+        int milliseconds = std::stoi(millisecondsStr);
+        if (milliseconds < 0 || milliseconds > 999)
+        {
+            return false;
+        }
+    }
+    catch (const std::invalid_argument& e)
+    {
+        LOG_ERROR("IsValidDateTimeFormat: {}", e.what());
+        return false;  // Invalid milliseconds
+    }
+
+    // Check timezone offset
+    std::string timezoneStr = dateTimeString.substr(23);
+    std::regex  timezonePattern(R"([+-]\d{2}:\d{2})");
+    if (!std::regex_match(timezoneStr, timezonePattern))
+        return false;
+
+    return true;  // Valid date and time
+}
+
+uint32_t GetSecondsSinceMidnight(const std::string& dateTimeString)
+{
+    std::tm           timeStruct = {};
+    std::stringstream ss(dateTimeString);
+
+    ss >> timeStruct.tm_year;
+    if (ss.peek() == '-')
+        ss.ignore();
+    ss >> timeStruct.tm_mon;
+    if (ss.peek() == '-')
+        ss.ignore();
+    ss >> timeStruct.tm_mday;
+    if (ss.peek() == 'T')
+        ss.ignore();
+    ss >> timeStruct.tm_hour;
+    if (ss.peek() == ':')
+        ss.ignore();
+    ss >> timeStruct.tm_min;
+    if (ss.peek() == ':')
+        ss.ignore();
+    ss >> timeStruct.tm_sec;
+
+    // Discard fractional seconds
+    if (ss.peek() == '.')
+    {
+        std::string dummy;
+        std::getline(ss, dummy, '+');  // Read until the + in timezone
+    }
+
+    // Ignore timezone
+    return static_cast<uint32_t>(timeStruct.tm_hour * 3600 + timeStruct.tm_min * 60 + timeStruct.tm_sec);
+}
+
+int64_t GetEpochTimeFromString(const std::string& datetime)
+{
+    std::tm tm = {};
+
+    std::istringstream ss(datetime);
+    ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
+
+    if (ss.peek() == '.')
+    {
+        int milliseconds = 0;
+        ss.ignore();
+        ss >> milliseconds;
+    }
+    // We're ignoring tz info afterwards, if present
+
+    tm.tm_isdst = -1;  // To be proper, we tell mktime to ignore DST
+
+#if defined(_WIN32)
+    std::time_t epoch = _mkgmtime(&tm);
+#elif defined(__unix__) || defined(__APPLE__)
+    std::time_t epoch = timegm(&tm);
+#else
+    // fallback if not available
+    std::time_t epoch = mktime(&tm);
+#endif
+
+    return static_cast<int64_t>(epoch);
+}
+
+double GetSecondsToFactor(int seconds)
+{
+    // There are 24 * 60 * 60 seconds in a day
+    constexpr int secondsInDay = 86400;
+
+    // Normalize the seconds to a range of 0 to 2*pi (one full cycle)
+    double normalizedTime = (static_cast<double>(seconds) / secondsInDay) * 2.0 * M_PI;
+
+    // Shift the phase so that the peak (factor 1) is at noon (12 * 3600 seconds)
+    // Noon corresponds to the middle of the day, so we shift by pi
+    double noonInRadians    = (12.0 * 3600.0 / secondsInDay) * 2.0 * M_PI;
+    double phaseShiftedTime = normalizedTime - noonInRadians;
+
+    // Use the cosine function to create the sinusoidal shape.
+    // cos(0) = 1, which we want at noon.
+    // cos(pi) = -1, which we want at midnight (after shifting).
+    // Take the absolute value and then scale and shift to get a range of 0 to 1.
+    double factor = 0.5 * (std::cos(phaseShiftedTime) + 1.0);
+
+    return factor;
+}
+
 int strtoi(std::string s)
 {
     return atoi(s.c_str());
@@ -618,6 +925,20 @@ void StrCopy(char* dest, const char* src, size_t size, bool terminate)
     }
 }
 
+std::string GetVersionInfoForLog()
+{
+    std::string info = "esmini GIT REV: ";
+    info.append(esmini_git_rev());
+    info.append("\nesmini GIT TAG: ");
+    info.append(esmini_git_tag());
+    info.append("\nesmini GIT BRANCH: ");
+    info.append(esmini_git_branch());
+    info.append("\nesmini BUILD VERSION: ");
+    info.append(esmini_build_version());
+    info.append("\n");
+    return info;
+}
+
 #if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
 
 #include <windows.h>
@@ -635,18 +956,24 @@ void SE_sleep(unsigned int msec)
 
 #else
 
-#include <chrono>
-
-using namespace std::chrono;
-
-__int64 SE_getSystemTime()
+__int64 SE_getSystemTimeMilliseconds()
 {
-    return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-void SE_sleep(unsigned int msec)
+__int64 SE_getSystemTimeMicroseconds()
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+void SE_sleepMilliseconds(unsigned int msec)
 {
     std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(msec)));
+}
+
+void SE_sleepMicroseconds(unsigned int usec)
+{
+    std::this_thread::sleep_for(std::chrono::microseconds(static_cast<int>(usec)));
 }
 
 #endif
@@ -655,7 +982,7 @@ double SE_getSimTimeStep(__int64& time_stamp, double min_time_step, double max_t
 {
     double dt;
 
-    __int64 now = SE_getSystemTime();
+    __int64 now = SE_getSystemTimeMicroseconds();
 
     if (time_stamp == 0)
     {
@@ -664,17 +991,20 @@ double SE_getSimTimeStep(__int64& time_stamp, double min_time_step, double max_t
     }
     else
     {
-        dt = static_cast<double>(now - time_stamp) * 0.001;  // step size in seconds
+        dt = (now - time_stamp) * 1e-6;  // step size in seconds
 
         if (dt > max_time_step)  // limit step size
         {
+            LOG_DEBUG("Limit stepsize (dt) from {} to {}", dt, max_time_step);
             dt = max_time_step;
         }
         else if (dt < min_time_step)  // avoid CPU rush, sleep for a while
         {
-            SE_sleep(static_cast<unsigned int>(static_cast<int>(min_time_step - dt) * 1000));
-            now = SE_getSystemTime();
-            dt  = static_cast<double>(now - time_stamp) * 0.001;
+            double nap_duration = min_time_step - dt;
+            LOG_DEBUG("dt {:.10f} < minimum {} ms ({}s), take minimal nap", dt, min_time_step * 1e+3, min_time_step);
+            SE_sleepMicroseconds(static_cast<unsigned int>(nap_duration * 1e+6));  // sleep microseconds
+            now = SE_getSystemTimeMicroseconds();
+            dt  = (now - time_stamp) * 1e-6;
         }
     }
     time_stamp = now;
@@ -682,20 +1012,67 @@ double SE_getSimTimeStep(__int64& time_stamp, double min_time_step, double max_t
     return dt;
 }
 
-std::vector<std::string> SplitString(const std::string& s, char separator)
+std::pair<bool, bool> StrToBool(const std::string& val)
 {
-    std::vector<std::string> output;
-    std::string::size_type   prev_pos = 0, pos = 0;
-
-    while ((pos = s.find(separator, pos)) != std::string::npos)
+    if ("true" == val || "True" == val || "TRUE" == val)
     {
-        std::string substring(s.substr(prev_pos, pos - prev_pos));
-        output.push_back(substring);
-        prev_pos = ++pos;
+        return {true, true};
     }
-    output.push_back(s.substr(prev_pos, pos - prev_pos));  // Last word
+    if ("false" == val || "False" == val || "FALSE" == val)
+    {
+        return {true, false};
+    }
+    return {false, false};
+}
 
-    return output;
+std::vector<std::string> SplitString(const std::string& str, char delimiter)
+{
+    if (str.empty())
+    {
+        return {};
+    }
+    std::vector<std::string> result;
+    size_t                   start = 0, end = 0;
+
+    while ((end = str.find(delimiter, start)) != std::string_view::npos)
+    {
+        result.emplace_back(str.substr(start, end - start));
+        start = end + 1;
+    }
+
+    // Add the last segment
+    result.emplace_back(str.substr(start));
+
+    return result;
+}
+
+std::vector<std::string> SplitQuotedString(const std::string& str, char delim)
+{
+    if (str.empty())
+    {
+        return {};
+    }
+    std::vector<std::string> result;
+    int                      pos = -1;
+    do
+    {
+        size_t quotePos = str.find_first_of('"', pos + 1);
+        if (quotePos == std::string::npos)
+        {
+            auto vec = SplitString(str.substr(pos + 1, str.size()), delim);
+            result.insert(result.end(), std::make_move_iterator(vec.begin()), std::make_move_iterator(vec.end()));
+            return result;
+        }
+        size_t nextPos = str.find_first_of('"', quotePos + 1);
+        if (nextPos == std::string::npos)
+        {
+            auto vec = SplitString(str.substr(quotePos + 1, str.size()), delim);
+            result.insert(result.end(), std::make_move_iterator(vec.begin()), std::make_move_iterator(vec.end()));
+            return result;
+        }
+        result.emplace_back(str.substr(quotePos + 1, nextPos - quotePos - 1));
+        pos = static_cast<unsigned int>(nextPos);
+    } while (true);
 }
 
 std::string DirNameOf(const std::string& fname)
@@ -730,16 +1107,6 @@ bool IsDirectoryName(const std::string& string)
 
 std::string FileNameExtOf(const std::string& fname)
 {
-    size_t start_pos = fname.find_last_of("\\/");
-    if (start_pos != std::string::npos)
-    {
-        start_pos++;
-    }
-    else
-    {
-        start_pos = 0;
-    }
-
     size_t end_pos = fname.find_last_of(".");
     if (end_pos != std::string::npos)
     {
@@ -816,17 +1183,39 @@ std::string ToLower(const char* in_str)
 FILE* FileOpen(const char* filename, const char* mode)
 {
     FILE* file = nullptr;
-
 #ifdef _WIN32
-    if (fopen_s(&file, filename, mode) != 0)
+    int retval = fopen_s(&file, filename, mode);
+    if (retval != 0)
     {
+        char buffer[256];
+        strerror_s(buffer, sizeof(buffer), errno);
+        printf("%s\n", buffer);
         return nullptr;
     }
 #else
-    file    = fopen(filename, mode);
+    file = fopen(filename, mode);
 #endif
 
     return file;
+}
+
+int GetCrossProduct3D(double x1, double y1, double z1, double x2, double y2, double z2, double& x, double& y, double& z)
+{
+    x = y1 * z2 - z1 * y2;
+    y = z1 * x2 - x1 * z2;
+    z = x1 * y2 - y1 * x2;
+
+    return 0;
+}
+
+double GetCrossProduct3DMagnitude(double x1, double y1, double z1, double x2, double y2, double z2)
+{
+    double x, y, z;
+
+    GetCrossProduct3D(x1, y1, z1, x2, y2, z2, x, y, z);
+
+    // Calculate the magnitude of the resulting vector
+    return std::sqrt(x * x + y * y + z * z);
 }
 
 double GetCrossProduct2D(double x1, double y1, double x2, double y2)
@@ -837,6 +1226,35 @@ double GetCrossProduct2D(double x1, double y1, double x2, double y2)
 double GetDotProduct2D(double x1, double y1, double x2, double y2)
 {
     return x1 * x2 + y1 * y2;
+}
+
+double GetAngleBetweenVectors(double x1, double y1, double x2, double y2)
+{
+    double dp      = GetDotProduct2D(x1, y1, x2, y2);
+    double length1 = GetLengthOfVector2D(x1, y1);
+    double length2 = GetLengthOfVector2D(x2, y2);
+    if (length1 < SMALL_NUMBER || length2 < SMALL_NUMBER)
+    {
+        return 0.0;  // Avoid division by zero
+    }
+    return acos(ABS_LIMIT(dp / (length1 * length2), 1.0));
+}
+
+double GetDotProduct3D(double x1, double y1, double z1, double x2, double y2, double z2)
+{
+    return x1 * x2 + y1 * y2 + z1 * z2;
+}
+
+double GetAngleBetweenVectors3D(double x1, double y1, double z1, double x2, double y2, double z2)
+{
+    double dp      = GetDotProduct3D(x1, y1, z1, x2, y2, z2);
+    double length1 = GetLengthOfVector3D(x1, y1, z1);
+    double length2 = GetLengthOfVector3D(x2, y2, z2);
+    if (length1 < SMALL_NUMBER || length2 < SMALL_NUMBER)
+    {
+        return 0.0;  // Avoid division by zero
+    }
+    return acos(ABS_LIMIT(dp / (length1 * length2), 1.0));
 }
 
 void NormalizeVec2D(double x, double y, double& xn, double& yn)
@@ -852,9 +1270,9 @@ void NormalizeVec2D(double x, double y, double& xn, double& yn)
 
 void OffsetVec2D(double x0, double y0, double x1, double y1, double offset, double& xo0, double& yo0, double& xo1, double& yo1)
 {
-    double angle_line     = atan2(y1 - y0, x1 - x0);
-    double angle_offset   = angle_line + (offset < 0 ? M_PI_2 : -M_PI_2);  // perpendicular to line
-    double line_offset[2] = {fabs(offset) * cos(angle_offset), fabs(offset) * sin(angle_offset)};
+    double       angle_line     = atan2(y1 - y0, x1 - x0);
+    double       angle_offset   = angle_line + (offset < 0 ? M_PI_2 : -M_PI_2);  // perpendicular to line
+    const double line_offset[2] = {fabs(offset) * cos(angle_offset), fabs(offset) * sin(angle_offset)};
 
     xo0 = x0 + line_offset[0];
     yo0 = y0 + line_offset[1];
@@ -900,9 +1318,9 @@ void R0R12EulerAngles(double h0, double p0, double r0, double h1, double p1, dou
     double sy = sin(p0);
     double sz = sin(r0);
 
-    double R0[3][3] = {{cx * cy, cx * sy * sz - sx * cz, sx * sz + cx * sy * cz},
-                       {sx * cy, cx * cz + sx * sy * sz, sx * sy * cz - cx * sz},
-                       {-sy, cy * sz, cy * cz}};
+    const double R0[3][3] = {{cx * cy, cx * sy * sz - sx * cz, sx * sz + cx * sy * cz},
+                             {sx * cy, cx * cz + sx * sy * sz, sx * sy * cz - cx * sz},
+                             {-sy, cy * sz, cy * cz}};
 
     cx = cos(h1);
     cy = cos(p1);
@@ -911,9 +1329,9 @@ void R0R12EulerAngles(double h0, double p0, double r0, double h1, double p1, dou
     sy = sin(p1);
     sz = sin(r1);
 
-    double R1[3][3] = {{cx * cy, cx * sy * sz - sx * cz, sx * sz + cx * sy * cz},
-                       {sx * cy, cx * cz + sx * sy * sz, sx * sy * cz - cx * sz},
-                       {-sy, cy * sz, cy * cz}};
+    const double R1[3][3] = {{cx * cy, cx * sy * sz - sx * cz, sx * sz + cx * sy * cz},
+                             {sx * cy, cx * cz + sx * sy * sz, sx * sy * cz - cx * sz},
+                             {-sy, cy * sz, cy * cz}};
 
     // Multiply
     double R2[3][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
@@ -954,7 +1372,7 @@ int InvertMatrix3(const double m[3][3], double mi[3][3])
         double pivot = augmented_matrix[i][i];
         if (pivot == 0)
         {
-            LOG("Matrix is singular. Inversion not possible.");
+            LOG_ERROR("Matrix is singular. Inversion not possible.");
             return -1;
         }
 
@@ -1024,9 +1442,9 @@ void CalcRelAnglesFromRoadAndAbsAngles(double  h_road,
     sy = sin(p_abs);
     sz = sin(r_abs);
 
-    double R1[3][3] = {{cx * cy, cx * sy * sz - sx * cz, sx * sz + cx * sy * cz},
-                       {sx * cy, cx * cz + sx * sy * sz, sx * sy * cz - cx * sz},
-                       {-sy, cy * sz, cy * cz}};
+    const double R1[3][3] = {{cx * cy, cx * sy * sz - sx * cz, sx * sz + cx * sy * cz},
+                             {sx * cy, cx * cz + sx * sy * sz, sx * sy * cz - cx * sz},
+                             {-sy, cy * sz, cy * cz}};
 
     // Multiply
     double R2[3][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
@@ -1112,16 +1530,97 @@ void RotateVec3d(const double h0,
 int SE_Env::AddPath(std::string path)
 {
     // Check if path already in list
-    for (size_t i = 0; i < paths_.size(); i++)
+    std::vector<std::string>& paths = SE_Env::Inst().GetOptions().GetOptionValues("path");
+    for (size_t i = 0; i < paths.size(); i++)
     {
-        if (paths_[i] == path)
+        if (paths[i] == path)
         {
             return -1;
         }
     }
-    paths_.push_back(path);
+    SE_Env::Inst().GetOptions().SetOptionValue("path", path, true);
 
     return 0;
+}
+
+int OnRequestShowHelpOrVersion(int argc, char** argv, SE_Options& opt)
+{
+    int retVal = 0;
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0)
+        {
+            if (opt.GetAppName().empty())
+            {
+                opt.SetAppName(FileNameWithoutExtOf(argv[0]));
+            }
+            opt.PrintUsage();
+#ifdef _USE_OSG
+            PrintOSGUsage();
+#endif  // _USE_OSG
+            retVal += 1;
+        }
+        else if (strcmp(argv[i], "--version") == 0)
+        {
+            txtLogger.LogVersion();
+            retVal += 2;
+        }
+    }
+    return retVal;
+}
+
+void PrintOSGUsage()
+{
+    // Inform about a few OSG options
+    printf("Additional OSG graphics options:\n");
+    printf("  --clear-color <color>                      Set the background color of the viewer in the form \"r,g,b[,a]\"\n");
+    printf("  --screen <num>                             Set the screen to use when multiple screens are present\n");
+    printf("  --window <x y w h>                         Set the position x, y and size w, h of the viewer window. -1 -1 -1 -1 for fullscreen.\n");
+    printf(
+        "  --borderless-window <x y w h>	             Set the position x, y and size w, h of a borderless viewer window. -1 -1 -1 -1 for fullscreen.\n");
+    printf("  --SingleThreaded                           Run application and all graphics tasks in one single thread.\n");
+    printf("  --lodScale <LOD scalefactor>               Adjust Level Of Detail 1=default >1 decrease fidelity <1 increase fidelity\n");
+    printf("\n");
+}
+
+std::string GetDefaultPath()
+{
+#if defined(_WIN32)
+    char    path[MAX_PATH];
+    HMODULE hModule = nullptr;
+
+    // Get the handle of the current module (Executable/Library)
+    if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCTSTR)GetDefaultPath, &hModule))
+    {
+        LOG_ERROR("Failed to get Executable/Library handle.");
+        return "";
+    }
+
+    // Get the full path of the Executable/Library
+    if (GetModuleFileName(hModule, path, MAX_PATH) == 0)
+    {
+        LOG_ERROR("Failed to get Executable/Library path.");
+        return "";
+    }
+    LOG_DEBUG("Executable/Library path: {}", path);
+    std::string strPath(path);
+    return strPath;
+
+#else
+
+    Dl_info dl_info;
+
+    // Use dladdr to retrieve the path of the loaded library
+    if (dladdr((void*)&GetDefaultPath, &dl_info) == 0)
+    {
+        LOG_ERROR("Failed to get Executable/Library path.");
+        return "";
+    }
+    std::string path(dl_info.dli_fname);
+    LOG_DEBUG("Executable/Library path: {}", path);
+    return path;
+
+#endif
 }
 
 std::string SE_Env::GetModelFilenameById(int model_id)
@@ -1136,155 +1635,15 @@ std::string SE_Env::GetModelFilenameById(int model_id)
 
     if (name.empty())
     {
-        LOG("Failed to lookup 3d model filename for model_id %d in list:", model_id);
+        LOG_ERROR("Failed to lookup 3d model filename for model_id {} in list:", model_id);
         std::map<int, std::string>::iterator it;
         for (it = entity_model_map_.begin(); it != entity_model_map_.end(); ++it)
         {
-            LOG("  %d %s", it->first, it->second.c_str());
+            LOG_INFO("  {} {}", it->first, it->second);
         }
     }
 
     return name;
-}
-
-Logger::Logger() : callback_(0), time_(0)
-{
-    callback_ = 0;
-    time_     = 0;
-}
-
-Logger::~Logger()
-{
-    if (file_.is_open())
-    {
-        file_.close();
-    }
-
-    callback_ = 0;
-}
-
-bool Logger::IsCallbackSet()
-{
-    return callback_ != 0;
-}
-
-void Logger::Log(bool quit, bool trace, char const* file, char const* func, int line, char const* format, ...)
-{
-    static char complete_entry[2048];
-    static char message[1024];
-
-    mutex_.Lock();  // Protect from simultanous use from different threads
-
-    va_list args;
-    va_start(args, format);
-    vsnprintf(message, 1024, format, args);
-
-#ifdef DEBUG_TRACE
-    // enforce trace
-    trace = true;
-#endif
-    if (time_)
-    {
-        if (trace)
-        {
-            snprintf(complete_entry, 2048, "%.3f %s / %d / %s(): %s", *time_, file, line, func, message);
-        }
-        else
-        {
-            snprintf(complete_entry, 2048, "%.3f: %s", *time_, message);
-        }
-    }
-    else
-    {
-        if (trace)
-        {
-            snprintf(complete_entry, 2048, "%s / %d / %s(): %s", file, line, func, message);
-        }
-        else
-        {
-            StrCopy(complete_entry, message, 1024);
-        }
-    }
-
-    if (file_.is_open())
-    {
-        file_ << complete_entry << std::endl;
-        file_.flush();
-    }
-
-    if (callback_)
-    {
-        callback_(complete_entry);
-    }
-
-    va_end(args);
-
-    mutex_.Unlock();
-
-    if (quit)
-    {
-        throw std::runtime_error(complete_entry);
-    }
-}
-
-void Logger::SetCallback(FuncPtr callback)
-{
-    callback_ = callback;
-}
-
-Logger& Logger::Inst()
-{
-    static Logger instance_;
-    return instance_;
-}
-
-void Logger::OpenLogfile(std::string filename)
-{
-#ifndef SUPPRESS_LOG
-    if (!filename.empty())
-    {
-        if (file_.is_open())
-        {
-            // Close any open logfile, perhaps user want a new with unique filename
-            file_.close();
-        }
-
-        file_.open(filename.c_str());
-        if (file_.fail())
-        {
-            printf("Can't open log file: %s. Skipping. Logfile path can be specified as launch argument, se usage.\n", filename.c_str());
-        }
-    }
-#endif
-}
-
-void Logger::LogVersion()
-{
-    static char message[1024];
-
-    snprintf(message, 1024, "esmini GIT REV: %s", esmini_git_rev());
-    if (file_.is_open())
-        file_ << message << std::endl;
-    if (callback_)
-        callback_(message);
-
-    snprintf(message, 1024, "esmini GIT TAG: %s", esmini_git_tag());
-    if (file_.is_open())
-        file_ << message << std::endl;
-    if (callback_)
-        callback_(message);
-
-    snprintf(message, 1024, "esmini GIT BRANCH: %s", esmini_git_branch());
-    if (file_.is_open())
-        file_ << message << std::endl;
-    if (callback_)
-        callback_(message);
-
-    snprintf(message, 1024, "esmini BUILD VERSION: %s", esmini_build_version());
-    if (file_.is_open())
-        file_ << message << std::endl;
-    if (callback_)
-        callback_(message);
 }
 
 SE_Env& SE_Env::Inst()
@@ -1293,36 +1652,10 @@ SE_Env& SE_Env::Inst()
     return instance_;
 }
 
-void SE_Env::SetLogFilePath(std::string logFilePath)
-{
-    logFilePath_ = logFilePath;
-    if (Logger::Inst().IsFileOpen())
-    {
-        // Probably user wants another logfile with a new name
-        Logger::Inst().OpenLogfile(SE_Env::Inst().GetLogFilePath());
-    }
-}
-
 void SE_Env::SetDatFilePath(std::string datFilePath)
 {
     datFilePath_ = datFilePath;
-    if (Logger::Inst().IsFileOpen())
-    {
-        // Probably user wants another logfile with a new name
-        Logger::Inst().OpenLogfile(SE_Env::Inst().GetLogFilePath());
-    }
-}
-
-void SE_Env::EnableOSIFile(std::string osiFilePath)
-{
-    osiFilePath_    = osiFilePath;
-    osiFileEnabled_ = true;
-}
-
-void SE_Env::DisableOSIFile()
-{
-    osiFilePath_    = "";
-    osiFileEnabled_ = false;
+    txtLogger.SetLogFilePath(SE_Env::Inst().GetLogFilePath());
 }
 
 /*
@@ -1346,8 +1679,14 @@ CSV_Logger::~CSV_Logger()
     callback_ = 0;
 }
 
+void CSV_Logger::LogEntryHeader(double timestamp)
+{
+    static char data_entry[max_csv_entry_length];
+    snprintf(data_entry, max_csv_entry_length, "%d, %f, ", data_index_, timestamp);
+    file_ << data_entry;
+}
+
 void CSV_Logger::LogVehicleData(bool        isendline,
-                                double      timestamp,
                                 char const* name,
                                 int         id,
                                 double      speed,
@@ -1383,93 +1722,54 @@ void CSV_Logger::LogVehicleData(bool        isendline,
 {
     static char data_entry[max_csv_entry_length];
 
-    // If this data is for Ego (position 0 in the Entities vector) print using the first format
-    // Otherwise use the second format
-    if (id == 0)
-        snprintf(
-            data_entry,
-            max_csv_entry_length,
-            "%d, %f, %s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %d, %f, %f, %f, %f, %f, %f, %f, %s, ",
-            data_index_,
-            timestamp,
-            name,
-            id,
-            speed,
-            wheel_angle,
-            wheel_rot,
-            bb_x,
-            bb_y,
-            bb_z,
-            bb_length,
-            bb_width,
-            bb_height,
-            posX,
-            posY,
-            posZ,
-            velX,
-            velY,
-            velZ,
-            accX,
-            accY,
-            accZ,
-            distance_road,
-            distance_lanem,
-            lane_id,
-            lane_offset,
-            heading,
-            heading_rate,
-            heading_angle,
-            heading_angle_driving_direction,
-            pitch,
-            curvature,
-            collisions);
-    else
-        snprintf(data_entry,
-                 max_csv_entry_length,
-                 "%s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %d, %f, %f, %f, %f, %f, %f, %f, %s, ",
-                 name,
-                 id,
-                 speed,
-                 wheel_angle,
-                 wheel_rot,
-                 bb_x,
-                 bb_y,
-                 bb_z,
-                 bb_length,
-                 bb_width,
-                 bb_height,
-                 posX,
-                 posY,
-                 posZ,
-                 velX,
-                 velY,
-                 velZ,
-                 accX,
-                 accY,
-                 accZ,
-                 distance_road,
-                 distance_lanem,
-                 lane_id,
-                 lane_offset,
-                 heading,
-                 heading_rate,
-                 heading_angle,
-                 heading_angle_driving_direction,
-                 pitch,
-                 curvature,
-                 collisions);
+    snprintf(data_entry,
+             max_csv_entry_length,
+             "%s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %d, %f, %f, %f, %f, %f, %f, %f, %s, ",
+             name,
+             id,
+             speed,
+             wheel_angle,
+             wheel_rot,
+             bb_x,
+             bb_y,
+             bb_z,
+             bb_length,
+             bb_width,
+             bb_height,
+             posX,
+             posY,
+             posZ,
+             velX,
+             velY,
+             velZ,
+             accX,
+             accY,
+             accZ,
+             distance_road,
+             distance_lanem,
+             lane_id,
+             lane_offset,
+             heading,
+             heading_rate,
+             heading_angle,
+             heading_angle_driving_direction,
+             pitch,
+             curvature,
+             collisions);
 
-    // Add lines horizontally until the endline is reached
-    if (isendline == false)
+    if (file_.is_open())
     {
-        file_ << data_entry;
-    }
-    else if (file_.is_open())
-    {
-        file_ << data_entry << std::endl;
-        file_.flush();
-
-        data_index_++;
+        // Add lines horizontally until the endline is reached
+        if (isendline == true)
+        {
+            file_ << data_entry << std::endl;
+            file_.flush();
+            data_index_++;
+        }
+        else
+        {
+            file_ << data_entry;
+        }
     }
 
     if (callback_)
@@ -1530,18 +1830,18 @@ void CSV_Logger::Open(std::string scenario_filename, int numvehicles, std::strin
     // Index and TimeStamp are included in this first set of columns
     snprintf(message,
              max_csv_entry_length,
-             "Index [-] , TimeStamp [s] , #1 Entitity_Name [-] , "
-             "#1 Entitity_ID [-] , #1 Current_Speed [m/s] , #1 Wheel_Angle [deg] , #1 Wheel_Rotation [-] , "
-             "#1 bb_x [m] , #1 bb_y [m] , #1 bb_z [m] , "
-             "#1 bb_length [m] , #1 bb_width [m] , #1 bb_height [m] , "
-             "#1 World_Position_X [m] , #1 World_Position_Y [m] , "
-             "#1 World_Position_Z [m] , #1 Vel_X [m/s] , #1 Vel_Y [m/s] , #1 Vel_Z [m/s] , "
-             "#1 Acc_X [m/s2] , #1 Acc_Y [m/s2] , #1 Acc_Z [m/s2] , "
-             "#1 Distance_Travelled_Along_Road_Segment [m] , #1 Lateral_Distance_Lanem [m] , "
-             "#1 lane_id, #1 lane_offset[m] , #1 World_Heading_Angle [rad] , "
-             "#1 Heading_Angle_Rate [rad/s] , #1 Relative_Heading_Angle [rad] , "
-             "#1 Relative_Heading_Angle_Drive_Direction [rad] , #1 World_Pitch_Angle [rad] , "
-             "#1 Road_Curvature [1/m] , #1 collision_ids , ");
+             "Index [-], TimeStamp [s], #1 Entity_Name [-], "
+             "#1 Entity_ID [-], #1 Current_Speed [m/s], #1 Wheel_Angle [deg], #1 Wheel_Rotation [-], "
+             "#1 bb_x [m], #1 bb_y [m], #1 bb_z [m], "
+             "#1 bb_length [m], #1 bb_width [m], #1 bb_height [m], "
+             "#1 World_Position_X [m], #1 World_Position_Y [m], "
+             "#1 World_Position_Z [m], #1 Vel_X [m/s], #1 Vel_Y [m/s], #1 Vel_Z [m/s], "
+             "#1 Acc_X [m/s2], #1 Acc_Y [m/s2], #1 Acc_Z [m/s2], "
+             "#1 Distance_Travelled_Along_Road_Segment [m], #1 Lateral_Distance_Lanem [m], "
+             "#1 lane_id, #1 lane_offset[m], #1 World_Heading_Angle [rad], "
+             "#1 Heading_Angle_Rate [rad/s], #1 Relative_Heading_Angle [rad], "
+             "#1 Relative_Heading_Angle_Drive_Direction [rad], #1 World_Pitch_Angle [rad], "
+             "#1 Road_Curvature [1/m], #1 collision_ids, ");
     file_ << message;
 
     // Based on number of vehicels in the Entities vector, extend the header accordingly
@@ -1549,17 +1849,17 @@ void CSV_Logger::Open(std::string scenario_filename, int numvehicles, std::strin
     {
         snprintf(message,
                  max_csv_entry_length,
-                 "#%d Entitity_Name [-] , #%d Entitity_ID [-] , "
-                 "#%d Current_Speed [m/s] , #%d Wheel_Angle [deg] , #%d Wheel_Rotation [-] , "
-                 "#%d bb_x [m] , #%d bb_y [m] , #%d bb_z [m] , "
-                 "#%d bb_length [m] , #%d bb_width [m] , #%d bb_height [m] , "
-                 "#%d World_Position_X [m] , #%d World_Position_Y [m] , #%d World_Position_Z [m] , "
-                 "#%d Vel_X [m/s] , #%d Vel_Y [m/s] , #%d Vel_Z [m/s] , #%d Acc_X [m/s2] , #%d Acc_Y [m/s2] , #%d Acc_Z [m/s2] , "
-                 "#%d Distance_Travelled_Along_Road_Segment [m] , #%d Lateral_Distance_Lanem [m] , "
-                 "#%d lane_id, #%d lane_offset [m] , "
-                 "#%d World_Heading_Angle [rad] , #%d Heading_Angle_Rate [rad/s] , #%d Relative_Heading_Angle [rad] , "
-                 "#%d Relative_Heading_Angle_Drive_Direction [rad] , #%d World_Pitch_Angle [rad] , "
-                 "#%d Road_Curvature [1/m] , #%d collision_ids , ",
+                 "#%d Entity_Name [-], #%d Entity_ID [-],"
+                 "#%d Current_Speed [m/s], #%d Wheel_Angle [deg], #%d Wheel_Rotation [-],"
+                 "#%d bb_x [m], #%d bb_y [m], #%d bb_z [m], "
+                 "#%d bb_length [m], #%d bb_width [m], #%d bb_height [m], "
+                 "#%d World_Position_X [m], #%d World_Position_Y [m], #%d World_Position_Z [m], "
+                 "#%d Vel_X [m/s], #%d Vel_Y [m/s], #%d Vel_Z [m/s], #%d Acc_X [m/s2], #%d Acc_Y [m/s2], #%d Acc_Z [m/s2], "
+                 "#%d Distance_Travelled_Along_Road_Segment [m], #%d Lateral_Distance_Lanem [m], "
+                 "#%d lane_id, #%d lane_offset [m], "
+                 "#%d World_Heading_Angle [rad], #%d Heading_Angle_Rate [rad/s], #%d Relative_Heading_Angle [rad], "
+                 "#%d Relative_Heading_Angle_Drive_Direction [rad], #%d World_Pitch_Angle [rad], "
+                 "#%d Road_Curvature [1/m], #%d collision_ids, ",
                  i,
                  i,
                  i,
@@ -1641,7 +1941,7 @@ SE_Mutex::SE_Mutex()
 
     if (mutex_ == NULL)
     {
-        LOG("CreateMutex error: %d\n", GetLastError());
+        LOG_ERROR("CreateMutex error: {}\n", GetLastError());
         mutex_ = 0;
     }
 #else
@@ -1667,48 +1967,93 @@ void SE_Mutex::Unlock()
 #endif
 }
 
-void SE_Option::Usage()
+void SE_Option::Usage() const
 {
+    std::string showMandatoryStr = isSingleValueOption_ ? "" : "...";
     if (!default_value_.empty())
     {
-        printf("  %s%s %s", OPT_PREFIX, opt_str_.c_str(), (opt_arg_ != "") ? ('[' + opt_arg_ + ']').c_str() : "");
+        printf("  %s%s %s", OPT_PREFIX, opt_str_.c_str(), (opt_arg_ != "") ? ('[' + opt_arg_ + ']' + showMandatoryStr).c_str() : "");
     }
     else
     {
-        printf("  %s%s %s", OPT_PREFIX, opt_str_.c_str(), (opt_arg_ != "") ? ('<' + opt_arg_ + '>').c_str() : "");
+        printf("  %s%s %s", OPT_PREFIX, opt_str_.c_str(), (opt_arg_ != "") ? ('<' + opt_arg_ + '>' + showMandatoryStr).c_str() : "");
     }
 
-    if (!default_value_.empty())
+    if (autoApply_)
     {
-        printf("  (default = %s)", default_value_.c_str());
+        printf("  (default if option or value omitted: %s)", default_value_.c_str());
+    }
+    else if (!default_value_.empty())
+    {
+        printf("  (default if value omitted: %s)", default_value_.c_str());
     }
     printf("\n      %s\n", opt_desc_.c_str());
 }
 
-void SE_Options::AddOption(std::string opt_str, std::string opt_desc, std::string opt_arg)
+std::string SE_Option::GetValue(int index) const
 {
-    SE_Option opt(opt_str, opt_desc, opt_arg);
-    option_.push_back(opt);
+    if (!(opt_arg_.empty()) && static_cast<unsigned int>(index) < arg_value_.size())
+    {
+        return arg_value_[static_cast<unsigned int>(index)];
+    }
+    else
+    {
+        return "";
+    }
 }
 
-void SE_Options::AddOption(std::string opt_str, std::string opt_desc, std::string opt_arg, std::string default_value)
+void SE_Options::AddOption(std::string opt_str,
+                           std::string opt_desc,
+                           std::string opt_arg,
+                           std::string default_value,
+                           bool        autoApply,
+                           bool        isSingleValueOption)
 {
-    SE_Option opt(opt_str, opt_desc, opt_arg, default_value);
-    option_.push_back(opt);
+    SE_Option* option = GetOption(opt_str);
+
+    if (option)
+    {
+        // there can be option already added, maybe the api has done it. which don't have values for str, desc, arg, default value, auto apply
+        LOG_DEBUG("Adding info to existing option {}", opt_str);
+        option->opt_str_             = opt_str;
+        option->opt_desc_            = opt_desc;
+        option->opt_arg_             = opt_arg;
+        option->default_value_       = default_value;
+        option->autoApply_           = autoApply;
+        option->isSingleValueOption_ = isSingleValueOption;
+    }
+    else
+    {
+        SE_Option opt(opt_str, opt_desc, opt_arg, default_value, autoApply, isSingleValueOption);
+        auto      index = esmini_options::ConvertStrKeyToEnum(opt_str);
+        if (index != esmini_options::CONFIG_ENUM::CONFIGS_COUNT)
+        {
+            // option placeholder exists (enum defined)
+            LOG_DEBUG("Adding known option {}", opt_str);
+            option_[index] = opt;
+            option         = &option_[index];
+        }
+        else
+        {
+            // option placeholder does not exist (enum not defined), add to the end of the vector
+            LOG_ERROR_AND_QUIT("Option {} not availble, add it to config enum", opt_str);
+        }
+    }
+    optionOrder_.push_back(option);
 }
 
 void SE_Options::PrintUsage()
 {
     printf("\nUsage: %s [options]\n", app_name_.c_str());
     printf("Options: \n");
-    for (size_t i = 0; i < option_.size(); i++)
+    for (const auto& option : optionOrder_)
     {
-        option_[i].Usage();
+        option->Usage();
     }
     printf("\n");
 }
 
-void SE_Options::PrintUnknownArgs(std::string message)
+void SE_Options::PrintUnknownArgs(std::string message) const
 {
     printf("\n%s\n", message.c_str());
     for (const auto& arg : unknown_args_)
@@ -1731,28 +2076,41 @@ bool SE_Options::GetOptionSet(std::string opt)
     }
 }
 
-bool SE_Options::IsOptionArgumentSet(std::string opt)
+bool SE_Options::GetOptionSetByEnum(esmini_options::CONFIG_ENUM opt)
 {
-    return GetOption(opt)->set_;
+    SE_Option* option = GetOptionByEnum(opt);
+
+    if (option)
+    {
+        return option->set_;
+    }
+    else
+    {
+        return false;
+    }
 }
 
-std::string SE_Options::GetOptionArg(std::string opt, int index)
+bool SE_Options::IsOptionArgumentSet(std::string opt)
+{
+    if (const auto option = GetOption(opt); option != nullptr)
+    {
+        return option->set_;
+    }
+
+    return false;
+}
+
+std::vector<std::string>& SE_Options::GetOptionValues(std::string opt)
 {
     SE_Option* option = GetOption(opt);
 
     if (option == nullptr)
     {
-        return "";
+        static std::vector<std::string> empty_list = {};
+        return empty_list;
     }
 
-    if (!(option->opt_arg_.empty()) && static_cast<unsigned int>(index) < option->arg_value_.size())
-    {
-        return option->arg_value_[static_cast<unsigned int>(index)];
-    }
-    else
-    {
-        return "";
-    }
+    return option->arg_value_;
 }
 
 static constexpr std::array<const char*, 10> OSG_ARGS = {"--clear-color",
@@ -1778,6 +2136,102 @@ int SE_Options::ChangeOptionArg(std::string opt, std::string new_value, int inde
     option->arg_value_[static_cast<unsigned int>(index)] = new_value;
 
     return 0;
+}
+
+int SE_Options::SetOptionValue(std::string opt, std::string value, bool add, bool persistent)
+{
+    SE_Option* option = GetOption(opt);
+
+    if (option == nullptr)
+    {
+        LOG_ERROR("Specified option {} does not exist", opt);
+        return -1;
+    }
+
+    if (!option->IsSpecified())
+    {
+        // option placeholder exists, but it has not added/specified yet. Add preliminary specification.
+        AddOption(opt, opt, value);
+        option = GetOption(opt);
+    }
+
+    if (!value.empty())
+    {
+        if (!option->opt_arg_.empty())
+        {
+            // we will not check isSingleValueOption_ in this case, because there is more probability that this function is called
+            // from API before the Init is called. In that case isSingleValueOption_ will always be false, which might not be the case
+            // for some options
+            if (!add)
+            {
+                option->arg_value_.clear();
+            }
+            //  we want to insert the value at the beginning of the vector to give last entry priority
+            option->arg_value_.insert(option->arg_value_.begin(), value);
+        }
+        else
+        {
+            LOG_ERROR("Argument parser error: Missing option {} argument", opt);
+            return -1;
+        }
+    }
+
+    option->persistent_ = persistent;
+    option->set_        = true;
+
+    return 0;
+}
+
+int SE_Options::UnsetOption(const std::string& opt)
+{
+    SE_Option* option = GetOption(opt);
+
+    if (option != nullptr)
+    {
+        option->set_        = false;
+        option->persistent_ = false;
+        option->arg_value_.clear();
+    }
+    return 0;
+}
+
+int SE_Options::ClearOption(const std::string& opt)
+{
+    SE_Option* option = GetOption(opt);
+
+    if (option != nullptr)
+    {
+        option->arg_value_.clear();
+    }
+
+    return 0;
+}
+
+std::string SE_Options::GetSetOptionsAsStr() const
+{
+    std::string strAllSetOptions;
+    for (const auto& option : option_)
+    {
+        if (option.set_)
+        {
+            std::string currentOptionValue;
+            if (!option.arg_value_.empty())
+            {
+                for (auto itr = option.arg_value_.begin(); itr != option.arg_value_.end(); ++itr)
+                {
+                    currentOptionValue = fmt::format("{} {}", currentOptionValue, *itr);
+                }
+            }
+
+            strAllSetOptions = fmt::format("{}--{}{} ", strAllSetOptions, option.opt_str_, currentOptionValue);
+        }
+    }
+    return strAllSetOptions;
+}
+
+bool SE_Option::IsSpecified() const
+{
+    return !opt_str_.empty();
 }
 
 int SE_Options::ParseArgs(int argc, const char* const argv[])
@@ -1809,18 +2263,34 @@ int SE_Options::ParseArgs(int argc, const char* const argv[])
             option->set_ = true;
             if (option->opt_arg_ != "")
             {
-                if (i < static_cast<unsigned int>(argc - 1) && strncmp(args[i + 1], "--", 2))
+                bool settingSuccess = false;
+                do
                 {
-                    option->arg_value_.push_back(args[i + 1]);
-                    i++;
-                }
-                else if (!option->default_value_.empty())
+                    if (i < static_cast<unsigned int>(argc - 1) && strncmp(args[i + 1], "--", 2))
+                    {
+                        settingSuccess = true;
+                        if (option->isSingleValueOption_)
+                        {
+                            option->arg_value_.clear();
+                        }
+                        //  we want to insert the value at the beginning of the vector to give last entry priority
+                        option->arg_value_.insert(option->arg_value_.begin(), args[i + 1]);
+                        i++;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                } while (true);
+
+                if (!settingSuccess && !option->default_value_.empty())
                 {
+                    settingSuccess = true;
                     option->arg_value_.push_back(option->default_value_);
                 }
-                else
+                if (!settingSuccess)
                 {
-                    LOG("Argument parser error: Missing option %s argument", option->opt_str_.c_str());
+                    LOG_ERROR("Argument parser error: Missing option {} argument", option->opt_str_);
                     option->set_ = false;
                     returnVal    = -1;
                 }
@@ -1837,19 +2307,93 @@ int SE_Options::ParseArgs(int argc, const char* const argv[])
         i++;
     }
 
+    ApplyDefaultValues();
+
     return returnVal;
+}
+
+void SE_Options::ApplyDefaultValues()
+{
+    for (auto& opt : option_)
+    {
+        if (opt.arg_value_.empty() && !opt.default_value_.empty())
+        {
+            if ((!opt.autoApply_ && opt.set_) || (opt.autoApply_ && !opt.set_))
+            {
+                opt.arg_value_.push_back(opt.default_value_);
+                opt.set_ = true;
+            }
+        }
+    }
 }
 
 SE_Option* SE_Options::GetOption(std::string opt)
 {
-    for (size_t i = 0; i < option_.size(); i++)
+    auto index = esmini_options::ConvertStrKeyToEnum(opt);
+    if (index < esmini_options::CONFIG_ENUM::CONFIGS_COUNT)
     {
-        if (opt == option_[i].opt_str_)
+        return &option_[index];
+    }
+    else
+    {
+        // look at the additional options beyond enums
+        for (unsigned int i = esmini_options::CONFIG_ENUM::CONFIGS_COUNT; i < option_.size(); i++)
         {
-            return &option_[i];
+            if (option_[i].opt_str_ == opt)
+            {
+                return &option_[i];
+            }
         }
     }
-    return 0;
+    return nullptr;
+}
+
+std::string SE_Options::GetOptionValue(std::string opt, unsigned int index)
+{
+    SE_Option* option = GetOption(opt);
+
+    if (option == nullptr)
+    {
+        return "";
+    }
+
+    return option->GetValue(index);
+}
+
+SE_Option* SE_Options::GetOptionByEnum(esmini_options::CONFIG_ENUM opt)
+{
+    if (opt < 0 || opt >= esmini_options::CONFIG_ENUM::CONFIGS_COUNT)
+    {
+        return nullptr;
+    }
+
+    return &option_[opt];
+}
+
+void SE_Options::SetAppName(std::string app_name)
+{
+    if (!app_name_.empty() && app_name != app_name_)
+    {
+        LOG_WARN("Unexpected option operation: Replacing appname {} with {}", app_name_, app_name);
+    }
+    app_name_ = app_name;
+}
+
+std::string SE_Options::GetAppName() const
+{
+    return app_name_;
+}
+
+std::string SE_Options::GetOptionValueByEnum(esmini_options::CONFIG_ENUM opt, unsigned int index)
+{
+    SE_Option* option = GetOptionByEnum(opt);
+
+    if (opt < 0 || opt >= esmini_options::CONFIG_ENUM::CONFIGS_COUNT)
+    {
+        return "";
+    }
+
+    return option->GetValue();
 }
 
 bool SE_Options::IsInOriginalArgs(std::string opt)
@@ -1862,18 +2406,23 @@ bool SE_Options::IsInOriginalArgs(std::string opt)
     return false;
 }
 
-bool SE_Options::HasUnknownArgs()
+bool SE_Options::HasUnknownArgs() const
 {
     return !unknown_args_.empty();
 }
 
 void SE_Options::Reset()
 {
-    for (size_t i = 0; i < option_.size(); i++)
+    optionOrder_.clear();
+
+    for (auto& option : option_)
     {
-        option_[i].arg_value_.clear();
+        if (!option.persistent_)
+        {
+            option.set_ = false;
+            option.arg_value_.clear();
+        }
     }
-    option_.clear();
     originalArgs_.clear();
 }
 
@@ -1888,13 +2437,13 @@ int SE_WritePPM(const char* filename, int width, int height, const unsigned char
 
     if (pixelSize != 3)
     {
-        LOG("PPM PixelSize %d not supported yet, only 3", pixelSize);
+        LOG_ERROR("PPM PixelSize {} not supported yet, only 3", pixelSize);
         return -2;
     }
 
     if (pixelFormat != static_cast<int>(PixelFormat::BGR) && pixelFormat != static_cast<int>(PixelFormat::RGB))
     {
-        LOG("PPM PixelFormat %d not supported yet, only 0x%x (RGB) and 0x%x (BGR)", PixelFormat::RGB, PixelFormat::BGR);
+        LOG_ERROR("PPM PixelFormat {} not supported yet, only 0x{} (RGB) and 0x{} (BGR)", PixelFormat::RGB, PixelFormat::BGR);
         return -3;
     }
 
@@ -1931,7 +2480,7 @@ int SE_WritePPM(const char* filename, int width, int height, const unsigned char
                 {
                     // write one line at a time, starting from bottom
                     const unsigned char* ptr      = &data[pixelSize * ((height - i - 1) * width + j)];
-                    unsigned char        bytes[3] = {(ptr[2]), ptr[1], ptr[0]};
+                    const unsigned char  bytes[3] = {(ptr[2]), ptr[1], ptr[0]};
                     fwrite(bytes, 3, 1, file);
                 }
             }
@@ -1941,7 +2490,7 @@ int SE_WritePPM(const char* filename, int width, int height, const unsigned char
             for (int i = 0; i < width * height; i++)
             {
                 const unsigned char* ptr      = &data[i * pixelSize];
-                unsigned char        bytes[3] = {(ptr[2]), ptr[1], ptr[0]};
+                const unsigned char  bytes[3] = {(ptr[2]), ptr[1], ptr[0]};
                 fwrite(bytes, 3, 1, file);
             }
         }
@@ -1963,18 +2512,18 @@ int SE_WriteTGA(const char* filename, int width, int height, const unsigned char
 
     if (pixelSize != 3)
     {
-        LOG("TGA PixelSize %d not supported yet, only 3", pixelSize);
+        LOG_ERROR("TGA PixelSize {} not supported yet, only 3", pixelSize);
         return -2;
     }
 
     if (pixelFormat != static_cast<int>(PixelFormat::BGR) && pixelFormat != static_cast<int>(PixelFormat::RGB))
     {
-        LOG("TGA PixelFormat 0x%x not supported yet, only 0x%x (RGB) and 0x%x (BGR)", pixelFormat, PixelFormat::RGB, PixelFormat::BGR);
+        LOG_ERROR("TGA PixelFormat 0x{} not supported yet, only 0x{} (RGB) and 0x{} (BGR)", pixelFormat, PixelFormat::RGB, PixelFormat::BGR);
         return -3;
     }
 
     /* Write TGA Header */
-    uint8_t header[18] = {
+    const uint8_t header[18] = {
         0,
         0,
         2,  // uncompressed RGB
@@ -2002,7 +2551,7 @@ int SE_WriteTGA(const char* filename, int width, int height, const unsigned char
         for (int i = 0; i < width * height; i++)
         {
             const unsigned char* ptr      = &data[i * pixelSize];
-            unsigned char        bytes[3] = {(ptr[2]), ptr[1], ptr[0]};
+            const unsigned char  bytes[3] = {(ptr[2]), ptr[1], ptr[0]};
             fwrite(bytes, 3, 1, file);
         }
     }
@@ -2019,20 +2568,21 @@ int SE_WriteTGA(const char* filename, int width, int height, const unsigned char
 int SE_ReadCSVFile(const char* filename, std::vector<std::vector<std::string>>& content, int skip_lines)
 {
     // Cred: https://java2blog.com/read-csv-file-in-cpp/
-    std::vector<std::string> row;
-    std::string              line, word;
 
     std::fstream file(filename, std::ios::in);
     if (file.is_open())
     {
+        std::string line;
         for (int i = 0; i < skip_lines; i++)
         {
             if (!getline(file, line))
             {
-                LOG("Failed to skip %d lines in CSV file %s", skip_lines, filename);
+                LOG_ERROR("Failed to skip {} lines in CSV file {}", skip_lines, filename);
                 return -1;
             }
         }
+        std::vector<std::string> row;
+        std::string              word;
         while (getline(file, line))
         {
             row.clear();
@@ -2046,9 +2596,86 @@ int SE_ReadCSVFile(const char* filename, std::vector<std::vector<std::string>>& 
     }
     else
     {
-        LOG("Failed to open CSV file %s", filename);
+        LOG_ERROR("Failed to open CSV file {}", filename);
         return -1;
     }
 
     return 0;
+}
+
+const std::string SE_Color::color_strings_[static_cast<size_t>(SE_Color::Color::COUNT)] = {"undefined",    // UNDEFINED
+                                                                                           "black",        // BLACK
+                                                                                           "blue",         // BLUE
+                                                                                           "green",        // GREEN
+                                                                                           "orange",       // ORANGE
+                                                                                           "red",          // RED
+                                                                                           "violet",       // VIOLET
+                                                                                           "white",        // WHITE
+                                                                                           "yellow",       // YELLOW
+                                                                                           "dark_gray",    // DARK_GRAY
+                                                                                           "gray",         // GRAY
+                                                                                           "light_gray"};  // LIGHT_GRAY
+
+const std::map<std::string, SE_Color::Color> SE_Color::str2enum_ = {{"undefined", Color::UNDEFINED},
+                                                                    {"black", Color::BLACK},
+                                                                    {"blue", Color::BLUE},
+                                                                    {"green", Color::GREEN},
+                                                                    {"orange", Color::ORANGE},
+                                                                    {"red", Color::RED},
+                                                                    {"violet", Color::VIOLET},
+                                                                    {"white", Color::WHITE},
+                                                                    {"yellow", Color::YELLOW},
+                                                                    {"dark_gray", Color::DARK_GRAY},
+                                                                    {"gray", Color::GRAY},
+                                                                    {"light_gray", Color::LIGHT_GRAY}};
+
+const float SE_Color::rgb_values_[static_cast<size_t>(SE_Color::Color::COUNT)][3] = {
+    {0.0f, 0.0f, 0.0f},    // UNDEFINED
+    {0.2f, 0.2f, 0.2f},    // BLACK
+    {0.25f, 0.38f, 0.7f},  // BLUE
+    {0.2f, 0.6f, 0.3f},    // GREEN
+    {0.5f, 0.5f, 0.1f},    // ORANGE
+    {0.8f, 0.3f, 0.3f},    // RED
+    {0.4f, 0.0f, 0.8f},    // VIOLET
+    {1.0f, 1.0f, 0.9f},    // WHITE
+    {0.85f, 0.8f, 0.2f},   // YELLOW
+    {0.5f, 0.5f, 0.5f},    // DARK_GRAY
+    {0.7f, 0.7f, 0.7f},    // GRAY
+    {0.75f, 0.75f, 0.75f}  // LIGHT_GRAY
+};
+
+SE_Color::Color SE_Color::ColorStr2Idx(std::string color_str)
+{
+    return str2enum_.count(color_str) ? str2enum_.at(color_str) : Color::COUNT;
+}
+
+const std::string& SE_Color::ColorIdx2Str(Color color_idx)
+{
+    if (color_idx == Color::COUNT)
+    {
+        return color_strings_[static_cast<unsigned int>(Color::UNDEFINED)];
+    }
+
+    return color_strings_[static_cast<size_t>(color_idx)];
+}
+
+const float (&SE_Color::ColorStr2RBG(std::string color_str))[3]
+{
+    Color color_enum = ColorStr2Idx(color_str);
+    if (color_enum == Color::COUNT)
+    {
+        LOG_ERROR("Invalid color {} - fallback to undefined", color_str);
+        return rgb_values_[static_cast<unsigned int>(Color::UNDEFINED)];
+    }
+    return rgb_values_[static_cast<size_t>(color_enum)];
+}
+
+const float (&SE_Color::Color2RBG(Color color_enum))[3]
+{
+    if (color_enum == Color::COUNT)
+    {
+        LOG_ERROR("Invalid color enum {} - fallback to undefined", color_enum);
+        return rgb_values_[static_cast<unsigned int>(Color::UNDEFINED)];
+    }
+    return rgb_values_[static_cast<size_t>(color_enum)];
 }

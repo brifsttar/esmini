@@ -2,7 +2,7 @@
 
 shopt -s extglob
 
-rm -rf esmini-demo 
+rm -rf esmini-demo
 
 mkdir esmini-demo
 
@@ -44,6 +44,9 @@ resources/xosc/alks_r157_cut_in_quick_brake.xosc \
 resources/xosc/two_plus_one_road.xosc \
 resources/xosc/truck_with_rotating_axle.xosc \
 resources/xosc/trailer_connect.xosc \
+resources/xosc/bicycle_fall_over.xosc \
+resources/xosc/tunnels.xosc \
+resources/xosc/follow_reference.xosc \
 resources/xosc/Catalogs/Maneuvers/*.* \
 resources/xosc/Catalogs/Routes/*.* \
 resources/xosc/Catalogs/Vehicles/*.* \
@@ -61,6 +64,7 @@ resources/xodr/multi_intersections.xodr \
 resources/xodr/curves_elevation.xodr \
 resources/xodr/crest-curve.xodr \
 resources/xodr/two_plus_one.xodr \
+resources/xodr/tunnels.xodr \
 resources/models/bus_blue.osgb \
 resources/models/car_blue.osgb \
 resources/models/car_red.osgb \
@@ -90,6 +94,8 @@ resources/models/se_c_31-3.osgb \
 resources/models/se_c_31-5.osgb \
 resources/models/de_123.osgb \
 resources/models/se_a_20-1.osgb \
+resources/models/cn_jin-70.osgb \
+resources/models/cn_shi-50.osgb \
 resources/models/pole.osgb \
 resources/models/asphalt.jpg \
 resources/models/grass.jpg \
@@ -111,6 +117,7 @@ resources/sumo_inputs/e6mini* \
 resources/sumo_inputs/multi_intersections* \
 resources/traffic_signals/* \
 resources/model_ids.txt \
+resources/scenario_construct_examples/* \
 run/esmini/run_follow_ghost.* \
 run/esmini/run_ltap-od_interactive.* \
 run/esmini/run_ltap-od.* \
@@ -140,6 +147,7 @@ run/esmini/run_trailers.* \
 run/esmini/run_two-plus-one-road.* \
 run/esmini/run_truck_with_rotating_axle.* \
 run/esmini/run_trailer_connect.* \
+run/esmini/run_tunnels.* \
 run/odrviewer/run_e6mini*.* \
 run/odrviewer/run_multi_intersections*.* \
 run/replayer/run_and_plot_cut-in_speed*.* \
@@ -159,6 +167,7 @@ docs/commands.txt \
 LICENSE \
 release_notes.md \
 version.txt \
+config.yml \
 bin/esmini?(.exe) \
 bin/odrviewer?(.exe) \
 bin/replayer?(.exe) \

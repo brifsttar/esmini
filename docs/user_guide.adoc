@@ -18,7 +18,7 @@
 image:https://avatars.githubusercontent.com/u/49203938[160, 160]
 
 == Introduction
-esmini is a software tool to play OpenSCENARIO files. It's provided both as a stand alone application and as a shared library for linking with custom applications. In addition some tools have been developed to support design and analysis of traffic scenarios.
+esmini is a software tool to play OpenSCENARIO XML files. It's provided both as a stand alone application and as a shared library for linking with custom applications. In addition some tools have been developed to support design and analysis of traffic scenarios.
 
 The scope of this user guide is to provide examples on how to use the tools. It also includes a programming tutorial on how to use esmini in custom applications.
 
@@ -70,7 +70,7 @@ On Linux, e.g. Ubuntu, some additional system tools and libraries are needed. Ru
 
 [source]
 ----
-sudo apt install build-essential gdb ninja-build git pkg-config libgl1-mesa-dev libpthread-stubs0-dev libjpeg-dev libxml2-dev libpng-dev libtiff5-dev libgdal-dev libpoppler-dev libdcmtk-dev libgstreamer1.0-dev libgtk2.0-dev libcairo2-dev libpoppler-glib-dev libxrandr-dev libxinerama-dev curl cmake
+sudo apt install build-essential gdb ninja-build git pkg-config libgl1-mesa-dev libpthread-stubs0-dev libjpeg-dev libxml2-dev libpng-dev libtiff5-dev libgdal-dev libpoppler-dev libdcmtk-dev libgstreamer1.0-dev libgtk2.0-dev libcairo2-dev libpoppler-glib-dev libxrandr-dev libxinerama-dev curl cmake black
 ----
 
 Now we're ready to build esmini. From esmini root folder:
@@ -92,7 +92,8 @@ After successful build, the binaries will be copied into `esmini/bin` folder. Tr
 That's all. Details and variants, see <<Build guide>>.
 
 == Tools overview
-Applications:
+
+=== Applications
 
 [horizontal]
 *esmini*:: Play OpenSCENARIO file. Many options, e.g. view on screen, save images to file or just save log data for post processing. +
@@ -112,6 +113,13 @@ Example: +
 ``./bin/odrviewer --window 60 60 800 400 --odr ./resources/xodr/fabriksgatan.xodr``
 +
 image::odrviewer.png[]
+
+=== Scripts
+esmini comes with a collection of scripts for various purposes, like preprocessing of scenario files and plotting or conversion of simulation output files. The scripts are located in the `scripts` folder.
+
+The bash scripts (.sh) can be run in any Linux command line. In Windows you can run from Git Bash. Python scripts (*.py) is run
+
+A few examples:
 
 *odrplot*:: Simple 2D plot of OpenDRIVE road lanes with indicated road IDs, in a two step process. +
 Prerequisites: Python + https://matplotlib.org/[matplotlib] +
@@ -149,7 +157,26 @@ Example: +
 ``./scripts/osi2csv.py sim.osi`` (convert to .csv) +
 ``./scripts/plot_csv.py sim.csv --param ax`` will plot the x component of acceleration vector.
 
-Shared libraries:
+*dat2xosc.py*:: Convert any scenario to a fixed trajectory based scenario. See more info in https://github.com/esmini/esmini/blob/dev/scripts/dat2xosc.py[script].
+
+*move_to_origin.py*:: Translate a scenario to origin. Useful for scenarios with large coordinates causing precision issues. See more info in https://github.com/esmini/esmini/blob/dev/scripts/move_to_origin.py[script].
+
+*xodr_lines2curves.py*:: Smoothen polyline roads by converting them to parametric curves. See more info in  https://github.com/esmini/esmini/blob/dev/scripts/xodr_lines2curves.py[script].
+
+*run_schema_comply.py*:: Validate xosc and xodr scenario files for compliance with the XML schema of the corresponding standard. See more info in https://github.com/esmini/esmini/blob/dev/scripts/run_schema_comply.py[script] and section <<Run XML schema validation tests>>.
+
+*compile_osg_apps.sh*:: Compile OSG applications for viewing and converting OpenSceneGraph 3D models. See more info section <<Get osgconv>> / <<Build yourself>>.
+
+*run_repeat_compare.sh*:: Run a scenario multiple times and compare the results, expected to be identical. See more info in https://github.com/esmini/esmini/blob/dev/scripts/run_repeat_compare.sh[script].
+
+[[osiviewer]]
+*osiviewer.py*:: Visualize OSI trace files. Only supporting a small, limited subset of OSI content, e.g. lanes, stationary and moving objects. +
+Example: +
+``./scripts/osiviewer.py ground_truth.osi`` +
++
+image::osiviewer.png[]
+
+=== Shared libraries
 [horizontal]
 *esminiLib*:: High level API for running, controlling and monitoring scenarios +
 +
@@ -184,7 +211,7 @@ image::cut-in_trail_and_bb.png[]
 
 ==== Camera control
 
-In addition to several OSG standard camera models esmini adds a set of special purpose camera modes that follows following scenario entities in various ways. Further, the user can add custom cameras via API or launch arguments.
+In addition to several OSG standard camera models esmini adds a set of special purpose camera modes that follows following scenario entities in various ways. Further, the user can add custom cameras via <<Custom camera positions,API>> or launch arguments.
 
 Top level camera mode is selected on keys '1' to '8'. Mode 2-8 are OpenSceneGraph standard cameras. Mode 1 hands over camera control to esmini. In this mode, switch camera model by pressing 'k' which will toggle between all available esmini camera model.
 
@@ -310,6 +337,19 @@ To change framerate of the output video, use the fps filter. E.g. from input 30 
 
 ``ffmpeg -f image2 -framerate 30 -i screen_shot_%5d.tga -c:v libx264 -vf format=yuv420p,fps=15 -crf 20 out.mp4``
 
+To concatenate multiple files, first create a text file listing the input files. Example:
+
+`video_list.txt`:
+```
+file 'no_features_10.mkv'
+file 'features_10.mkv'
+```
+
+Then run the ffmpeg command, like:
+``ffmpeg -f concat -i video_list.txt -c copy merged.mkv``
+
+*Note:* The input files must be same timebase and resolution to work well.
+
 
 Get ffmpeg: http://ffmpeg.org/download.html
 
@@ -359,9 +399,9 @@ For troubleshooting, the following command might give information about the grap
 esmini can produce log files in different formats and for different purposes, explained next.
 
 ==== The basic text log file
-By default esmini is creating a `log.txt` in the folder from which esmini is launched. In case of esminiLib it will end up in the folder that the application linking esminiLib was launched from.
+By default esmini is creating a `log.txt` in the folder from which esmini is launched. In case of esminiLib it will end up in the folder that the application linking esminiLib was launched from. The log filename can be customized.
 
-The log.txt includes the same information normally seen in the terminal window (stdout).
+The log file includes the same information normally seen in the terminal window (stdout).
 
 To disable output to terminal: +
 ``./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/slow-lead-vehicle.xosc --disable_stdout``
@@ -369,7 +409,88 @@ To disable output to terminal: +
 To disable creation of the logfile (`log.txt`): +
 ``./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/slow-lead-vehicle.xosc --disable_log``
 
-Developer info: Define the symbol DEBUG_TRACE (either as compile flag or by uncomment https://github.com/esmini/esmini/blob/73390cc2c1b8cbb8403950c905515e304c861b8c/EnvironmentSimulator/Modules/CommonMini/CommonMini.cpp#L34[this code line]) to log more details, like what code module and line number is the origin of the log entry.
+esmini has enhanced logger from release v2.41.0 supporting log verbosity levels, log file appending, enabling/disabling meta data and filtering on module level logging.
+
+===== Log verbosity
+There are four log verbosity levels:
+
+. error
+. warn
+. info
+. debug
+
+The log level can be set from command line argument. If not provided, then `info` level is set by default. Log verbosity goes from `error` (low) to `debug` (high). Log entries will be included from `error` up to the specified level.
+
+Example 1: `--log_level debug` will include all entries (`error`, `warn`, `info` and `debug`) as the highest level has been selected.
+
+Example 2: `--log_level warn` will include `error` and `warn` entries only.
+
+Developers can use `LOG_ERROR`, `LOG_WARN`, `LOG_INFO` and `LOG_DEBUG` macros to effectively prioritize log messages.
+
+===== Log metadata
+Logger can add source code meta data with every logged entry, including:
+
+- file name
+- function/method name
+- line number
+
+indicating the location of the log entry in the source code.
+
+`--log_meta_data` is the command line parameter for enabling meta data.
+
+===== Log append
+`--log_append` is another command line option. Instead of overwriting any existing log file, entries will be appended to the same log file. In other words, logs of multiple scenarios will be put in the same single log file.
+
+===== Log filtering on modules
+If there is a need to gather log entries of any particular module(s) i.e. hpp/cpp file then `--log_only_modules` option can be set from the command line. It will create a filter for the logger to pick only log entries from specified modules, ignoring all others. Example:
+
+`--log_only_modules playerbase`
+
+will only log from `playerbase.hpp/cpp` files. All other log entries will be skipped.
+
+Opposite to log only modules, there is an option to skip specific modules. Example:
+
+`--log_skip_modules playerbase,Replay`
+
+will skip all log entries from `playerbase.hpp/cpp` and `Replay.hpp/cpp` files. Entries from all other modules will be included.
+
+Note that `--log_only_modules` and `--log_skip_modules` are mutually exclusive. If a module is listed in both options, then priority is given to `--log_only_modules`. Hence logging will be enabled for specified module, ignoring its presence in `--log_skip_modules`.
+
+===== Log use case example
+
+Assume you're only interested in storyboard events, like actions and triggers. First step is to run a representative scenario to find out what modules you're interested in. Example:
+
+`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in.xosc --log_meta_data`
+
+It will show all log entries up to `info` level, including meta data. Look for the module names in the log entries. Then run the scenario again with module filter. Example:
+
+`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in.xosc --log_only_modules Storyboard,StoryboardElement,OSCCondition`
+
+It will show only log entries relating to storyboard, including triggering. Example excerpt:
+
+[source, text]
+----
+...
+[0.001] [info] OverTakerStartSpeedEvent standbyState -> startTransition -> runningState
+[0.001] [info] OverTakerStartSpeedAction initState -> startTransition -> runningState
+[6.179] [info] Trigger /------------------------------------------------
+[6.179] [info] CutInStartCondition == true, HWT: 0.40 > 0.40, edge rising
+[6.179] [info] Triggering entity 0: Ego
+[6.179] [info] Trigger  ------------------------------------------------/
+[6.179] [info] OverTakerStartSpeedAction runningState -> endTransition -> completeState
+[6.179] [info] OverTakerStartSpeedEvent complete after 1 execution
+[6.179] [info] OverTakerStartSpeedEvent runningState -> endTransition -> completeState
+[6.179] [info] Event OverTakerStartSpeedEvent ended, overwritten by event CutInEvent
+[6.179] [info] CutInEvent standbyState -> startTransition -> runningState
+[6.179] [info] CutInAction initState -> startTransition -> runningState
+[7.696] [info] Trigger /------------------------------------------------
+[7.696] [info] BrakeCondition_HWT_0.7 == true, HWT: 0.70 > 0.70, edge rising
+[7.696] [info] Triggering entity 0: Ego
+[7.696] [info] Trigger  ------------------------------------------------/
+[7.696] [info] Other events ongoing, OvertakerBrakeEvent will run in parallel
+[7.696] [info] OvertakerBrakeEvent standbyState -> startTransition -> runningState
+...
+----
 
 ==== Scenario recording (.dat)
 In addition esmini can save a `.dat` file which captures the state of all entities. This file can later be used either to replay (see <<Replay scenario>>) the scenario or converted to `.csv` for further analysis, e.g. in Excel.
@@ -452,15 +573,19 @@ video::ltap-od_collision.mp4?raw=true[opts="loop,autoplay"]
 The .dat file in the clip above was created with the command: +
 ``./bin/esmini --headless --osc ./resources/xosc/ltap-od.xosc --disable_controllers --fixed_timestep 0.033 --record sim.dat ``
 
-and then launched in replayer:
-
+and then launched in replayer: +
 ``./bin/replayer --window 60 60 800 400 --file sim.dat --res_path ./resources --collision``
 
 *Note:* The --disable_controllers flag is just specified to disable the interactive controller that normally is activated in that specific scenario. For more information about controllers, see https://github.com/esmini/esmini/blob/master/docs/Controllers.md[Controllers in esmini].
 
 
-Combine esmini and replayer in a one-liner command:
+Combine esmini and replayer in a one-liner command: +
 ``./bin/esmini --headless --fixed_timestep 0.05 --record sim.dat --osc ./resources/xosc/cut-in.xosc;./bin/replayer --window 60 60 800 400 --res_path ./resources --file sim.dat``
+
+With bash (use Git Bash on Windows) preview all scenarios (.xosc files) in a folder, at double speed: +
+``for f in my_scenarios/*.xosc; do ./bin/esmini --headless --fixed_timestep 0.05 --osc $f --record `basename $f .xosc`.dat;./bin/replayer --window 60 60 1200 600 --res_path ./resources --file `basename $f .xosc`.dat --time_scale 2 --quit_at_end; done``
+
+just replace `my_scenarios` with your folder path
 
 ==== Multiple scenarios in parallel
 
@@ -631,15 +756,22 @@ esmini provides a script, osi2csv.py, that converts an OSI trace file into .csv 
 will create ground_truth.csv. +
 (if file type association is not setup, try: ``python ./scripts/osi2csv.py ground_truth.osi``)
 
-However the .csv file created with osi2csv will not contain all OSI information. To get a readable text file including the complete content of a OSI trace file you can make use of this Python script from the OSI project: +
-
-https://github.com/OpenSimulationInterface/open-simulation-interface/blob/master/format/osi2read.py +
+However the .csv file created with osi2csv will not contain all OSI information. To get a readable text file including the complete content of a OSI trace file you can make use of the Python script https://github.com/OpenSimulationInterface/open-simulation-interface/blob/v3.5.0/format/osi2read.py[format/osi2read.py] in the OSI project.
 
 Use as following example:
 
 `../open-simulation-interface/format/osi2read.py --data ./ground_truth.osi --output ground_truth --type GroundTruth`
 
 it should create `ground_truth.txth` which is readable in a text editor.
+
+[Note]
+====
+**Note**:
+
+See <<OSI for Python on Windows>> for hints how to install dependencies (OSI and Protobuf).
+
+The above script link points to OSI tag v3.5.0. In more recent OSI versions the script has moved to another folder: https://github.com/OpenSimulationInterface/open-simulation-interface/blob/master/osi3trace/osi2read.py[osi3trace/osi2read.py].
+====
 
 == Scenario features
 === Speed profile
@@ -880,6 +1012,39 @@ image::speed-profile10.png[]
 ==== More info
 To get more understanding of the implementation, see a few slides https://drive.google.com/file/d/1DmjVHftcsbU71Ce_GASZ6IArcPA6teNF/view?usp=sharing[here].
 
+=== Condition delay
+
+Conditions can be delayed individually. A simple use case is to delay the closure of a scenario run, for example three seconds after any collision.
+
+It gets more flexible, and complex, when combining delay with grouping, which is a way to represent AND and OR logical operations, see https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/07_components_scenario/07_06_conditions_triggers.html#_triggers_and_condition_groups[OpenSCENARIO XML v1.3 User guide - Triggers and condition groups].
+
+Consider the following example, based on the test scenario https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Unittest/xosc/condition_delay.xosc[condition_delay.xosc] (used by test case TestConditionDelay in https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Unittest/ScenarioEngine_test.cpp[ScenarioEngine_test]).
+
+The scenario is basically one car accelerating linearly from 50 to 100 km/h (13.9 - 27.8 m/s) during two seconds, and then decelerating back to 50 km/h, again over two seconds. The speed is greater than 25 m/s in the time window 3.2 - 4.8 seconds. By 6.0 seconds the speed has decreased to 20.8 m/s.
+
+There is one event including a LaneChange action and a StartTrigger containing three condition groups:
+
+[%autowidth, cols="1,1,1,1"]
+|===
+||*condition*|*delay*|*edge*
+|*Group1*|C1: SimulationTime ≥ 6.0|0.0|none
+||C2: Speed ≥ 25.0|0.0|none
+|*Group2*|C3: SimulationTime ≥ 6.0|0.0|none
+||C4: Speed ≥ 25.0|2.0|rising
+|*Group3*|C5: SimulationTime ≥ 6.0|0.0|none
+||C6: Speed ≥ 25.0|4.0|none
+|===
+
+Briefly, the action will happen whenever all (two) conditions within any of the three groups becomes true. It can be illustrated as below.
+
+image::condition_delay.png[]
+
+The solid blue curve represents the speed profile. The two dashed curves represents the speed profile as interpreted by the two delayed speed conditions. The yellow area above the horizontal thick line represents speed ≥ 25 m/s. The blue area to the right of the vertical thick line represents time ≥ 6.0 s.
+
+The first gray pyramid illustrates when condition C2 evaluates true. The gray dot represents when C4 evaluates true. The red pyramid represents C6 = true. Only the red pyramid is in the blue area (time ≥ 6s). In summary, only group 3 will evaluate to true. More specifically, it will become true as soon as speed becomes greater than 25 m/s, which happens at 7.2 seconds, which is passed 6 seconds.
+
+Hopefully the above example gives some idea how condition delay works and how it can be utilized.
+
 === Road signs
 (framework updated in esmini v2.25.0)
 
@@ -1039,13 +1204,17 @@ Examples:
 
 === Parameter distributions
 
-Parameter values and distributions can be specified in a separate https://www.asam.net/index.php?eID=dumpFile&t=f&f=4908&token=ae9d9b44ab9257e817072a653b5d5e98ee0babf8#_parameter_value_distribution_file[Parameter value distribution file]. This is a convenient way of running multiple variations, or parameter value permutations, of a single scenario.
+Parameter values and distributions can be specified in a separate https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/09_reuse_mechanisms/09_03_parameter_distribution.html[Parameter value distribution file]. This is a convenient way of running multiple variations, or parameter value permutations, of a single scenario.
 
 Here's an example: https://github.com/esmini/esmini/blob/master/resources/xosc/cut-in_parameter_set.xosc[cut-in_parameter_set.xosc].
 
-To run all permutations with esmini:
+To run all permutations with esmini, the following variants works:
 
-`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in.xosc --param_dist ./resources/xosc/cut-in_parameter_set.xosc`
+. `./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in_parameter_set.xosc`
+. `./bin/esmini --window 60 60 800 400 --param_dist ./resources/xosc/cut-in_parameter_set.xosc`
+. `./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in.xosc --param_dist ./resources/xosc/cut-in_parameter_set.xosc`
+
+The first two will use the scenario file referred to by the https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/ParameterValueDistribution.html[ParameterValueDistriution element] inside the parameter value distribution file (`cut-in_parameter_set.xosc`). The third example will apply the parameter settings on the scenario defined by the `osc` launch argument, overriding any scenario reference in the specified `param_dist` file. This can be useful when a single parameter distribution applies to multiple scenarios (instead of having one parameter file for each scenario).
 
 How to abort:
 
@@ -1057,40 +1226,44 @@ The log files are now named according to:
 
 For example:
 
-`log_1_of_6.txt` relates to the 1:th run of 6, permutation index 0 +
-`log_4_of_6.txt` relates to the 4:th run of 6, permutation index 3
+`log_1_of_12.txt` relates to the 1:th run of 12, permutation index 0 +
+`log_4_of_12.txt` relates to the 4:th run of 12, permutation index 3
 
 Of course this will apply also to custom log filenames. Example:
 
-`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in.xosc --param_dist ./resources/xosc/cut-in_parameter_set.xosc --logfile_path my_scenario.txt`
+`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in_parameter_set.xosc --logfile_path my_scenario.txt`
 
-will result in `my_scenario_1_of_6.txt`...
+will output `my_scenario_1_of_12.txt`, `my_scenario_2_of_12.txt` ...
 
 Also any recording (.dat), osi and csv files will be named in similar way. Example:
 
-`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in.xosc --param_dist ./resources/xosc/cut-in_parameter_set.xosc --record sim.dat --osi_file gt.osi --csv_logger data_log.csv`
+`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in_parameter_set.xosc --record sim.dat --osi_file gt.osi --csv_logger data_log.csv`
 
-will result in complete sets of files: +
-`log_1_of_6.txt` ... +
-`sim_1_of_6.dat` ... +
-`gt_1_of_6.osi` ... +
-`data_log_1_of_6.csv` ...
+will output complete sets of files: +
+`log_1_of_12.txt` ... +
+`sim_1_of_12.dat` ... +
+`gt_1_of_12.osi` ... +
+`data_log_1_of_12.csv` ...
 
 To run a specific permutation only, specify index like this:
 
-`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in.xosc --param_dist ./resources/xosc/cut-in_parameter_set.xosc --param_permutation 2`
+`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in_parameter_set.xosc --param_permutation 2`
 
-will run 3:rd permutation (of 6 available in this case)
+will run 3:rd permutation (of 12 available in this case)
 
 Save the resulting OpenSCENARIO file with populated parameter values:
 
-`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in.xosc --param_dist ./resources/xosc/cut-in_parameter_set.xosc --save_xosc`
+`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in_parameter_set.xosc --save_xosc`
 
-will give `cut-in_1_of_6.xosc`...
+will output all twelve scenarios `cut-in_1_of_12.xosc` ...
+
+To just save the scenario files quickly without executing them, add optional `quit` argument to the `save_osc` option, like this:
+
+`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in_parameter_set.xosc --save_xosc quit`
 
 To view all results in parallel, make use of replayer like this:
 
-`./bin/esmini --headless --fixed_timestep 0.05 --osc ./resources/xosc/cut-in.xosc --param_dist ./resources/xosc/cut-in_parameter_set.xosc --record sim.dat ; ./bin/replayer.exe --window 60 60 800 400 --res_path ./resources/ --file sim_ --dir .`
+`./bin/esmini --headless --fixed_timestep 0.05 --osc ./resources/xosc/cut-in_parameter_set.xosc --record sim.dat ; ./bin/replayer --window 60 60 800 400 --res_path ./resources/ --file sim_ --dir .`
 
 .View all permutations in parallel
 image::param_dist0.jpg[]
@@ -1102,33 +1275,32 @@ Making use of Python threading pool framework we can utilize any multiple CPU ke
 Usage: `run_distribution.py <esmini args>`
 
 Make sure to add at least the following esmini arguments: +
-`--osc <scenario file>` +
-`--param_dist <parameter distribution file>` +
+`--osc <parameter distribution file>` +
 `--fixed_timestep <timestep>` +
 `--headless`
 
 Example:
 
-`python ./scripts/run_distribution.py --osc ./resources/xosc/cut-in.xosc --param_dist ./resources/xosc/cut-in_parameter_set.xosc --fixed_timestep 0.05 --headless`
+`python ./scripts/run_distribution.py --osc ./resources/xosc/cut-in_parameter_set.xosc --fixed_timestep 0.05 --headless --record sim.dat`
 
 Of course, the --headless (and --fixed_timestep) is not required. It is possible to run with viewer as well:
 
-`python ./scripts/run_distribution.py --osc ./resources/xosc/cut-in.xosc --param_dist ./resources/xosc/cut-in_parameter_set.xosc --window 60 60 800 400`
+`python ./scripts/run_distribution.py --osc ./resources/xosc/cut-in_parameter_set.xosc --window 60 60 800 400`
 
 but the windows will open on top of each other at the same location on the screen, so you need to manually move them apart to see the parallel runs. Anyway, this use case is probably not relevant so the recommendation is to run headless with fixed time step.
 
 Putting it all together, execute the scenario permutations in parallel and then view the result in replayer:
 
-`python ./scripts/run_distribution.py --osc ./resources/xosc/cut-in.xosc --param_dist ./resources/xosc/cut-in_parameter_set.xosc --fixed_timestep 0.05 --headless --record sim.dat ; ./bin/replayer.exe --window 60 60 800 400 --res_path ./resources/ --file sim_ --dir .`
+`python ./scripts/run_distribution.py --osc ./resources/xosc/cut-in_parameter_set.xosc --fixed_timestep 0.05 --headless --record sim.dat ; ./bin/replayer --window 60 60 800 400 --res_path ./resources/ --file sim_ --dir .`
 
 ==== Finding out number of permutations
 
 To find out the number of permutations of a specific scenario and parameter distribution, use the `--return_nr_permutations` launch argument. Example:
 
-`./bin/esmini --osc ./resources/xosc/cut-in.xosc --param_dist ./resources/xosc/cut-in_parameter_set.xosc --return_nr_permutations`
+`./bin/esmini --osc ./resources/xosc/cut-in_parameter_set.xosc --return_nr_permutations`
 
 Output:
-`Nr permutations: 6`
+`Nr permutations: 12`
 
 For scripters: esmini will also return the number of permutations as exit code, for simple use in scripts.
 After executing the above the exit code can be inspected/verified from shell as well:
@@ -1162,6 +1334,381 @@ When FollowMode is `position` esmini will:
 
 . For world coordinates, apply whatever heading is specified in the vertices (note that 0.0 is default). Lane and road coordinates will align to road direction as default.
 . For each segment, calculate constant speed needed to reach next vertex on time. This approach results in a discontinuous speed profile.
+
+==== Trajectory moving and driving direction
+
+The driving direction and entity direction can be controlled by trajectory configuration combined with entity speed and heading. It's possible to follow trajectory in opposite direction and also to drive forward or reverse along the trajectory. The table below lists some combinations and possibilities.
+
+.FollowTrajectory action motion direction based on input
+[cols="1,2,2,2,2,1,2,2,2,2", stripes=even]
+|===
+|
+4+|input|⇒
+4+|output
+||trajectory type|heading rel. traj|timestamps|speed||heading rel. traj|speed|moving dir. rel. traj|entity (in tc)
+|1|clothoid|n/a|n/a|&gt; 0||forward|no change|forward|bicycle1
+|2|clothoid|n/a|n/a|&lt; 0||backward|no change|forward|scooter1
+|3|polyline/nurbs|-|-|&gt; 0||forward|no change|forward|car_white
+|4|polyline/nurbs|-|-|&lt; 0||backward|no change|forward|car_red
+|5|polyline/nurbs|-|yes|ignored||forward|&gt; 0|forward|car_blue
+|6|polyline/nurbs|forward|-|&gt; 0||no change|no change|forward|car_yellow
+|7|polyline/nurbs|forward|-|&lt; 0||no change|no change|backward|van_red
+|8|polyline/nurbs|forward|yes|ignored||no change|&gt; 0|forward|motorbike
+|9|polyline/nurbs|backward|-|&gt; 0||no change|no change|backward|car_trailer
+|10|polyline/nurbs|backward|-|&lt; 0||no change|no change|forward|semi_tractor
+|11|polyline/nurbs|backward|yes|ignored||no change|&lt; 0|forward|truck_yellow
+|===
+
+[horizontal]
+*input heading*:: explicit heading (optionally supported by some shape types) in trajectory control points pointing forward (-90 < heading < 90 deg along trajectory s axis) or backwards. `n/a`: not supported, `-`: not specified.
+*timestamps*:: `n/a`: not supported, `-` not specified or timeReference is None, `yes`: specified timestamp and timeReference != None
+*speed*:: `>0`: speed >= 0, `<0`: speed < 0. For timestamp mode, the magnitude of speed and overall motion direction is given by trajectory control point's timestamps and heading. Allowing for reversing, the initial heading of the entity, if specified, affects whether speed is positive (driving forward) or negative (reversing), see line 8 and 11.
+*output heading*:: Entity heading relative trajectory s-axis direction (heading/tangent). `no change`: not affected by the action, `forward`: facing along s, `backward`: facing away from s. When not specified, entity heading will be aligned forward or backward according to the speed direction. Interpolation will be applied based on specified followingMode, see previous section.
+*moving direction*:: entity motion along trajectory s-axis or opposite direction, given by: `sign(speed) * sign(entity heading rel. traj)`
+*entity (in tc)*:: Corresponding entity in the smoke test scenario https://github.com/esmini/esmini/blob/master/EnvironmentSimulator/Unittest/xosc/trajectory_speed.xosc[trajectory_speed.xosc], which checks the various trajectory configurations. See also videoclip below.
+
+===== Trajectory motion direction control option
+The influence from entity heading on the moving direction can be disabled by setting the global `ignore_heading_for_traj_motion` option, or setting the per Vehicle property    `ignoreHeadingForTrajMotion`="true". That will allow for entities facing away from and still move along the trajectory s-direction forward or backward according to specified speed alone. Line 9 and 10 above would result in:
+
+.Motion direction affected by `ignore_heading_for_traj_motion` option
+[cols="1,2,2,2,2,1,2,2,2,2", stripes=even]
+|===
+|
+4+|input|⇒
+4+|output
+||trajectory type|heading rel. traj|timestamps|speed||heading rel. traj|speed|moving dir. rel. traj|entity (in tc)
+|9|polyline/nurbs|backward|-|&gt; 0||no change|&lt; 0 *|forward *|car_trailer
+|10|polyline/nurbs|backward|-|&lt; 0||no change|&gt; 0 *|backward *|semi_tractor
+|===
+
+pass:[*] indicating changed output
+
+===== Example scenarios
+
+The following test cases cover the various cases and beyond.
+
+.test case scenario https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Unittest/xosc/trajectory_speed.xosc[trajectory_speed.xosc]
+video::mSekcv5Mqeo[youtube,width=854,height=480,opts="autoplay,nocontrols,loop"]
+
+.scenario https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Unittest/xosc/trajectory_special_cases.xosc[trajectory_special_cases.xosc] including example how to transition between reverse and forward driving
+video::sjOgdx8qfEM[youtube,width=854,height=480,opts="autoplay,nocontrols,loop"]
+
+===== Use cases
+
+.Trajectory configurations for some specific use cases
+[cols="1,3,2,2,2,2,1,2,2,2", stripes=even]
+|===
+||
+4+|input|⇒
+3+|output
+||Use case|heading rel. traj|timestamps|speed|ignore heading *||heading rel. traj|speed|moving dir. rel. traj
+|1|Reversing with set speed|-|no|&lt; 0|no||backward|no change|forward
+|2|"|forward|no|&lt; 0|no||no change|no change|backward
+|3|"|backward|no|&lt; 0|no||no change|no change|forward
+|4|Reversing with timestamps|backward|yes|ignored|no||no change|&lt; 0|forward
+|5|Moving along traj with any heading|any|no|&gt; 0|yes||no change|no change|forward
+|6|"|any|yes|ignored|no||no change|sign depends on heading|forward
+|===
+
+pass:[*] `ignore_heading_for_traj_motion` option or `ignoreHeadingForTrajMotion` property described avove
+
+See scenario https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Unittest/xosc/traj_use_cases.xosc[traj_use_cases.xosc]. Run from esmini root as:
+
+`./bin/esmini --path ./resources/models --osc ./EnvironmentSimulator/Unittest/xosc/traj_use_cases.xosc --custom_fixed_camera 24,27,28,5.5,0.57`
+
+=== Friction
+
+From v2.37.0 esmini supports road friction defined in https://publications.pages.asam.net/standards/ASAM_OpenDRIVE/ASAM_OpenDRIVE_Specification/latest/specification/11_lanes/11_07_lane_properties.html#sec-8345bf25-d584-4a5b-8fa7-e15c920ab219[OpenDRIVE lane material].
+
+Each lane within a lane section can have one or multiple segments of individual friction values, specified by s-value and friction coefficient.
+
+Default friction coefficient is 1.0 as of v2.37.0, but might change in later versions. Lower friction (<1.0, slippery) will be visualized as bluish color. The lower friction, the more blue color. High friction values (>1.0,  "grippy") is indicated by redish color.
+
+The friction is calculated per wheel. The values are reported in OSI ground-truth.
+
+Example road: https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Unittest/xodr/straight_highway_500m.xodr[straight_highway_500m.xodr] (used by test scenario https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Unittest/xosc/friction_and_lane_change_edge_case.xosc[friction_and_lane_change_edge_case.xosc])
+
+.Road with various friction segments, coefficient evaluated per wheel
+image::friction.jpg[]
+
+=== Environment conditions
+From v2.49.0 esmini supports the https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/EnvironmentAction.html[`EnvironmentAction`], which allows you to set weather state, road conditions, and time of the day.
+
+There are two ways to define `EnvironmentAction`:
+
+*1. Directly in the OpenSCENARIO file* +
+You can define the `EnvironmentAction`, which is a `GlobalAction` directly within your OpenSCENARIO file, example:
+
+[source,xml]
+----
+<GlobalAction>
+    <EnvironmentAction>
+        <Environment name="weather">
+            <TimeOfDay animation="true" dateTime="2023-11-15T10:30:00.123+00:00"/>
+            <Weather fractionalCloudCover="zeroOktas" temperature="300" atmosphericPressure="10000">
+                <Sun azimuth="0.4" illuminance="100000" elevation="0.3"/>
+                <Fog visualRange="6000"/>
+                <Precipitation precipitationType="snow" precipitationIntensity="10.0"/>
+                <Wind direction="3.1415" speed="10"/>
+            </Weather>
+            <RoadCondition frictionScaleFactor="0.9"/>
+        </Environment>
+    </EnvironmentAction>
+</GlobalAction>
+----
+
+*2. Using a Catalog* +
+You can create a catalog of environments and reference them in your OpenSCENARIO file. This allows you to re-use the same environment across multiple scenarios, ensuring consistency and reducing redundancy, example:
+
+[source,xml]
+----
+<GlobalAction>
+    <EnvironmentAction>
+        <CatalogReference catalogName="EnvironmentCatalog" entryName="summer"/>
+    </EnvironmentAction>
+</GlobalAction>
+----
+The catalog reference points to a specific environment defined in the https://github.com/esmini/esmini/tree/master/resources/xosc/Catalogs/Environments/EnvironmentCatalog[`EnvironmentCatalog`]. The catalog can contain multiple environments, each with its own set of parameters.
+
+Example scenario using both methods: https://github.com/esmini/esmini/blob/dev/resources/xosc/cut-in_environment.xosc[cut-in_environment.xosc]
+
+video::-mQUJU1rR2M[youtube,width=854,height=480,opts="autoplay,nocontrols,loop"]
+
+Note that vehicle headlights are currently not considered in the viewer.
+
+==== Visual elements affecting the viewer
+
+Although all the environment conditions are reported in the OSI data, only some are visualized. Currently, as of v2.49.0, all but `precipitation`, `wind` and `domeImage` are visualized in some way, described below.
+
+===== Sun element
+
+The `Sun` element's `illuminance` directly controls the sky color, where the value 100000 represents the brightest blue sky.
+
+* `illuminance`: A linear shift from **black** (illuminance 0) to **bright blue** (illuminance 100000).
+* `azimuth` and `elevation`: These attributes have no visual effect on the scenario's representation.
+
+===== TimeOfDay animation
+
+The `TimeOfDay` element controls sky color based on the set time. Its `animation` attribute determines whether the OSI data's time of day and unix timestamp in the environmental conditions advance with simulation time or not.
+
+* **Logic**: `TimeOfDay` utilizes the `Sun illuminance` property to adjust the color.
+    * `00:00:00` corresponds to an `illuminance` of 0.
+    * `12:00:00` corresponds to an `illuminance` of 100000.
+* **Precedence**: The `Sun` element's `illuminance` value will always override the `TimeOfDay` animation if both has been set in the scenario.
+
+===== Weather element
+
+The `Weather` element influences the sky color based on cloud cover.
+
+* `fractionalCloudCover`: Linearly shifts the sky color from **bright blue** to **gray** in increment of eights (`1/8`).
+
+* `zeroOktas`: Represents a clear sky.
+* `NineOktas`: Represents a completely overcast sky.
+
+===== Fog element
+
+The `Fog` element creates a fog effect, with its density determined by `visualRange`.
+
+* `visualRange`: Lower values result in denser fog.
+* **Fog Color Logic**:
+    `fogColor = color_dark_gray * cloudiness + color_background_gray * (1 - cloudiness)`
+* **Sky Color Logic (affected by fog)**:
+    `sunIlluminance * ((1 - cloudiness) * background_color + cloudiness * fogcolor)`
+
+Where `background` is calculated as
+`visual_range * fogcolor + (1 - visual_range) * color_background`
+
+.Fog in example scenario https://github.com/esmini/esmini/blob/dev/resources/xosc/cut-in_environment.xosc[cut-in_environment.xosc]
+image::fog.jpg[]
+
+=== Tunnels
+
+From v2.49.0, esmini supports OpenDRIVE tunnels.
+
+A tunnel is defined as a road object, according to https://publications.pages.asam.net/standards/ASAM_OpenDRIVE/ASAM_OpenDRIVE_Specification/latest/specification/13_objects/13_11_tunnels.html[OpenDRIVE Tunnel element specification].
+
+Example:
+
+[source,xml]
+----
+<tunnel s="30.0" length="250.0" name="MyTunnel" id="1" type="standard"/>
+----
+
+This will define a tunnel named "MyTunnel" starting at 30m along the road, with a length of 250m.
+
+==== Tunnel 3D model and transparency
+
+By default, esmini will generate a simple 3D model of the tunnel. The width will cover all road lanes except any out lanes of type `none`. The height will be fixed to 4.5m. Walls and roof constructions 2m thick.
+
+.Automatically created tunnel 3D model
+image::tunnel_opaque.jpg[]
+
+To disable auto-generation of the tunnel model, set the userData attribute `generate3DModel` to `false`. Example:
+
+[source,xml]
+----
+<tunnel s="30.0" length="250.0" name="MyTunnel" id="1" type="standard">
+    <userData code="generate3DModel" value="false"/>
+</tunnel>
+----
+
+To see whats going on inside a tunnel, esmini provides a `tunnel_transparency` option. Example:
+
+`./bin/esmini --osc ./resources/xosc/tunnels.xosc --tunnel_transparency 0.6`
+
+.60% tunnel transparency
+image::tunnel_transparent.jpg[]
+
+The generated tunnel model will adapt to any changes in road width, as can be seen in below image:
+
+.Tunnel adapting to changing road width
+image::tunnel_width.jpg[]
+
+If the automatically created tunnel model does not fit your needs, you can define it in terms of ordinary OpenDRIVE road objects. Then, for example, the tunnel width can be customized as well as the thickness of walls and/or roof construction. In the example scenario below the tunnel named "ManualTunnel" is such.
+
+==== Tunnel example scenario
+
+Here's a demo scenario including a few tunnels: +
+https://github.com/esmini/esmini/blob/dev/resources/xosc/tunnels.xosc
+
+and the associated OpenDRIVE file: +
+https://github.com/esmini/esmini/blob/dev/resources/xodr/tunnels.xodr
+
+Video clip showing some usage of tunnels in esmini, including OSI inspection:
+
+video::pTYcu1yFe5k[youtube,width=800,height=450,opts="autoplay,nocontrols,loop"]
+
+=== SUMO integration
+
+https://eclipse.dev/sumo/[SUMO] is a great open source traffic simulation tool. It has been integrated with esmini, making it possible to run SUMO simulations in esmini, and even mix or co-simulate SUMO vehicles with OpenSCENARIO vehicles.
+
+*NOTE:* Even though SUMO has been linked with esmini for quite long, it's on a experimental level and has not been used a lot. Hence, expect shortcomings and issues. The currently integrated SUMO version, as of esmini v2.37.1, is 1.6.0 while the current SUMO version is 1.19.0. There is plans to update SUMO version in esmini in a soon future.
+
+This chapter explains how to create a SUMO simulation and then how to use it in esmini. For just using SUMO simulations there is no need to install SUMO, it is already embedded with esmini (as long as it has not been explicitly excluded, see <<Slim esmini - customize configration>>). Only to create SUMO content it has to be installed.
+
+==== Install SUMO
+
+1. Get SUMO from here: https://eclipse.dev/sumo/
+2. Install normally, check any option to add sumo to environment path variable
+
+==== Try example from esmini
+
+. Launch `sumo-gui` application
+. File -> Open Simulation
+. Navigate to `esmini/resources/sumo_inputs` and select `multi_intersections.sumocfg`
+. Set Delay (ms) to 100, otherwise simulation will run super-quick
+. Run (Play button or Simulation -> Run)
+
+==== Running the same scenario in esmini
+
+. In a terminal, from esmini root folder, run:
+. `./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/sumo-test.xosc`
+
+==== Create a SUMO simulation
+
+First, there is a great complete guide at https://sumo.dlr.de/docs/
+
+The main flow of our example is:
+
+. Convert an OpenDRIVE file into a SUMO road network
+. Identify some trips (start and end points) within the road network
+. From the trips, resolve complete routes wthich are assigned to vehicles and distribute over time
+. Create a configuration referring to the road network and route definition
+
+Step-by-step:
+
+. Create a new folder, e.g. "my_sumo", for this example
+. Copy esmini/EnvironmentSimulator/Unittest/xodr/simple_3way_motorway.xodr into the new folder
+. Open a terminal in the new folder
+. Convert the xodr into a SUMO https://sumo.dlr.de/docs/Networks/SUMO_Road_Networks.html[road network]: +
+   `netconvert --opendrive fabriksgatan.xodr -o my_sumo.net.xml`
+. Create some traffic using https://sumo.dlr.de/docs/Tools/Trip.html#randomtripspy[randomTrips.py] (and https://sumo.dlr.de/docs/duarouter.html[duarouter]): +
+    `randomTrips.py -n my_sumo.net.xml -e 60 -o my_sumo.trips.xml --route-file my_sumo.rou.xml`
++
+If this fails, it may be because of lacking .py file association. Try:
++
+```
+python3 randomTrips.py ...
+python randomTrips.py ...
+python3 tools/randomTrips.py ...
+python tools/randomTrips.py ...
+```
+
+[start=6]
+. Create the configuration file
++
+Save the following lines into a new file named "my_sumo.sumocfg":
++
+[source,xml]
+----
+<?xml version="1.0" encoding="iso-8859-1"?>
+<configuration>
+    <input>
+        <net-file value="my_sumo.net.xml"/>
+        <route-files value="my_sumo.rou.xml"/>
+    </input>
+    <time>
+        <begin value="0"/>
+        <end value="60"/>
+        <step-length value="0.01"/>
+    </time>
+</configuration>
+----
+
+. Open Sumo, load the created config file "my_sumo.sumocfg" and run as in first example, <<Try example from esmini>>.
+
+==== Connect a SUMO simulation to a scenario in esmini
+
+Currently, as of esmini v2.37.1, SUMO is integrated in terms of a controller. To add a SUMO simulation, define an entity as usual, assign the SumoController and set its "filepath" property to the sumocfg file.
+
+Now when we have a complete SUMO configuration, do the following steps in order to use it in esmini:
+
+. Copy the three files: my_sumo.net.xml, my_sumo.rou.xml and my_sumo.sumocfg (roadnetwork, routes, config) to `esmini/resources/sumo_inputs`
+
+. Create a file named "my_sumo.xosc", in `esmini/resources/xosc` with the following content:
++
+[source,xml]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenSCENARIO>
+    <FileHeader author="esmini team" date="2024-03-06T10:00:00" description="sumo integration example" revMajor="1" revMinor="2"/>
+    <ParameterDeclarations/>
+    <CatalogLocations>
+        <VehicleCatalog>
+            <Directory path="../xosc/Catalogs/Vehicles"/>
+        </VehicleCatalog>
+        <ControllerCatalog>
+            <Directory path="../xosc/Catalogs/Controllers"/>
+        </ControllerCatalog>
+    </CatalogLocations>
+    <RoadNetwork>
+        <LogicFile filepath="../xodr/fabriksgatan.xodr"/>
+    </RoadNetwork>
+    <Entities>
+        <ScenarioObject name="SumoVehicles">
+            <CatalogReference catalogName="VehicleCatalog" entryName="car_red"/>
+            <ObjectController>
+                <Controller name="SumoController">
+                    <Properties>
+                        <File filepath="../sumo_inputs/my_sumo.sumocfg"/>
+                    </Properties>
+                </Controller>
+            </ObjectController>
+        </ScenarioObject>
+    </Entities>
+    <Storyboard>
+        <Init>
+            <Actions/>
+        </Init>
+        <StopTrigger/>
+    </Storyboard>
+</OpenSCENARIO>
+----
+
+[start=3]
+. Run from esmini root folder:
++
+`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/my_sumo.xosc`
 
 == Positioning
 
@@ -1422,20 +1969,25 @@ Missing angles will be handled according to the table below:
 |roll|No|road surface
 |===
 
-While moving along polylines, which tangent is not continuous, it's usually preferred to interpolate/smoothen orientation change at vertex corners.
+While moving along polylines, which tangent is not continuous, it's usually preferred to interpolate/smoothen orientation along whole linear segments or at least when passing vertex corners.
 
-The table below shows the result for combinations of input settings of polyline trajectories:
+The table below shows what interpolation method will be applied, as default, based on FollowingMode setting for the trajectory:
 
-[%autowidth, cols="2,2,3,2"]
+[%autowidth, cols="2,2"]
 |===
-2+|Input
-2+|Result
-|*Angle specified?*|*FollowingMode?*|*Interpolate angle along segment*|*Interpolate corners*
-|Yes|position|No|No
-|Yes|follow|Yes|No
-|No|position|No|Yes
-|No|follow|Yes|No
+|*FollowingMode*|*Interpolate mode*
+|position|corner
+|follow|segment
 |===
+
+The interpolation mode can be explicitly set, or even disabled altogether:
+
+* option: `pline_interpolation <mode>` (see also esmini <<Launch commands>>)
+* vehicle property: `plineInterpolation <mode>`
+
+Valid modes: `segment`, `corner`, `off`
+
+*Note:* The option is global, i.e. affects all trajectories, while vehicle property is per entity. Option has precedence, so any vehicle property will be ignored if the option is set.
 
 === Example
 There is a code and scenario example illustrating the various interpolation and position modes:
@@ -1472,6 +2024,90 @@ In the image below two cars, red and blue, are being positioned by means of `Rel
 
 .Relative positioning with and without own route
 image::relative_position_routing.jpg[]
+
+=== Reference line and center lane
+
+In https://www.asam.net/index.php?eID=dumpFile&t=f&f=4422&token=e590561f3c39aa2260e5442e29e93f6693d1cccd#top-05e95dfd-ce05-40c8-af93-d065229e6968[`OpenDRIVE definition of laneOffset`]: A lane offset may be used to shift the center lane away from the road reference line.
+
+image::lane_offset_standard_way.png[]
+
+https://en.wikipedia.org/wiki/2%2B1_road[2+1 roads] can be defined utilizing lane offset:
+
+image::lane_offset_two_plus_one.jpg[]
+
+`lane id` relates to reference lane. `lane offset` relates to the current lane. `t` relates to reference line.
+[%autowidth, options=header]
+|===
+||white car|red car
+|*lane id*|-2|-1
+|*lane offset*|0.0|0.0
+|*t*|-1.75|1.75
+|===
+
+A 2+1 example example scenario is found here: https://github.com/esmini/esmini/blob/master/resources/xosc/two_plus_one_road.xosc[resources/xosc/two_plus_one_road.xosc]
+
+*Note*: In esmini versions prior to 2.43 the reference line was incorrectly affected by lane offset as well. The `t`-values in the table then became -5.25 for the white car and -1.75 for the red car.
+
+==== Visualization
+esmini can indicate various road features; toggle key 'o' or launch option `--road_features`.
+The center lane is indicated by thick red line and reference line is indicated by semi-thick yellow line.
+
+image::two_plus_one_road_features.jpg[]
+
+=== Lateral distance action logics
+The https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/LateralDistanceAction.html[LateralDistanceAction] can be used to enforce an entity to reach and optionally stay at a lateral distance from a given reference entity.
+esmini supports two coordinate systems for the lateral distance action:
+
+==== Road coordinate system
+The lateral distance is defined as a distance to the left or right of the given reference entities current lateral offset in the road coordinate system (i.e. the t-value).
+
+If desired, dynamic constraints can be applied to control how the actor reaches the specified lateral distance. These constraints are interpreted in the context of the road coordinate system, specifically the t-axis, which represents lateral movement. This includes how quickly the actor can move or accelerate laterally.
+
+The following logic applies for the actor to reach the desired lateral distance to the referenced entity:
+
+* No dynamic constraints: Lateral distance reached in one single simulation step.
+
+* maxSpeed constraint only: The actor will reach the maxSpeed with infinite acceleration and then continue at that speed until the lateral distance is reached.
+
+* maxAcceleration constraint: The actor follows a https://en.wikipedia.org/wiki/Mass-spring-damper_model[damped spring model], accelerating up to the specified maxAcceleration. If maxSpeed is also defined, the actor will not exceed it. If maxSpeed is not defined, the actor accelerates until reaching its current forward speed projected onto the road's t-axis. As the actor approaches the desired lateral distance, it will decelerate with the given maxAcceleration until it reaches the target distance.
+
+* maxDeceleration constraint: Not supported. Use maxAcceleration instead.
+
+Freespace calculations assume all vehicles share the same heading and only consider their widths for determining lateral relationships.
+
+A video clip showing a the LateralDistanceAction in a highway driving context. A typical use case would be a target vehicle swerving in neighbor lane, challenging the AD/ADS functions of an Ego vehicle. From demo scenario https://github.com/esmini/esmini/blob/dev/resources/xosc/keep_lateral_distance.xosc[keep_lateral_distance.xosc].
+
+video::lATeP5cz_HE[youtube,width=854,height=480,opts="autoplay,nocontrols,loop"]
+
+==== Entity coordinate system
+
+The lateral distance is defined as a distance to the left or right of the given reference entity in its local coordinate system, i.e. along the reference entity y-axis.
+
+Imagine a line parallel, and at given distance, to the reference entity's x-axis. This is the line where the action entity should strive to drive along. Note that for each simulation step this line will be updated to reflect the current position and orientation of the reference entity.
+
+The following logic applies for the actor to reach the desired lateral distance to the referenced entity:
+
+* No dynamic constraints: Lateral distance reached in one single simulation step.
+
+* maxAcceleration constraint: The entity will drive towards and align to the "distance line" explained above, as fast as possible given the lateral acceleration constraint and current longitudinal speed. The larger lasteral acceleration the smaller turning radius. Smoothing will be applied to the beginning and end of the turning manuever for C1 continuiuty (no rapid steering changes). Longitudinal speed will be maintained.
+
+Image below illustrates the lateral distance action in entity coordinate system, with a reference entity (white car) and a few action entities (red cars). The red cars have various starting states but will all strive to reach a lateral distance of 1.0m to the left of the reference entity. From test scenario https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Unittest/xosc/lat_dist_entity_basic.xosc[lat_dist_entity_basic.xosc].
+
+image::lat_dist_explained.jpg[]
+
+A video clip from another test scenario, https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Unittest/xosc/lat_dist_entity.xosc[lat_dist_entity.xosc], demonstrating the lateral distance action in entity coordinate system:
+
+video::JPwLDv1SgR0[youtube,width=854,height=480,opts="autoplay,nocontrols,loop"]
+
+There are various modes of this scenario:
+
+* Mode 0 is a simpler variant keeping same distance throughout the scenario (shown in video clip above)
+* Mode 1 is used for test case and includes further challenges e.g. switching into freespace mode and swapping side, from left to right.
+* Mode 2 is interactive, you drive Ego with keyboard arrow keys.
+
+Mode is a scenario parameter and can easily be changed in the ParameterDeclaration in the top section of the file.
+
+Regarding use cases of the LateralDistanceAction in entity coordinate system, we have no clue. But we're interested to learn how, if ever, its' being used. Please let us know.
 
 == Controllers
 
@@ -1748,6 +2384,13 @@ video::time_headway.mp4?raw=true[opts="loop,autoplay"]
 Note that the strategy results in desired behavior in probably the majority of cases, but not all. There might be exceptions where another behavior is expected or required. The manipulation described above is handled by the methods `SetupGhost()` and `ReplaceObjectInTrigger()` in https://github.com/esmini/esmini/blob/master/EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/ScenarioEngine.cpp[ScenarioEngine.cpp] which can be modified to fit custom needs.
 
 [discrete]
+==== Controllers and ghost
+
+OpenSCENARIO 1.2 onwards supports multiple assigned controllers. All except the first controller will be handed over to the ghost. Hence make sure to put the ghost controller first, since it will stick to the "Ego".
+
+Example scenario, where ghost is utilizing the followRoute controller: https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Unittest/xosc/follow_route_ghost_starting_on_route.xosc[follow_route_ghost_starting_on_route.xosc].
+
+[discrete]
 ==== Additional notes on using the ghost feature
 
 Timestamps in log are always of same reference. Whenever a ghost is involved the time will start at -`headStartTime`, in order for the actual scenario to start at simulationTime = 0. Example: Assuming `headStartTime = 3s`, a log message for an Ego action like:
@@ -1989,6 +2632,169 @@ Below is a video clip showing the controller in action on an open paved area. Th
 
 video::uHqdsORPsGE[youtube,width=854,height=480,opts="autoplay,nocontrols,loop"]
 
+==== NaturalDriverController
+
+A controller designed to drive naturally on highways and urban roads, with a driver which tries to keep its desired lane, while keeping the distance to a target in front and, if the conditions are correct, will make a lane change to overtake a lead vehicle.
+
+The desired lane for the controller vehicle is set with a parameter (named "Route"), the driver will strive to reach and maintain this lane. The driver will follow the car in front following the IDM (Intelligent Driver Model) logic, https://en.wikipedia.org/wiki/Intelligent_driver_model. The driver will change lane according to MOBIL (General Lane-Changing Model for Car-Following Models), https://mtreiber.de/publications/MOBIL_TRB.pdf. The lane changing doesn't take traffic density or ramps / junctions into account, and thus the model is only suitable on roads without such geomitries.
+
+The model is fully parameterized to suit the desired need of each simulation. For all properties see `NaturalDriver` in https://github.com/esmini/esmini/blob/master/resources/xosc/Catalogs/Controllers/ControllerCatalog.xosc[Controllers/ControllerCatalog.xosc].
+
+Example usage can be found in https://github.com/esmini/esmini/blob/master/scripts/scenario_scripts/test_traffic.py
+
+Demo (running scenario https://github.com/esmini/esmini/blob/master/resources/xosc/highway_driver.xosc):
+
+video::JV31gvCCe3Y[youtube,width=854,height=480,opts="autoplay,nocontrols,loop"]
+
+==== FollowReferenceController
+
+The esmini implementation of the OpenSCENARIO XML default controller executes the scenario exactly as defined, without smoothing or other influence from vehicle dynamics or driver modeling. It will even perform discontinuities like step shaped lane- or speed change actions. In other words, it goes beyond kinematics, into "kinemagics".
+
+The result can be seen as a `blueprint` or reference of the specified scenario.
+
+The FollowReferenceController can be used to smoothen the blueprint, or transform it from "kinemagic" to kinematic, by follow the reference position closely with a simple bicycle kinematic model inspired by the well known Stanley controller: https://ai.stanford.edu/~gabeh/papers/hoffmann_stanley_control07.pdf. For longitudinal control a simple critically damped spring model with parameterized stiffness is used.
+
+The result becomes a smooth and continuous version of the original scenario, with a more realistic vehicle motion.
+
+Example scenario:
+https://github.com/esmini/esmini/blob/master/resources/xosc/follow_reference.xosc
+
+image::follow_reference.png[]
+
+video::icozF90XZDQ[youtube,width=854,height=480,opts="autoplay,nocontrols,loop"]
+
+The scenario triggers four lane changes with different https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/DynamicsShape.html[shapes]:
+
+. step
+. linear
+. sinusoidal
+. cubic
+
+The cross-track error gain is sligthly stiff, 2.5, but results in quite good tracking capability, also for challenging maneuvers.
+
+By default the controller will create a ghost reference entity executing the original scenario, while the main entity, to which the controller is assign, will follow the ghost in real time. Note that no head-start will happen like with the followGhost controller. Alternatively, instead of creating a ghost from the own entity, any other existing scenario object can be set as reference entity.
+
+Some controller tuning parameters:
+
+* Stanley cross error gain
+* delta heading gain
+* curvature gain
+
+For details see `followReference` in https://github.com/esmini/esmini/blob/master/resources/xosc/Catalogs/Controllers/ControllerCatalog.xosc[Controllers/ControllerCatalog.xosc]
+
+Another scenario example:
+https://github.com/esmini/esmini/blob/master/resources/xosc/follow_reference_interactive.xosc
+
+This scenario allows to interactively drive the reference entity (red) by arrow keys. The white car tries to follow using the FollowReferenceController. Initially relaxed settings. After 15 seconds stiffer settings are applied.
+
+video::1bKpl1dseHs[youtube,width=854,height=480,opts="autoplay,nocontrols,loop"]
+
+==== HIDcontroller
+
+From v2.47.0 esmini supports game controllers, allowing interactive control of one or multiple entities in a simulation. Any joystick compatible device should work, e.g. joystick, gamepad, racing wheel, etc.
+
+Controlling Ego or target vehicles can be useful for demonstrating or evaluating functions in the loop. Examples:
+
+* Adjust Ego lateral lane position to check lane-departure function characteristics
+* Control a target vehicle to put AD operated Ego in challenging situations
+
+Any number of connected devices can be used. The mapping system is a bit tricky, but flexible. It allows to use most joystick alike controllers (racing wheel, joystick, gamepad...) and assign any input axis or button to the steering, throttle and brake inputs of an entity.
+
+===== Example scenario
+https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Unittest/xosc/race_hid.xosc[race_hid.xosc] shows how to assign game controllers to one or several vehicles.
+
+The scenario puts three cars at beginning of a road. One will immediatelly start driving. The second is controlled by a game controller, which needs to be setup for specific connected device - see details below.
+
+The third can also be controlled by a game controller by uncommenting the ObjectController code in the sceenario. Otherwise, by default it will stand still.
+
+First car reaching end of road is the winner. Any car coming outside road area for more than one second will be punished by teleport back to the beginning of the road.
+
+===== Limitations
+
+Only three input channels are supported: Steering, Throttle and Brake.
+
+No automatic detection of game controllers is implemented, instead it has to be explicitly configured. See more info below.
+
+Only Windows and Linux (Ubuntu) supported, not macOS.
+
+===== Configuration
+
+To configure game controller inputs, you need to:
+
+* map steering, throttle and brake to axes or buttons of the device. If brake is not mapped, esmini will assume same axis as throttle, a combination quite common for racing wheels on Windows.
+* find out the device ID and assign it to the `deviceID` property, or `DeviceID` parameter when referring a catalog entry.
+
+ID is a sequence number and will depend on the current configuration of the system, e.g. number and order of connected game controllers. Hence, it probably needs to be adjusted for the specific setup.
+
+Mapping of input axes and buttons is independent of the ID and can be specified for any specific controller. But it will be different between Windows and Linux.
+
+A examples are provided in the separate catalog https://github.com/esmini/esmini/blob/dev/resources/xosc/Catalogs/Controllers/GameControllerCatalog.xosc[GameControllerCatalog.xosc], including:
+
+* Trust GXT 39 gamepad
+* PS4 Controller (DualShock 4)
+* PS5 Controller (DualSense)
+* Hori Racing Wheel APEX
+* Logitech Steering Wheel WingMan Formula GP
+* Logitech Steering Wheel
+
+However, it's simple to add other ones. See next sections for details.
+
+You can also use the catalog `HID_generic` controller and assign the ID and mappings via parameters.
+
+===== Mapping of axes and buttons
+
+Axes and buttons are denoted differently on Windows and Linux. The following table shows the mapping of axes and buttons for some game controllers currently in the catalog.
+
+Example: If you have a PS4 controller, you can assign the left trigger to the brake by specifying controller property `brakeInput` = `AXIS_RX` (analog) or `BTN_7` (binary).
+
+If you need to inverse an axis, just put "-" in front of the axis name, e.g. `-AXIS_Y`.
+
+++++
+<iframe src="https://docs.google.com/spreadsheets/d/e/2PACX-1vTIxA9xhO1GomQDd3GvamIaul80S4GLH4UHyWubsG7sm3lLuCMqMo0QcHg-6D-NfKqqFKDwGWa1W_g2/pubhtml?gid=2029882313&&widget=false&headers=false&chrome=true" frameborder="0" width="730" height="1267"></iframe>
+++++
+
+https://docs.google.com/spreadsheets/d/1Y-zhAOcks3-rkcVdz3EvwBqOhvOwyE20sGZJcFM1OvI/edit?usp=sharingLink[Link] to full table, including ranges.
+
+It's a bit tricky to find out ID and mappings. The next sections provides some help using common tools.
+
+To see received data from device set wsmini option `--log_level debug`.
+
+====== Windows tools
+
+To find out available input devices, including game controllers, you can use the `dxdiag` tool:
+
+Win+R, type `dxdiag`, press Enter.
+
+Look under "DirectInput Devices" in the "Input". It will list all connected input devices, including game controllers. The ID is found in the "Controller ID" column.
+
+For further information, run the Game Controller settings:
+
+Win+R, type `joy.cpl`, press Enter
+
+Select controller and click `Properties` to test the device.
+
+====== Linux tools
+
+To find available game controllers, you can run:
+
+`ls /dev/input/js*`
+
+Any connected game controller should appear as `/dev/input/js0`, `/dev/input/js1`, etc.
+
+For further information you can use `jstest`. Install it:
+
+`sudo apt install joystick`
+
+Example usage:
+
+`jstest /dev/input/js2`
+
+will show you information and the state of the game controller with ID 2.
+
+Also, `jstest-gtk` is a graphical tool that can be installed with:
+
+`sudo apt install jstest-gtk`
+
 ===  How to add a new controller
 
 Below are the steps to add new controller in esmini:
@@ -1998,7 +2804,6 @@ Below are the steps to add new controller in esmini:
 . Create Instantiate method in the new controller. The name shall be unique eg InstantiateControllerLooming
 . In the new controller, Type name shall be unique eg, CONTROLLER_LOOMING_TYPE_NAME
 . Add controller type and it shall be unique in EnvironmentSimulator/Modules/Controllers/Controller.hpp
-. Make sure GetTypeStatic() and GetTypeNameStatic() and methods returns the unique type and type name values
 
 == OpenSceneGraph and 3D models
 
@@ -2083,7 +2888,7 @@ Here follows an example of how to convert .osgb models into .fbx format for use 
    `osgconv model.osgb out/model.fbx -s 100,100,100` +
    "-s ..." is for scaling which typically is needed for fbx files.
    Potentially it also needs to be oriented according to Unity coordinate system. In that case try: +
-   `osgconv model.osgb out/model.fbx -s 100,100,100 --use-world-frame -o 120--0.5773503,-0.5773503,-0.5773503`
+   `osgconv model.osgb out/model.fbx -s 100,100,100 --use-world-frame -o 120pass:[--]0.5773503,-0.5773503,-0.5773503`
 
 A folder named "out" should have been created and including the model.fbx plus any texture files
 
@@ -2101,7 +2906,7 @@ That should basically be it.
 
 === Colors, textures and wheel rotations
 
-See https://github.com/esmini/esmini/issues/63#issuecomment-742273326[issue 63] for brief info.
+See https://github.com/esmini/esmini/issues/63#issuecomment-742273326[issue 63] for brief information on how to create vehicle 3D models with moving wheels.
 
 And these two scripts operating on textures and material respectively, can potentially provide some inspiration: +
 - https://github.com/esmini/esmini/blob/master/scripts/bake_signs.sh[bake_signs.sh] +
@@ -2170,6 +2975,224 @@ Add two custom light sources: +
 .Original model with one light added
 image::light_second_light.jpg[]
 
+=== Convert osgb models for use in Blender
+Here follows an example of how to convert .osgb models into .obj format for use in Blender. obj is easy to use as it has a human readable text format, easy mapping between its material parameters and Blender's and minimal settings when converting back to .osgb.
+
+. Open a command prompt in the folder where your model.osgb is
+. Run command: +
+   `osgconv model.osgb model.obj -s 100,100,100 --use-world-frame -o -90-1,0,0` +
+   "-s ..." is for scaling which typically is needed for .obj files. +
+   "--use-world-frame" is to use the world coordinate system, which is typically needed for obj files. +
+   "-o -90-1,0,0" is to rotate the model so that it faces the positive x-axis in Blender. This is a common requirement for .obj files as they typically face the negative y-axis by default.
+
+A file should have been created called "model.obj". It's important to note that the textures in the .osgb file are not automatically copied to the .obj file location, so you will need to copy them manually to the same location as the generated .obj.
+
+=== Import into Blender
+. Drag the resulting obj file, and all textures, into a suitable folder, preferably an empty folder
+. Open Blender and delete the default cube
+. Go to "File" -> "Import" -> "Wavefront (.obj)"
+. Navigate to the folder where you placed the .obj file and select it, and click "Import Wavefront OBJ"
+
+=== Material settings in Blender
+Highlight the object in Blender and go to the "Material Properties" tab. You will see the material settings for the imported model.
+
+Make sure that the "surface" type is set to "Principled BSDF" which is the default in Blender. This shader supports a wide range of material properties and is suitable for most models.
+
+Under the "Base Color" section, you can set the color of the material. The following parameters in Blender match the obj material parameters: +
+- `Ka` (Ambient Color) corresponds to the "Metallic" in Blender, how much the material reflects ambient light. +
+- `Kd` (Diffuse Color) corresponds to the "Base Color" HSV values combined (if no texture png) in Blender, which is the color of the material when light is directly hitting it. +
+- `Ks` (Specular Color) corresponds to the "Specular" colors "IOR level" in Blender, which is the color highlights from shiny surfaces. +
+- `Ns` (Specular Exponent) corresponds to the "Roughness" in Blender, where a lower value means a shinier surface. +
+- `d` (Transparency) corresponds to the "Alpha" value in Blender, where a value of 1.0 means fully opaque and 0.0 means fully transparent. +
+- `Ke` (Emissive Color) corresponds to the "Emission" colors HSV values in Blender, which is the color of light emitted by the material.
+
+=== Export Blender obj
+When you are done editing the model in Blender, you can export it to obj format with suitable settings for osgconv.
+. Go to "File" -> "Export" -> "Wavefront (.obj)"
+. In the export dialog, leave most default, but make sure to set the following options on the right side: +
+- `Scale` to 1.0 +
+- `Forward Axis` to -Z +
+- `Up Axis` to Y +
+- `Materials` is checked +
+- `Path Mode` to "Copy" +
+
+Then select the folder where you want to save the exported obj file (preferably same folder as your textures if you have any) and click "Export OBJ".
+
+=== Convert back to osgb
+Now you can convert the exported .obj file back to .osgb format using osgconv.
+
+. Open a command prompt in the folder where your newly exported_model.obj is and run the command: +
+. `osgconv exported_model.obj exported_model.osgb`
+
+This will create a new .osgb file that you can use in your application.
+
+=== Using OpenX assets library
+
+https://github.com/bounverif/openx-assets is a collection of low- and medium-polygon 3D vehicle assets.
+
+video::UWjQ8Ai83Cc[youtube,width=800,height=450,opts="autoplay,nocontrols,loop"]
+
+==== How to use with esmini
+
+. Download and extract openx-assets release, for example: +
+https://github.com/bounverif/openx-assets/releases/tag/20250821 +
+the following examples assumes extracted to folder `/tmp` but it can be placed anywhere.
+. In the scenario, add catalog location. Example:
+```xml
+    <CatalogLocations>
+        <VehicleCatalog>
+            <Directory path="/tmp/openx-assets/catalogs"/>
+        </VehicleCatalog>
+    </CatalogLocations>
+```
+[start=3]
+. and for scenario objects, refer to catalog entries. Example:
+```xml
+        <ScenarioObject name="car1">
+            <CatalogReference catalogName="openx_assets_3d.catalog" entryName="m1_audi_q7_2015"/>
+        </ScenarioObject>
+```
+[start=4]
+. Full demo/example scenario (shown in video clip above) found here: +
+https://github.com/esmini/esmini/blob/dev/resources/xosc/car_walk.xosc[resources/xosc/car_walk.xosc] +
+Run from esmini root as: +
+   `./bin/esmini --osc ./resources/xosc/car_walk.xosc --aa_mode 9 --path /tmp/openx-assets/model3d --custom_fixed_camera 235,4,2,5.9,0.1 --window 60 60 1024 512`
+
+[Note]
+====
+*Note:*
+These 3D models currently only works in esmini. Support for generic 3D models with shifted origin will come with a reworked replayer during 2025 Q4.
+====
+
+==== Comment on rear axle non zero position
+
+In the OpenSCENARIO XML standard the vehicle reference point is defined as the center of the rear axle projected on ground (see https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/06_general_concepts/06_03_coordinate_systems.html#_vehicle_coordinate_system_xv_yv_zv[here]). Hence, the x coordinate of the https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/Axles.html[rear axle], defined in terms of vehicle coordinate system, normally should be zero.
+
+Now, for 3D models there is no universal standard how to place origin/reference point. This is especially true for vehicle models. Some models have origin at geometric center, some projected on ground. Ideally, for use with OpenSCENARIO the x coordinate of the center should be aligned with the rear axle.
+
+The authors of the OpenX assets library decided to not prepare multiple variants with different origins. Instead, only one variant with origin at geometric center projected on ground is provided.
+
+In order to still enable use with OpenSCENARIO the offset, the reference point can be moved along the x-axis. The affected vehicle attributes are:
+
+- rearAxle.positionX (becoming non zero)
+- frontAxle.positionX
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/BoundingBox.html[BoundingBox].center.x (becoming zero)
+
+The offset is coded directly in rearAxle positionX (difference from zero). So, in esmini, from version 2.50.3, any non zero rearAxle positionX is interpreted as a request to offset the 3D model accordingly. The axles and bounding box center are adjusted according to comply with the OpenSCENARIO XML standard.
+
+Example:
+
+```xml
+<Vehicle name="m1_bmw_x1_2016" vehicleCategory="car" mass="1800" model3d="../model3d/m1_bmw_x1_2016/m1_bmw_x1_2016.osgb">
+   <BoundingBox>
+      <Center x="0.000" y="0.000" z="0.832"/>
+      <Dimensions length="4.747" width="2.091" height="1.645"/>
+   </BoundingBox>
+   <Performance maxSpeed="56.0" maxDeceleration="8.0" maxAcceleration="4.0"/>
+   <Axles>
+      <FrontAxle maxSteering="0.6" wheelDiameter="0.7585" trackWidth="1.5426" positionX="1.4851" positionZ="0.3792"/>
+      <RearAxle maxSteering="0.0" wheelDiameter="0.7585" trackWidth="1.5426" positionX="-1.3749" positionZ="0.3792"/>
+   </Axles>
+</Vehicle>
+```
+
+3D model should be translated -1.3749 along the x-axis, while the axles and bounding box are translated +1.3749 so that rear axle ends up at x = 0.
+
+In summary: This small feature enables not only use of openx-asset vehicle models, but enables use of other models where origin does not align with rear axle - without need for editing or processing.
+
+*Note:* This feature is NOT supported by the OpenSCENARIO XML standard, which requires axles to be at non-negative X coordinate (pass:[>=0]).
+
+=== Export generated 3D model
+
+The 3D model created by esmini, based on the input OpenDRIVE file, can be saved in the `.osgb` (OpenSceneGraph binary) format.
+
+==== Command line
+By command line argument `--save_generated_model`, example:
+
+`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/lane_change_crest.xosc --save_generated_model`
+
+The model will be saved as `generated_road.osgb`. It can be viewed using any OpenSceneGraph compatible viewer, e.g:
+
+`osgviewer --window 60 60 1200 600 generated_road.osgb`
+
+==== API
+Using esmini internal API, the 3D model can be saved programmatically. Here is a simplified example in C++:
+
+[source,c++]
+----
+#include "roadgeom.hpp"
+
+if (!roadmanager::Position::LoadOpenDrive("my_road.xodr"))
+{
+    return -1;
+}
+
+// Create road geometry from OpenDRIVE file
+roadgeom::RoadGeom road_geom = roadgeom::RoadGeom(roadmanager::Position::GetOpenDrive(), osg::Vec3(0, 0, 0), true, true, false, argv[0], false);
+
+// the osg tree can be accessed in road_geom.root_
+
+// Save as OpenSceneGraph binary file
+road_geom.SaveToFile("my_road.osgb");
+----
+
+For explanation of the `RoadGeom`  constructor parameters, see the API documentation or the source code in https://github.com/esmini/esmini/blob/6810e35a71d80aa708aa6092fccc7da1a5a6db0f/EnvironmentSimulator/Modules/ViewerBase/roadgeom.hpp#L66-L82[`roadgeom.hpp`].
+
+The code needs to link the following esmini modules/libraries:
+
+* RoadManager
+* CommonMini
+* RoadGeom
+
+Full code example here: https://github.com/esmini/esmini/tree/refs/heads/dev/EnvironmentSimulator/code-examples/road-model[code-examples/road-model]
+
+==== Node naming
+
+For post processing the esmini generated nodes are named.
+
+Name structure: `<object type>_<id>_<context dependent info>`
+
+Context dependent info:
+
+[horizontal]
+roadmark :: `<type>`
+road :: `<lane>_<segment>` (segment per friction value)
+road_object :: `<name>[_index]` (index corresponding to outline)
+tunnel :: `<type: wall|roof>_<name>_<index>`
+road_signal :: `<name>`
+
+Note:
+
+Example: Tunnels have three sub objects, two walls and one roof)
+
+[souce]
+----
+esmini_generated_road_model
+  roadmarks
+    roadmark_0_solid
+    roadmark_1_broken
+    roadmark_2_broken
+  roads
+    road_0_0_0
+    road_0_1_0
+    road_1_0_0
+    road_1_1_0
+    road_1_2_0
+    road_1_2_1
+    road_1_2_2
+  road_objects
+    road_object_0_railing
+    road_object_1_railing
+    no-name
+      road_object_2_   (object in OpenDRIVE has empty name)
+    road_object_3_0
+    road_object_3_1
+    tunnel_wall_4_0
+    tunnel_wall_4_0
+    tunnel_roof_4_0
+----
+
+`no-name` are structural nodes, e.g. transformation or just group.
 
 == Support / Q&A
 
@@ -2249,6 +3272,20 @@ or
 
 - get the package from https://dl.dropboxusercontent.com/s/5gk8bvgzqiaaoco/models.7z?dl=1[here] and unpack files into `./resources/models`
 
+==== Update 3rd party prebuilt libraries
+
+There are a few external dependencies that takes long time to build from scratch. Instead they are provided in compressed packages including needed headerfiles and prebuilt libraries. The packages are available for Win, Mac and Linux. For Windows and Linux they include Debug mode binaries, in addition to the Release variant.
+
+The cmake script will check for the availability of these libraries, by simply checking for existence of corresponding folders, e.g. osg, osi, sumo, under esmini/externals. If missing, compressed packages will be downloaded and extracted.
+
+Not often, but at some points the prebuilt libraries needs to be updated. In most cases it affects the esmini build configuration and/or code. Hence, sometimes an update of esmini comes with a need to update the external libraries as well. Lack of automatic handling, such update needs to be done manually. One way is to delete the specific folder(s) and run ordinary cmake command again. But the simplest way is to enforce redownload of all packages:
+
+`cmake .. -D  FORCE_DOWNLOAD_BINARIES=TRUE`
+
+The FORCE_DOWNLOAD_BINARIES flag will be checked by the cmake script for enforced download of all packages. Upon successful download, the libraries will be replaced, one by one.
+
+Library updates are not detected by the esmini build dependencies, why a clean rebuild of esmini should be performed manually afterwards.
+
 ==== Entity does not appear
 In order to appear in the scenario, without need for AddEntity action, an entity must be represented in the Init section of the Storyboard. Common is to add actions to establish inital position and speed.
 
@@ -2275,27 +3312,6 @@ Example:
 </PrivateAction>
 ----
 
-==== Failed to download 3rd party assets
-First time the cmake-script is run it will try to download pre-built libraries and model assets. If this step fails for some reason, e.g. "Couldn't resolve host name" or certificate failure, you can change to another location.
-
-Modify https://github.com/esmini/esmini/blob/master/CMakeLists.txt[esmini/CMakeLists.txt] (under esmini root), for example referring to dropbox instead of esmini:
-
-[source]
-----
-set(FILE_STORAGE
-    "dropbox") # "dropbox", "google", "esmini"  (limited GB/Day)
-set(MODEL_STORAGE
-    "dropbox") # "dropbox", "google", "esmini"  (limited GB/Day)
-----
-
-Then to apply settings:
-
-[source]
-----
-cd build
-cmake ..
-----
-
 ==== Heading behavior in Road vs Lane Position
 
 In esmini, the behavior of the two position types https://www.asam.net/static_downloads/ASAM_OpenSCENARIO_V1.2.0_Model_Documentation/modelDocumentation/content/RoadPosition.html[`RoadPosition`] and https://www.asam.net/static_downloads/ASAM_OpenSCENARIO_V1.2.0_Model_Documentation/modelDocumentation/content/LanePosition.html[`LanePosition`] differ in terms of heading.
@@ -2303,8 +3319,7 @@ In esmini, the behavior of the two position types https://www.asam.net/static_do
 - `RoadPosition`: When not specified, the heading will align to the direction of the road (s-axis)
 - `LanePosition`: When not specified, the heading will align to the driving direction of the lane
 
-In the image below, the white cars are positioned by `RoadPosition` with `t=-1.5` and `t=1.5` respectively while the red cars are positioned by `LanePosition` with `laneId="-1"` and `laneId="1"` respectively.
-
+In the image below, the white cars are positioned by `LanePosition` with `laneId=-1` and `laneId=1` respectively while the red cars are positioned by `RoadPosition` with `t=-1.5` and `t=1.5` respectively.
 
 .Positioning with RoadPosition (white) and LanePosition (red) - heading omitted
 image::no-heading.jpg[]
@@ -2331,41 +3346,6 @@ Corresponding behavior applies also to `RelativeRoadPosition` and `RelativeLaneP
 In some (maybe most) use cases it's preferred that vehicles align to the driving direction of the lane. But in other cases not, example: In an overtake maneuver, the overtaking car may start in the neighbor lane. The driving direction of the lane should not affect the heading of the car.
 
 So the different strategies for `RoadPosition` and `LanePosition` was decided upon to support as many use cases as possible. For more background, see issues https://github.com/esmini/esmini/issues/385[#385] and https://github.com/esmini/esmini/issues/228[#228].
-
-==== Reference line and center lane while using laneOffset
-
-In https://www.asam.net/index.php?eID=dumpFile&t=f&f=4422&token=e590561f3c39aa2260e5442e29e93f6693d1cccd#top-05e95dfd-ce05-40c8-af93-d065229e6968[`OpenDRIVE definition of laneOffset`]: A lane offset may be used to shift the center lane away from the road reference line.
-
-.OpenDRIVE standards stipulates reference line is not affected by lane offset
-image::lane_offset_standard_way.png[]
-
-In esmini lane offset affects the reference line as well as center lane, which is a deviation from the OpenDRIVE standard. As consequence, t values are also shifted with the lane offset.
-
-.esmini shift both center lane and reference line by lane offset
-image::lane_offset_esmini_way.png[]
-
-https://en.wikipedia.org/wiki/2%2B1_road[2+1 roads] can be defined utilizing lane offset. Consider image below:
-
-.2+1 road in esmini, utilizing lane offset
-image::two_plus_one_lane_ids.png[]
-
-*esmini*
-[%autowidth, options=header]
-|===
-||white car|red car
-|*laneId*|-2|-1
-|*t*|-5.25|-1.75
-|===
-
-*OpenDRIVE*
-[%autowidth, options="header",]
-|===
-||white car|red car
-|*laneId*|-2|-1
-|*t*|-1.75|1.75
-|===
-
-A 2+1 example example scenario is found here: https://github.com/esmini/esmini/blob/master/resources/xosc/two_plus_one_road.xosc[resources/xosc/two_plus_one_road.xosc]
 
 ==== OSI for Python on Windows
 
@@ -2400,10 +3380,348 @@ This should be it.
 . `pip uninstall protobuf`
 . `pip uninstall open-simulation-interface`
 
+==== The scenario runs too fast or too slow
+
+esmini can run in two different time modes: 1. Real-time and 2. Fixed-time. Default is real-time.
+
+The following command, from esmini root, will run real-time: +
+`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in.xosc` +
+
+This one fixed-time: +
+`./bin/esmini --window 60 60 800 400 --fixed_timestep 0.05 --osc ./resources/xosc/cut-in.xosc`
+
+The difference is basically that real-time will run with as small time-steps as possible (actually limit at 1 ms to avoid unnecessary CPU load), maxim
+zing precision but constrained by system clock. In other words, the scenario will play out in "natural" speed, good for previewing or demonstrating sc
+narios. Each timestep is calculated by esmini based on passed system-time since last frame.
+
+The fixed-time is simpler, esmini will simply execute the scenario as fast as possible applying the specified delta-time for each step. Good for runni
+g tests for later post processing of resulting logs, data or OSI files.
+
+A common use-case is to run esmini quick/headless and then utilize the replayer for viewing the result. See more info here: <<Replay scenario>>
+
+==== Road and junction string IDs
+
+OpenDRIVE allows for non integer string IDs. Although commonly unsigned integer is used. The standard https://publications.pages.asam.net/standards/ASAM_OpenDRIVE/ASAM_OpenDRIVE_Specification/latest/specification/16_annexes/classes/road/top_cla_t_road.html[OpenDRIVE 1.8] states that IF the ID represents an integer number, it should comply to uint32_t and stay within the given range.
+
+esmini partly supports* string IDs, by mapping to internal integer IDs. The way it works:
+
+If the ID is a number in the range of 0..0xfffffffe (4 294 967 294), then: +
+map it to the same internal ID +
+Else, if the number is a string or a number out of range: +
+map it to a unique internal ID
+
+*Note*: 0xffffffff (4 294 967 295) is reserved for ID_UNDEFINED which is the default value and also used for error indication +
+
+Example: Assume an OpenDRIVE includes the following road (or junction) IDs:
+
+[source,console]
+----
+"0"
+"1"
+"124"
+"Kalle"
+"12k4"
+"4294967296"
+"4294967295"
+"4294967294"
+----
+
+The IDs will be mapped as follows:
+
+[source,console]
+----
+"0" -> 0
+"1" -> 1
+"124" -> 124
+"Kalle" -> 125
+"4294967296" -> 126 (too large)
+"4294967295" -> 127 (conflict with ID_UNDEFINED)
+"4294967294" -> 4294967294 (Ok, largest acceptable number)
+----
+
+Now, why not make use of available numbers between 1 and 124? It's because esmini is lazy, not spending effort (performance) to book-keep sorted list of IDs. Instead, only the largest number in use will be monitored.
+
+In addition, there are esmini lib API functions to lookup string and internal IDs:
+
+[source,c++]
+----
+const char *SE_GetRoadIdString(id_t road_id);
+id_t SE_GetRoadIdFromString(const char *road_id_str);
+
+const char *SE_GetJunctionIdString(id_t junction_id);
+id_t SE_GetJunctionIdFromString(const char *junction_id_str);
+----
+
+That way, a custom application can find out what internal IDs esmini has assigned to any non-number string IDs.
+
+Corresponding functions exist in esmini roadmanager lib.
+
+pass:[*] String ID support was introduced in v2.37.15. By v2.39.0 internal representation changed from 32 bit signed int to unsigned int. At that point also undefined ID changed from -1 to 0xffffffff.
+
+
 === Further issues at esmini GitHub page
 The https://github.com/esmini/esmini/issues[Issues tab at esmini GitHub page] is a valuable source of questions and answers. To search in all issues, make sure to set filter: `is:issue`.
 
 == Command reference
+
+=== About options and config files
+
+esmini, replayer and odrviewer can be controlled and configured by options. Even the input file (e.g. OpenSCENARIO file) is specified as an option.
+
+Available options are listed later in this section, grouped by application.
+
+Certain options, such as `path`, supports multiple values, denoted by '...' in the command help. For those options the values can be specified sequentially. Example: +
+`--path /tmp/models /tmp/kalles_models`
+
+Other options supports only one value. For those options the last parsed occurrence wins. Example: +
+`--logfile_path my_log.txt --logfile_path kalles_log.txt` +
+will create 'kalles_log.txt'
+
+Options can be specified three ways:
+
+1. From command line as application arguments, for example: `esmini --osc my_scenario.xosc --disable_stdout`
+2. By API function SE_SetOption(), see <<Program Options>>
+3. In config file, see more info below
+
+==== Config file
+
+The config file is basically a container for option presets. It can be used to apply common settings for esmini applications. For example, if you often use a specific window size, e.g. --window 60 60 800 400, then you can put it in a config file. Configuration file is structured with the application name as the root, followed by option-value pairs. Custom configuration file can be named and placed as needed.
+
+Settings in config files can be overridden, both by other config files or by options specified on command line. Option files are parsed in order of appearance, last parsed option occurrence wins.
+
+From version 2.46.0 esmini comes with a default `config.yml` located in esmini root folder. It contains just a few settings, e.g. default window position and size (60 60 800 400). Launching esmini from esmini root folder as:
+
+`./bin/esmini --osc ./resources/xosc/cut-in.xosc`
+
+will then show cut-in scenario in a 800x400 window.
+
+Exact content of the config.yml will vary over time, but initial version looks like this:
+
+[source]
+----
+esmini:
+  window: 60 60 800 400
+
+replayer:
+  window: 60 60 800 400
+  res_path: ./resources
+  file: sim.dat
+
+odrviewer:
+  window: 60 60 800 400
+----
+
+
+If you want another size of the window you have at least three options:
+
+1. Edit the config.yml
+2. Provide the `window` option values at command line, example:
+  `./esmini --window 50 100 1400 500`
+3. Create a custom config file, e.g. my_config.yml, including your preferred values
+
+Example of my_config.yml:
+
+[source]
+----
+esmini:
+  window: 50 100 1400 500
+  logfile_path: my_log.txt
+----
+
+Similarly, the scenario file can also be made part of default config file by adding `osc: ./resources/xosc/cut-in.xosc` to the config.yml. Or you can add it your custom config file above, like following:
+
+[source]
+----
+esmini:
+  window: 50 100 1400 500
+  logfile_path: my_log.txt
+  osc: ./resources/xosc/cut-in.xosc
+----
+
+Any number of config files can be specified as an option (`config_file_path`), either from another config file or at command line.
+
+Example how to incorporate a custom config file on top of the default one:
+
+`./esmini --config_file_path my_config.yml`
+
+You can also add an entry in the default `config.yml`, example:
+
+[source]
+----
+esmini:
+  window: 50 100 1400 500
+  logfile_path: my_log.txt
+  config_file_path: my_config.yml
+----
+
+Now, running:
+
+`./bin/esmini`
+
+will load `cut-in.xosc`, using the one specified in default config. Window will be `50 100 1400 500` as specified in my_config, overriding the values in the default config.yml. The log file will be named my_log.txt as specified in my_config, overriding esmini default log file path.
+
+Custom configuration file paths can be defined in the ESMINI_CONFIG_FILE environment variable. Multiple paths, delimited by ';' (Windows) or ':' (Linux/macOS), are permitted, which is particularly useful in Docker or similar environments.
+
+Default config file is always parsed first, then the ones specified in the environment variable, and finally the ones specified on command line.
+
+[Note]
+====
+**Note:**
+
+The default 'config.yml' is applied automatically, while other config files needs to be specified explicitly.
+
+Hence, although legit to add any setting to the default 'config.yml' file, it's recommended to separate basic common settings from temporary ones.
+
+For example, create a 'my_settings.yml' for temporary preferences while putting permanent settings into 'config.yml'.
+
+`./bin/esmini --osc ./resources/xosc/cut-in.xosc` +
+will apply basic settings only, while +
+
+`./bin/esmini --osc ./resources/xosc/cut-in.xosc --config_file_path my_settings.yml` +
+will also apply additional settings from the custom file.
+
+This strategy avoids unexpected forgotten settings from a previous session being applied automatically.
+====
+
+==== Whitespace support
+
+In option values any space will result in separation in multiple arguments.
+
+Bad example:
+```
+esmini:
+  path: ./resources/my scenarios /tmp
+```
+`./resources/my`, `scenarios`, `/tmp` is added as separate search paths. Probably not intended.
+
+If space is needed, e.g. for file or directory paths, just enclose in quotes "".
+
+Good example:
+```
+esmini:
+  path: "./resources/my scenarios" /tmp
+```
+`./resources/my scenarios`, `/tmp` is added as separate search paths
+
+==== Precedence
+As mentioned, options that supports multiple values will store and access values according to order of appearance. Example:
+
+`--path /tmp/my_car_models` `--path /tmp/kalles_car_models`
+
+esmini will look in `kalles_car_models` first, and only if referred model is not found there it will continue looking in `my_car_models`.
+
+Illustrative example:
+
+image::options.png[]
+
+==== Mutual exclusion
+Dependencies exists among some options. Examples:
+
+===== 'headless' and 'window'
+
+'headless' overrides any preceding 'window' arguments, no rendering will happen. Conversely, 'window' following 'headless' results in an invisible window for off-screen rendering (e.g. saving images to file or grab pixels via API).
+
+Examples:
+
+`./bin/esmini --window 60 60 800 400 --headless --fixed_timestep 0.05 --osc ./resources/xosc/cut-in.xosc` +
+no window will be created and no rendering performed, execution will be fast.
+
+`./bin/esmini --headless --window 60 60 800 400 --fixed_timestep 0.05 --osc ./resources/xosc/cut-in.xosc` +
+off-screen window will be created and rendered to, execution will be slower.
+
+===== 'osc' and 'osc_str'
+The last specified option prevails.
+
+==== Config file usage example 1: Easy replaying
+
+===== Without config
+
+The typical procedure to create and replay a scenario recording (DAT file) is as follows:
+
+Create DAT file: +
+`./bin/esmini --headless --fixed_timestep 0.05 --record sim.dat --osc ./resources/xosc/cut-in.xosc`
+
+Play DAT file: +
+`./bin/replayer --window 60 60 800 400 --res_path ./resources --file sim.dat`
+
+====== With config
+
+Create `cfg_dat.yml` in esmini root as:
+
+```
+esmini:
+  headless: true
+  record: sim.dat
+  fixed_timestep: 0.05
+
+replayer:
+  window: 60 60 800 400
+  res_path: ./resources
+  file: sim.dat
+```
+
+Create DAT file: +
+`./bin/esmini --config_file_path ./cfg_dat.yml --osc ./resources/xosc/cut-in.xosc`
+
+Play DAT file: +
+`./bin/replayer --config_file_path ./cfg_dat.yml`
+
+==== Config file usage example 2: Easy video creation
+
+===== Without config
+
+The typical procedure to create a video clip from a scenario is as follows:
+
+Create image files: +
+`./bin/esmini --headless --window 0 0 1920 1080 --fixed_timestep 0.016667 --screen_capture --osc ./resources/xosc/cut-in.xosc`
+
+A series of TGA images (screen_shot_00000.tga, screen_shot_00001.tga ...) is created in current folder. Resolution in this case is 1920x1080 (HD). Timestep 0.016668 correlates to 60 fps.
+
+There are many ways to convert the images into a video clip. Example using ffmpeg:
+
+`ffmpeg -f image2 -framerate 60 -i screen_shot_%5d.tga -c:v libx264 -vf format=yuv420p -crf 15 out.mp4`
+
+See <<Create video clip of a scenario>> for more info on ffmpeg.
+
+====== With config
+
+It's a bit tricky to remember resolution and timestep settings for esmini. Now you can create config files for favorite settings. For example:
+
+Create `cfg_hd.yml` in esmini root as:
+
+```
+esmini:
+  headless: true
+  window: 0 0 1920 1080
+  fixed_timestep: 0.016667
+  capture_screen: true
+```
+and `cfg_sd.yml` as:
+
+```
+esmini:
+  headless: true
+  window: 0 0 720 480
+  fixed_timestep: 0.033333
+  capture_screen: true
+```
+
+Create images for HD/60fps: +
+`./bin/esmini --config_file_path ./cfg_hd.yml --osc ./resources/xosc/cut-in.xosc`
+
+and SD/30fps: +
+`./bin/esmini --config_file_path ./cfg_sd.yml --osc ./resources/xosc/cut-in.xosc`
+
+You still need to supply corresponding `framerate` argument to ffmpeg: +
+
+`ffmpeg -f image2 -framerate 60 -i screen_shot_%5d.tga -c:v libx264 -vf format=yuv420p -crf 15 out.mp4`
+
+and
+
+`ffmpeg -f image2 -framerate 30 -i screen_shot_%5d.tga -c:v libx264 -vf format=yuv420p -crf 15 out.mp4`
+
+respectively.
+
 === esmini
 ==== Launch commands
 [source]
@@ -2545,11 +3863,11 @@ https://github.com/esmini/esmini/blob/master/scripts/generate_osi_sumo_osg_libs.
 
 === Additional platform dependencies
 
-Linux Ubuntu 18.04
+Linux Ubuntu
 
 [source]
 ----
-sudo apt install build-essential gdb ninja-build git pkg-config libgl1-mesa-dev libpthread-stubs0-dev libjpeg-dev libxml2-dev libpng-dev libtiff5-dev libgdal-dev libpoppler-dev libdcmtk-dev libgstreamer1.0-dev libgtk2.0-dev libcairo2-dev libpoppler-glib-dev libxrandr-dev libxinerama-dev curl cmake
+sudo apt install build-essential gdb ninja-build git pkg-config libgl1-mesa-dev libpthread-stubs0-dev libjpeg-dev libxml2-dev libpng-dev libtiff5-dev libgdal-dev libpoppler-dev libdcmtk-dev libgstreamer1.0-dev libgtk2.0-dev libcairo2-dev libpoppler-glib-dev libxrandr-dev libxinerama-dev curl cmake black
 ----
 
 Also, g\++ version >= 5 is needed for c++14 code support.
@@ -2615,9 +3933,13 @@ When linking esmini with software already dependent on Google protobuf there mig
 
 Then build as usual. It will link with protobuf shared library instead of linking with a static library.
 
-When running esmini protobuf shared library need to be available. Set LD_LIBRARY_PATH to point to the folder where the library is, example:
+When running esmini, the protobuf shared library needs to be found. Set dynamic library path environment variable to the folder where the library is. Example:
 
+Linux: +
 ``export LD_LIBRARY_PATH=./externals/OSI/linux/lib-dyn``
+
+macOS: +
+``export DYLD_LIBRARY_PATH=./externals/OSI/linux/lib-dyn``
 
 *Note:* +
 The dynamic versions of protobuf were added Aug 31 2021. So you might need to update the OSI library package. Get the latest from following links:
@@ -2640,7 +3962,7 @@ So, for example, to cut dependency to OSG and SUMO, run:  +
 ``cmake .. -D USE_OSG=False -D USE_SUMO=False``
 
 To disable OSG, SUMO, OSI and googletest, run:  +
-``cmake .. -D USE_OSG=False -D USE_SUMO=False -D USE_OSI=False -D USE_GTEST=False USE_IMPLOT=False``
+``cmake .. -D USE_OSG=False -D USE_SUMO=False -D USE_OSI=False -D USE_GTEST=False -D USE_IMPLOT=False``
 
 All options are enabled/True as default.
 
@@ -2806,56 +4128,31 @@ Master branch represent the latest released software. It should be in synch with
 
 `<branch name>` might be `master` or `dev`, or whatever branch to be restored.
 
-=== Formatting
+=== Formatting and code analysis
 
-From esmini v2.30.0 the CI will include formatting checks, in addition to static analysis and tests. The code styles are defined by following schemes:
+From esmini v2.30.0 the CI will include formatting checks, in addition to static analysis and tests.
+
+From v2.48.0, esmini utilizes https://pre-commit.com/[pre-commit hooks] for these checks. For details of previous implementation, see older versions of this document, e.g. https://htmlpreview.github.io/?https://raw.githubusercontent.com/esmini/esmini.github.io/refs/tags/v2.47.0/index.html[v2.47.0].
+
+The code styles are defined by following schemes:
 
 [horizontal]
-*C++* :: https://github.com/esmini/esmini/blob/master/.clang-format[.clang-format]
-*Python* :: https://github.com/esmini/esmini/blob/master/.black-format[.black-format]
-*cmake* :: https://github.com/esmini/esmini/blob/master/.cmake-format[.cmake-format]
+*C++* :: https://github.com/esmini/esmini/blob/dev/.clang-format[.clang-format]
+*Python* :: https://github.com/esmini/esmini/blob/dev/.black-format[.black-format]
+*cmake* :: https://github.com/esmini/esmini/blob/dev/.cmake-format[.cmake-format]
+*cppcheck*:: https://github.com/esmini/esmini/blob/dev/.pre-commit-config.yaml[.pre-commit-config.yaml]
 
-To run formatting (both check and apply) locally, follow steps below:
 
-[discreet]
+esmini uses pre-commit hooks to automatically perform code formatting and static code analysis. To enable this functionality, install the pre-commit package:
+```
+pip install pre-commit
+```
+Then, run the following command to install the pre-commit hooks in esmini root folder. This sets up the pre-commit hooks, enabling automatic checks when making commits:
+```
+pre-commit install
+```
+
 ==== Dependencies
-===== clang-format
-esmini makes use of version 15, avoiding some known bugs in v14 +
-
-Windows: +
-Download and install LLVM-15.0.7-win64.exe found here: +
-https://github.com/llvm/llvm-project/releases/tag/llvmorg-15.0.7
-
-Linux: +
-
-Check if clang-format version 15 is installed:
-
-`clang-format-15`
-
-If you get the following message:
-
-```
-Command 'clang-format-15' not found, but can be installed with:
-sudo apt install clang-format-15
-```
-
-then clang 15 must be installed.
-
-On Ubuntu systems prior to 22.04, first install llvm version 15:
-
-```
-wget https://apt.llvm.org/llvm.sh
-chmod +x llvm.sh
-sudo ./llvm.sh 15
-```
-Source: https://apt.llvm.org[apt.llvm.org]
-
-Then, clang v15 can be installed:
-```
-sudo apt install clang-format-15
-```
-
-see also: https://github.com/esmini/esmini/blob/dev/.github/workflows/ci.yml#L26[ci.yml]
 
 ===== Install dependent Python packages
 [source, txt]
@@ -2863,26 +4160,85 @@ see also: https://github.com/esmini/esmini/blob/dev/.github/workflows/ci.yml#L26
 pip install -r ./support/python/requirements.txt
 ----
 
-[discreet]
-==== Check format
+===== clang-format
+[horizontal]
+*Windows*:: Download and install https://github.com/llvm/llvm-project/releases/download/llvmorg-15.0.7/LLVM-15.0.7-win64.exe[LLVM-15.0.7-win64.exe]
+*Linux*:: ```sudo apt install clang-format```
+
+===== cppcheck
+[horizontal]
+*Windows*:: Download and install https://github.com/danmar/cppcheck/releases/download/2.17.1/cppcheck-2.17.1-x64-Setup.msi[cppcheck-2.17.1-x64-Setup.msi]
+*Linux*:: ```sudo apt install cppcheck```
+
+====== Cppcheck version in esmini CI/CD
+The CI/CD pipeline uses Cppcheck version 2.17 for static code analysis. If you require a different version of Cppcheck, perhaps due to specific dependencies, it is recommended to leverage the esmini CI/CD environment itself. To do this, create a fork of the esmini repository and run your static analysis within that environment simply by pushing your code changes. This ensures consistency with the CI/CD setup.
+
+====== Using a different Cppcheck version locally
+If you prefer to use a different version of Cppcheck locally or do not want to install version 2.17 system-wide, follow the instructions below.
+
+If you have a different version installed or don't want to install 2.17 system-wide, see steps below for your platform.
+
+====== For Linux and macOS
+
+Download Cppcheck 2.17.1 source from:
+
+https://github.com/danmar/cppcheck/archive/refs/tags/2.17.1.tar.gz
+
+Extract it to your home directory (for example, to ~/cppcheck-2.17.1).
+
+Build it:
 [source, txt]
 ----
-./support/python/src/main.py run format --clang_format_checker
-./support/python/src/main.py run format --cmake_format_checker
-./support/python/src/main.py run format --black_format_checker
+cd ~/cppcheck-2.17.1
+mkdir build
+cd build
+cmake ..
+cmake --build .
 ----
 
-==== Apply formatting
+To temporarily use your locally built Cppcheck 2.17 without changing your system default, run the following from your esmini root folder:
+
+`PATH="$HOME/cppcheck-2.17.1/build/bin:$PATH" pre-commit run cppcheck --all-files`
+
+To make this change more permanent, you can add the following line to your shell configuration file (e.g. ~/.bashrc):
+
+`export PATH="$HOME/cppcheck-2.17.1/build/bin":$PATH`
+
+====== For Windows
+
+Download the official Cppcheck 2.17 installer from:
+
+https://github.com/danmar/cppcheck/releases/download/2.17.1/cppcheck-2.17.1-x64-Setup.msi
+
+Make sure to install it to a separate directory than any previous Cppcheck version you want to keep.
+
+==== Manually apply specific format
+To run formatting locally, follow steps below.
+
 [source, txt]
 ----
-./support/python/src/main.py run format
+pre-commit run clang-format --all-files
+pre-commit run cmake-format --all-files
+pre-commit run black --all-files
 ----
-or specifics:
+
+==== Manually analyse code
 [source, txt]
 ----
-./support/python/src/main.py run format --clang_format
-./support/python/src/main.py run format --cmake_format
-./support/python/src/main.py run format --black_format
+pre-commit run cppcheck --all-files
+----
+
+or formatting and code analysis can be done in one step by:
+----
+pre-commit run --all-files
+----
+
+==== Automatic formatting and code analysis
+pre-commit will automatically run on each commit on all staged files. Sometimes automatic application maybe not needed for instance work in progress etc. In that case, you can skip the pre-commit hook by using the `--no-verify` option when committing:
+
+[source, txt]
+----
+git commit -m "my commit message" --no-verify
 ----
 
 === Test
@@ -2911,6 +4267,172 @@ For easy execution of all tests, both unit tests and smoke tests, run this main 
 
 Tip: On Windows, run it from GIT bash.
 
+==== Run XML schema validation tests
+
+XML schema validation ensures scenario files (xosc and xodr) complies with the OpenSCENARIO and OpenDrive XSD schemas. The checks are done by the Python script `run_schema_comply.py` located in the `scripts` directory. The schema files are located in the `resources/schema` directory. From release v2.40, all esmini scenario files are validated against the schemas as part of CI.
+
+The script depends on the `xmlschema` and `lxml` Python packages. To install required packages, run:
+
+`pip install -r support/python/requirements.txt`
+
+Run the XML validation tests:
+
+`python3 ./scripts/run_schema_comply.py <path1> [path2] [path3] ...`
+
+where path can be an XML file or a directory. Any directory subfolders will be included recursively.
+
+Example 1, check single file:
+
+`python3 scripts/run_schema_comply.py resources/xosc/cut-in.xosc`
+
+Example 2, check two files:
+
+`python3 scripts/run_schema_comply.py resources/xosc/cut-in.xosc resources/xodr/two_plus_one.xodr`
+
+Example 3, check two directories:
+
+`python3 scripts/run_schema_comply.py resources EnvironmentSimulator`
+
+Example 4, check one file and one directory:
+
+`python3 scripts/run_schema_comply.py EnvironmentSimulator/Unittest/xosc/conflicting-domains.xosc resources`
+
+Tip: Use bash `find` command to apply finer filtering. Example:
+
+`python3 scripts/run_schema_comply.py $(find ./resources ./EnvironmentSimulator -name "follow_route*.xosc" -or -name "\*500*.xodr" -or -name "*signs.xodr")`
+
+validates all OpenSCENARIO files starting with "follow_route" and all OpenDRIVE files containing "500" or ending basename with "signs" or containing "500", in and under the `resource` and `EnvironmentSimulator` folders.
+
+=== Sanitizers
+
+Google sanitizers framework is utilized to detect memory related errors, for example memory leaks. It's executed nighly as a GitHub CI actions job on dev branch. The job can also be trigged manually, but will only run checks on dev branch. Sanitizers is currently only applied to Linux builds.
+
+You can also run the sanitizer checks locally (on any branch, even uncommitted code) on Ubuntu:
+
+. Set the following environment variables, run from esmini root:
+
+[source,console]
+----
+export LSAN_OPTIONS="print_suppressions=false:suppressions=$(pwd)/scripts/LSAN.supp"
+export ASAN_OPTIONS="detect_invalid_pointer_pairs=1:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1:fast_unwind_on_malloc=0:suppressions=$(pwd)/scripts/ASAN.supp"
+----
+
+[start=2]
+. Configure and build esmini with sanitizers enabled
+
+[source,console]
+----
+cd build
+cmake -G Ninja -DUSE_OSG=FALSE -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_SANITIZERS=TRUE ..
+ninja install
+cd ..
+----
+
+[start=3]
+. Run the test suites, including both unit- and smoke tests, from esmini root:
+
+[source,console]
+----
+./scripts/run_tests.sh
+----
+
+==== Troubleshooting
+
+On Ubuntu some combination of gcc and sanitizer randomly cause sanitizer run failure with error message: AddressSanitizer:DEADLYSIGNAL.
+
+If this happens, try the following:
+
+[source,console]
+----
+setarch $(uname -m) -R
+bash
+----
+
+`setarch` will affect reported architecture from system to sanitizer. `bash` is to restore shell environment, it can of course be replaced by any shell program, e.g. tcsh.
+
+To revert settings, simply run:
+[source,console]
+----
+exit
+exit
+----
+
+First exit will escape the latter bash environment, the second reverts effect of the setarch command.
+
+Source of setarch tip: https://stackoverflow.com/questions/77894856/possible-bug-in-gcc-sanitizers
+
+=== Implementation guidelines
+
+==== Floating point precision
+To achieve consistent results, esmini applies a tolerance of 1e-6 (0.000001) for floating point comparisons, allowing for slight differences due to precision limitations. Examples:
+
+[horizontal]
+x > y :: is considered true if x > y + 1e-6
+
+x ≥ y :: is considered true if x > y - 1e-6
+
+x == y :: is considered true if abs(x - y) < 1e-6
+
+
+In code the macros `SMALL_NUMBER`, for doubles, and `SMALL_NUMBERF`, for floats should be used for this purpose. Example:
+
+`if (x > y + SMALL_NUMBER)`
+
+There is also macros `NEAR_NUMBERS(x, y)` and `NEAR_NUMBERSF(x, y)`, that can be used for checking if numbers are effectively equal. It utilizes the same tolerance. Example:
+
+`if (NEAR_NUMBERS(x, y))`
+
+==== Options
+
+===== Using options (in code)
+
+You can fetch the value of an option basically in two ways:
+
+`std::string GetOptionValue(std::string option_name)` +
+or +
+`std::string GetOptionValueByEnum(CONFIG_ENUM option_enum);`
+
+The Enum variant should be preferred whenever an option is frequently accessed. Otherwise, e.g. in a setup phase, the difference in terms of performance is negligible.
+
+===== Adding options (in code)
+
+Steps:
+
+1. Create the option
+2. Add the option to desired applications
+3. Document the option
+
+Details of each step:
+
+===== Create the option
+
+In https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Modules/CommonMini/EnumConfig.hpp[EnumConfig.hpp]:
+
+ - Add the option to the `CONFIG_ENUM`
+ - Connect the option name to the enum in `configStrKeyEnumMap`
+
+===== Add the option to desired applications
+
+using the function `opt.AddOption()`
+
+ - esmini: in https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Modules/PlayerBase/playerbase.cpp[playerbase.cpp], `PlayerBase::Init()`
+ - replayer: in https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Applications/replayer/main.cpp[replayer/main.cpp], `main()`
+ - odrviewer: in https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Applications/odrviewer/main.cpp[odrviewer/main.cpp], `main()`
+
+===== Document the option
+Update:
+
+- esmini: update https://github.com/esmini/esmini/blob/dev/docs/commands.txt[docs/commands.txt]
+- replayer: update https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Applications/replayer/readme.txt[replayer/readme.txt]
+- odrviewer: update https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Applications/odrviewer/readme.txt[odrviewer/readme.txt] +
+
+Two tips to get the text:
+
+1. Run corresponding application with no args or `--help` and copy the content from console output
+2. Press `H` (`shift-h`) key in the application window to output the same help info to console
+
+By adding the option to the .txt files, the option will automatically be added in next generation of <<Command reference>> as well.
+
 == esmini lib programming
 
 === About the lib itself
@@ -2922,6 +4444,11 @@ esmini lib is a, so called, shared library which is linked dynamically with a cu
 An additional important advantage with dynamic linking is that the library can be updated without need to recompile the custom application making use of the library (however it can't be updated during runtime, only in between launches). An obvious requirement is that the API is compatible when replacing a library with a different version, since the API is established at link-time. On the other side of the "same coin", a disadvantage with dynamic linking is that you need to have the shared library present at run-time.
 
 Although esmini lib is a shared library itself, it includes everything needed in terms of 3rd party functionality. It's actally linking all dependencies statically. Think about it as a single container including everything needed, e.g. support for 3D graphics, XML, expressions, and SUMO traffic simulation. There are two advantages with this approach: 1. Getting rid of dependency to hundreds of 3rd party shared libraries and 2. The linker makes sure to only include relevant functions which reduce the size by extreme (compared to bundle individual and complete shared libraries).
+
+[Note]
+====
+**Note:** esmini utilizes, in accordance with pass:[C++] standard, default values on some function parameters in the API. Those default values will work at least in any pass:[C++] context. For other environments like pure C, C# or Python it might be required to explicitly supply argument values.
+====
 
 === How to interact with esmini lib API
 
@@ -3017,6 +4544,28 @@ Finally, to disable esmini image handling altogether and revert to OSG default h
 
 Note that disabling the this will permanently disable the callback mechanism for the complete esmini session (overriding any SE_SaveImagesToRAM() call).
 
+==== Custom camera positions
+Similarly as with camera related launch arguments, <<Camera control, camera positioning>> can be controlled via esmini lib API.
+
+- `SE_AddCustomCamera()` +
+  Add a camera with relative position and orientation (heading and pitch)
+- `SE_AddCustomFixedCamera()` +
+  Add a fixed camera at custom global position and orientation (heading and pitch)
+- `SE_AddCustomAimingCamera()` +
+  Add a camera with relative position looking at current entity
+- `SE_AddCustomFixedAimingCamera()` +
+  Add a camera at fixed location but always looking at current entity
+- `SE_AddCustomFixedTopCamera()` +
+  Add a top view camera with fixed position and rotation
+- `SE_SetCameraObjectFocus` +
+  Set/change object to focus on
+
+More info, see https://github.com/esmini/esmini/blob/91c82fb78deb4355f736f87510069f52cc0e6be5/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp#L1519C1-L1582C59[headerfile].
+
+Any number of cameras can be defined. These cameras can then be activated via function: `SE_SetCameraMode()`.
+
+Applications can even loop through the camera modes to produce images from several cameras. See code example https://github.com/esmini/esmini/blob/master/EnvironmentSimulator/code-examples/image-capture/multiple-cameras.cpp[multiple-cameras.cpp].
+
 ==== OSI data
 
 OSI data can be retrieved in three ways:
@@ -3028,6 +4577,35 @@ OSI data can be retrieved in three ways:
 ===== OSI tracefile
 
 Call `SE_EnableOSIFile(filename)` in order to create a OSI tracefile. Specify custom filename or set 0 or "" to use default filename (currently "ground_truth.osi").
+
+===== OSI timestamps
+
+By default, the OSI timestamps are set to the same value as the simulation time. The timestamps can be explicity set for each frame via `SE_SetOSITimeStamp(unsigned long long int nanoseconds)`. This will set the time for the upcoming frame, and should thus be set prior to each call to `SE_Step*`.
+
+**Note:** If any OSI related function call has been made prior to `SE_Init*` esmini will activate OSI and the OSI data, including timestamps, will be populated during the `SE_Init*` call.
+
+===== OSI settings
+
+The following settings are available for OSI via API:
+
+* `SE_SetOSIFrequency(int frequency)` +
+  how frequent the OSI data shall be updated (*default* 1, i.e. every frame)
+* `SE_SetOSIStaticReportMode(SE_OSIStaticReportMode mode)` +
+  how to report and log static objects in OSI (*default* is to report and log only once)
+* `SE_ExcludeGhostFromGroundTruth()` +
+  exclude ghost object from OSI groundtruth (*default* is to include ghost)
+* `SE_CropOSIDynamicGroundTruth(int id, double radius)` +
+  crop dynamic OSI groundtruth around an entity (*default* is to include all)
+
+See https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp[esminiLib.hpp] for more API details.
+
+Corresponding functions are available via command line arguments:
+
+- `--osi_freq <frequency>`
+- `--osi_static_reporting_mode <mode>`
+- `--osi_exclude_ghost`
+
+See <<_esmini>>, or run: `esmini --help`, for full option description.
 
 ===== OSI via UDP
 
@@ -3042,32 +4620,307 @@ Fetch OSI data by either one of the API calls:
 - `SE_GetOSIGroundTruthRaw()`
 - `SE_GetOSIGroundTruth(int* size)`
 
-The "raw" version will simply return a pointer to the already existing OSI data structure. No additional data copying will be performed. This is the preferered option if:
+The "raw" version will simply return a pointer to the already existing OSI data structure, no additional data copying will be performed. The "raw" option is the preferered option if the application is coded in C++, making the Protobuf data structures fully compatible.
 
-1. The application is coded in C++, making the Protobuf data structures fully compatible
-2. The data is read before next call to `SE_UpdateOSIGroundTruth()`, which will update the data
-
-See code example: https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/code-examples/osi-groundtrut[osi-groundtruth], also covered in User guide - Hello world tutorial https://esmini.github.io/#_osi_groundtruth[OSI groundtruth].
+See code example: https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/code-examples/osi-groundtruth[osi-groundtruth], also covered in User guide - Hello world tutorial https://esmini.github.io/#_osi_groundtruth[OSI groundtruth].
 
 The second function will fetch the OSI data serialized into a string. This will be a true copy and also generic format which can be parsed in any environment, independent of OS and programming language. The backside is additional resources needed for the copying and serialization.
 
-See code examples in ScenarioEngineDLL test cases, e.g: https://github.com/esmini/esmini/blob/7d1249dc65883cb9eebb4a611ea401434b2b0e49/EnvironmentSimulator/Unittest/ScenarioEngineDll_test.cpp#L741-L786[receive_GroundTruth].
+See code examples in ScenarioEngineDLL test cases, e.g: https://github.com/esmini/esmini/blob/97d5f6216c53655545b5466400d00e98d99d25c2/EnvironmentSimulator/Unittest/ScenarioEngineDll_test.cpp#L933-L975[receive_GroundTruth].
 
 [Note]
 ====
 **Note:**
 
-`SE_UpdateOSIGroundTruth()` needs to be called after each SE_Step* in order to prepare and populate OSI data. This function will also save the OSI frame to file and send over UDP, if requested. Only after this preparation the SE_GetOSIGroundTruth* methods will get updated OSI data.
+OSI groundtruth reported via the API always contains both static and dynamic objects in the first frame. By default subsequent frames will only contain dynamic objects. The same data is also stored in the OSI log file, given that the log file is enabled.
 
-An exception is when OSI file or UDP receiver is specified by corrsponding launch arguments `--osi_file [filename]` and `--osi_receiver_ip <ip addr>`. Then, OSI update will automatically be updated by esmini according to specified multiplier `--osi_freq <number>` (1 is default). For example, `--osi_freq 3` will update OSI every third step.
+However, the behavior can be configured as follows:
 
-The purpose of this explicit OSI update control is to support use cases where esmini is running at much higher frequency than needed for OSI data (e.g. for vehicle dynamics purposes). To optimize performance, OSI update can then be skipped most frames and only run when needed.
+The dynamic objects are reported every frame. How the static objects are reported and logged can be controlled by `SE_SetOSIStaticReportMode` function. The available options are according to the enum `SE_OSIStaticReportMode`:
 
-BTW: Any additional explicit calls to `SE_UpdateOSIGroundTruth()` will be ignored. Which means that the programmer does not have to worry about additional performance penalty introduced by multiple calls to this function.
+- `SE_OSIStaticReportMode::DEFAULT` - Report and log static objects only once
+- `SE_OSIStaticReportMode::API` - Report static objects in every frame, but only once in the log file
+- `SE_OSIStaticReportMode::API_AND_LOG` - Report and log static objects every frame
+
+OSI groundtruth will be up to date automatically after each `SE_Step*` depending on the OSI frequency, which can be changed to facilitate use-cases where esmini is running at much higher frequency than needed for OSI data (e.g. for vehicle dynamics purposes). To optimize performance, OSI update can then be skipped most frames and only run when needed. For example: `SE_SetOSIFrequency(20);` will update OSI data only every 20th frame.
 ====
+
+==== Program Options
+
+On top of setting options from command line, esmini (from v2.41.0) supports setting options from esminiLib and esminiRMLib as well. This new functionality is added to set and unset options during runtime. This is useful, for example, to enable or disable logging to console, or to change log level etc between scenario runs via API. In addition, it is now possible to make option settings persistent over multiple runs of scenarios. There are two variants of the API functions i.e. one to set option value with persistence and one without. The API functions are:
+
+`SE_DLL_API int SE_SetOption(const char *name);`
+
+`SE_DLL_API int SE_SetOptionPersistent(const char *name);`
+
+`SE_DLL_API int SE_SetOptionValue(const char *name, const char *value);`
+
+`SE_DLL_API int SE_SetOptionValuePersistent(const char *name, const char *value);`
+
+`SE_DLL_API int SE_UnsetOption(const char *name);`
+
+`SE_DLL_API const char *SE_GetOptionValue(const char *name);`
+
+`SE_DLL_API const char *SE_GetOptionValueByEnum(unsigned int);` (see <<Using options (in code)>>)
+
+Any setting done in between runs, i.e. after any SE_Close() and before SE_Init(), will apply to the next run, at least. The persistent variant will apply for all future runs until unset or other setting overrides it. The effect of settings done during a scenario run will depend on the option itself. For example, anti-aliasing mode for the rendering will not change during a scenario, while logfile path can change during a scenario run (which will close current and open a new file with specified path and name). So, to be sure, set options before SE_Init() and after any SE_Close().
+
+==== Simple ideal sensors
+
+OSI provides information needed for sensor models at bounding box level for both moving and stationary objects, including ones defined in OpenDRIVE. Sensor models can then detect overlap, occlusion and collisions between those bounding boxes. Although sensor models are not within scope of esmini, there is a code example on how to retrieve and extract OSI data. It can perhaps be a starting point: https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/code-examples/osi-groundtruth/osi-groundtruth.cpp[osi-groundtruth.cpp]
+
+For even simpler use cases esmini provides a sensor mechanism, basically collecting scenario objects which reference point is within a sensor view frustum. This is too rough for collision detection, but can be useful for low-pass features like adaptive cruse control (ACC) or just optimizing CPU load by filtering objects for some processing.
+
+The view frustum is defined by a horizontal `field of view` combined with `near` and `far` limits. Basically an object is detected by a ideal sensor if the object reference point is within the view frustum, i.e:
+
+- angle from sensor mounting point is within the `field of view`
+- distance from sensor mounting point is larger than `near` and less than `far`
+
+.A few ideal sensors mounted at various positions and orientations
+image::ideal_sensors.jpg[]
+
+The sensors are added from the code, see the https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Applications/esmini-dyn[esmini-dyn] code example. API is found https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp#L1082-L1095[here].
+
+Limitations:
+
+- OpenDRIVE stationary objects not considered
+- Only reference point checking (part of the object can be inside frustum and still not detected)
+
+==== Logging
+
+By default, both file and console logging are enabled. Default log filename is `log.txt`. Default location is current folder, normally the folder from which the application was started.
+
+All this can be controlled and modified through the API. Full details see log related functions in https://github.com/esmini/esmini/blob/master/EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp[esminiLib.hpp]. Following is a brief overview:
+
+===== Enable or disable logging to console
+
+[source,c++]
+----
+void SE_LogToConsole(bool mode);
+----
+
+An additional way to control console logging is to set or unset the launch option `--disable_stdout` using the API functions:
+
+[source,c++]
+----
+int SE_SetOption(const char *name);
+int SE_UnsetOption(const char *name);
+----
+
+with `--disable_stdout` as argument.
+
+===== Change log filename and/or location
+
+[source,c++]
+----
+void SE_SetLogFilePath(const char *logFilePath);
+----
+
+- Full path (relative or absolute) can be provided, e.g. `"../myresult/scenario_2.txt"`.
+- If only directory provided, default filename will be used.
+- If only filename provided, default location will be used.
+- if empty string `""` is provided, log file will not be created.
+
+It should be called before SE_Init(). If called during the run of a scenario, the current log file will be closed and a new with the specified name and/or location will be created, unless `--log_append` option has been set.
+
+===== Log single message
+
+[source,c++]
+----
+void SE_LogMessage(const char *message);
+----
+
+the provided string will be posted to console and file according to settings.
+
+=== Simplest example
+
+Below example is just to show the simplicity of using esmini library. For more information and realistic examples, e.g. involving cmake, please go ahead to <<Hello World programming tutorial>>.
+
+If not already done, download and unpack https://github.com/esmini/esmini/releases/latest[latest esmini demo]. Make sure to pick demo, not bin, for your platform.
+
+In esmini root folder, create a file named `main.cpp` and add the following lines:
+
+*Code:*
+
+[source, c++]
+----
+#include "./EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp"
+
+int main()
+{
+    SE_Init("./resources/xosc/cut-in.xosc", 0, 1, 0, 0);
+
+    while (SE_GetQuitFlag() == 0)
+        SE_Step();
+
+    SE_Close();
+    return 0;
+}
+----
+
+*Compile:*
+
+- Linux: +
+`gcc main.cpp ./bin/libesminiLib.so -Wl,-rpath,\$ORIGIN -o bin/my_player`
+
+- Windows (x64 Native Tools Command Prompt for Visual Studio): +
+`cl main.cpp ./bin/esminiLib.lib /Fe:bin/my_player`
+
+*Run:*
+
+from Linux terminal or Windows PowerShell: +
+`./bin/my_player`
 
 == Hello World programming tutorial
 include::../Hello-World_coding-example/tutorial.adoc[leveloffset=+1, lines=3..-1]
+
+== Scenario construction tips
+
+We often get questions regarding construction of scenarios. We also have seen many scenarios that could be improved in various ways.
+
+As long as a scenario validates (try https://github.com/esmini/esmini/blob/dev/scripts/run_schema_comply.py[run_schema_comply.py]) and runs as expected, the scenario does the job. One beauty of OpenSCENARIO XML and OpenDRIVE is the low threshold to get started.
+
+For example, consider recorded scenarios: Roads can be represented in OpenDRIVE by a sequence of line segments, connecting measure points. Similarly, recorded driving data can easily be converted into OpenSCENARIO XML polyline trajectories.
+
+Although the above approach is easy, it results in inefficient (large data), non precise (line segments approximating the real world scenario). Also, the line-segments approach results in gaps and/or discontinuities which might cause trouble for sensor models.
+
+In this section we present a few learnings and ideas on how scenarios can be designed in a way unlocking the full potential of the standards in terms of quality, flexibility, efficiency, and control.
+
+=== OpenDRIVE
+
+- The tangent of the road geometry should be continuous. So, curves should not be implemented as piecewise linear segments. For inspiration how to create curves from linear segments, see script example https://github.com/esmini/esmini/blob/dev/scripts/xodr_lines2curves.py[xodr_lines2curves.py].
+
+- For constructed roads it works well with line and/or arc segments, connected by clothoid segments ensuring continuous curvature change-rate. See steering wheel figure in
+https://publications.pages.asam.net/standards/ASAM_OpenDRIVE/ASAM_OpenDRIVE_Specification/latest/specification/09_geometries/09_01_introduction.html[OpenDRIVE geometry section].
+
+- For measured roads it's typically better to use parametric curves, https://publications.pages.asam.net/standards/ASAM_OpenDRIVE/ASAM_OpenDRIVE_Specification/latest/specification/09_geometries/09_06_param_poly3.html[paramPoly3].
+
+- Connected roads needs to be without gaps and overlaps. See https://publications.pages.asam.net/standards/ASAM_OpenDRIVE/ASAM_OpenDRIVE_Specification/latest/specification/10_roads/10_03_road_linkage.html[Road Linkage].
+
+- Longer geometries, lane sections and road elements are preferred. Variations along the road, for example adding or removing lanes, can be done with https://publications.pages.asam.net/standards/ASAM_OpenDRIVE/ASAM_OpenDRIVE_Specification/latest/specification/11_lanes/11_03_lane_sections.html[lane sections] rather than separate road segments.
+
+=== OpenSCENARIO XML
+- Whenever possible, make use of OpenSCENARIO XML https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/LongitudinalAction.html[longitudinal] and https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/LateralAction.html[lateral] actions. When that's not feasible, it’s useful to define https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/FollowTrajectoryAction.html[trajectories].
+
+- The shape within the trajectory element should be selected with care. For smooth trajectories, e.g. lane changes, we recommend https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/Nurbs.html[NURBS], with as sparse control points as feasible.
+
+- In general, we encourage to use https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/LanePosition.html[LanePosition] (road, lane, s, laneOffset), or when plausible, https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/RoadPosition.html[RoadPosition] (road, s, t) in favor of https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/WorldPosition.html[WorldPosition] (X, Y). Then actions and trajectories can be parameterized more easily and adapted to various roads, including various curvatures. For inspiration how X, Y positions can be converted into LanePositions, see script example https://github.com/esmini/esmini/blob/dev/EnvironmentSimulator/code-examples/convert_position_type/manipulate_positions.py[manipulate_positions.py].
+
+- Make sure the reference point for vehicles is mid rear axle, projected on ground, as defined https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/06_general_concepts/06_03_coordinate_systems.html#_vehicle_coordinate_system_xv_yv_zv[here] by the standard.
+
+We also get questions what are the most important actions and conditions. It's hard to rank, but here follows a few ones we found useful.
+
+==== Actions
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/TeleportAction.html[TeleportAction] (most often used to establish entity initial position)
+- All basic https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/LongitudinalAction.html[longitudinal] and https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/LateralAction.html[lateral] actions
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/AssignRouteAction.html[AssignRouteAction] (to ensure expected and deterministic choices in junctions)
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/FollowTrajectoryAction.html[FollowTrajectoryAction]
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/SpeedProfileAction.html[SpeedProfileAction] (sometimes useful for defining speed while follow trajectory, provides detailed control of speed)
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/SynchronizeAction.html[SynchronizeAction] (useful in NCAP scenarios, for example. See https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/07_components_scenario/07_04_actions.html#_types_of_private_action[here] for further description)
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/EntityAction.html[EntityAction] (Useful for recorded scenarios where road users enters and exits the scene)
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/ControllerAction.html[ControllerAction] (hand over control to  external function, driver model, driver-in-the-loop...)
+
+==== Conditions
+Make use of the AND/OR logics based on combination of conditions and condition groups as described https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/07_components_scenario/07_06_conditions_triggers.html#_triggers_and_condition_groups[here].
+
+Commonly used conditions are:
+
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/RelativeDistanceCondition.html[RelativeDistanceCondition]
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/DistanceCondition.html[DistanceCondition]
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/TimeHeadwayCondition.html[TimeHeadwayCondition]
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/TimeToCollisionCondition.html[TimeToCollisionCondition]
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/TraveledDistanceCondition.html[TraveledDistanceCondition]
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/SimulationTimeCondition.html[SimulationTimeCondition]
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/StoryboardElementStateCondition.html[StoryboardElementStateCondition]
+- https://publications.pages.asam.net/standards/ASAM_OpenSCENARIO/ASAM_OpenSCENARIO_XML/latest/generated/content/VariableCondition.html[VariableCondition]
+
+[[_scenario_creation_tips_examples]]
+=== Examples
+
+Here follows a few scenario examples highlighting various useful features.
+
+To run the examples, grab and unzip the latest esmini *demo* (not bin) package, from https://github.com/esmini/esmini/releases/latest[here]. The run instructions assume you’re located in esmini root folder.
+
+==== Example 1: scenario_nurb_straight_road
+Scenariofile: https://github.com/esmini/esmini/blob/dev/resources/scenario_construct_examples/scenario_nurb_straight_road.xosc[scenario_nurb_straight_road.xosc]
+
+Target car (blue) cutting in, in front of Ego
+
+video::BnlQYsGqP-k[youtube,width=800,height=450,opts="autoplay,nocontrols,loop"]
+
+===== About the lane change action
+Based on NURBS curve makes it smooth in multiple degrees, and cheap in terms of storage (just a few control points compared to polylines, which typically results in non-continuous tangent and large files due to many vertices).
+
+Position of each control points is defined in terms of road coordinates (s, t), which makes it adapt to whatever road geometry. In other words, it works for any curvature. Further the `s` and `t` coordinates are parametric which makes it easy to customize the characteristics of the lane chance, e.g. duration and adapt to various lane widths.
+
+===== About the speed profile
+Compared to a sequence of individual SpeedActions, the SpeedProfile allows for any number of timestamped speed targets within one single action. Additionally, it offers much better control of the resulting profile curve (speed over time). E.g. user can specify max acceleration and jerk avoiding discontinuities.
+
+Run as:
+
+`./bin/esmini --window 60 60 800 400 --osc ./resources/scenario_construct_examples/scenario_nurb_straight_road.xosc`
+
+==== Example 2: scenario_nurb_curved_road
+Scenariofile: https://github.com/esmini/esmini/blob/dev/resources/scenario_construct_examples/scenario_nurb_curved_road.xosc[scenario_nurb_curved_road.xosc]
+
+Same as above, but now with a curved road, demonstrating the adaptiveness of the lane change trajectory.
+
+video::p8YqZmDfLbM[youtube,width=800,height=450,opts="autoplay,nocontrols,loop"]
+
+Run as:
+
+`./bin/esmini --window 60 60 800 400 --osc ./resources/scenario_construct_examples/scenario_nurb_curved_road.xosc`
+
+==== Example 3: scenario_runner_with_acts
+Scenariofile: https://github.com/esmini/esmini/blob/dev/resources/scenario_construct_examples/scenario_runner_with_acts.xosc[scenario_runner_with_acts.xosc]
+
+Another cut-in scenario. This example demonstrates how scenarios can refer to maneuvers in external catalogs.
+
+video::vpmcrKPz5eU[youtube,width=800,height=450,opts="autoplay,nocontrols,loop"]
+
+This scenario also makes use of headway time and relative distance conditions to create a combined condition that trigger only when target is ahead of Ego (distance measurements are absolute in OpenSCENARIO). The measurements are performed in road longitudinal coordinates, taking any curvature into account hence making the scenario fit any road geometry.
+
+Run as:
+
+`./bin/esmini --window 60 60 800 400 --osc ./resources/scenario_construct_examples/scenario_runner_with_acts.xosc`
+
+==== Example 4: ltap-od
+Scenariofile: https://github.com/esmini/esmini/blob/dev/resources/xosc/ltap-od.xosc[ltap-od.xosc]
+
+Ego and target approaching intersection from opposites directions. Ego plan to go straight, target plan to turn left. To enforce a critical situation target is assigned a SynchronizeAction which will adapt its speed so that it arrives at the intersection whenever Ego is.
+
+video::PQ3dZJ8wpuI[youtube,width=800,height=450,opts="autoplay,nocontrols,loop"]
+
+In this example an interactive controller is assigned to Ego, allowing the user to control it with the arrow keys. The controller can be removed or disabled.
+
+Run as:
+
+`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/ltap-od.xosc`
+
+Drive Ego with arrow keys.
+
+Disable controller:
+
+`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/ltap-od.xosc --disable_controllers`
+
+==== Example 5: cut-in
+Scenariofile: https://github.com/esmini/esmini/blob/dev/resources/xosc/cut-in.xosc[cut-in.xosc]
+
+video::9qvDUpq7XM4[youtube,width=800,height=450,opts="autoplay,nocontrols,loop"]
+
+Red target car drives 20% faster than Ego, so the overtake is inevitable. Target will then perform lane change and brake maneuvers triggered by different HWT conditions.
+
+This scenario demonstrates how SpeedAction can operate in a continuous mode, maintaining a relative speed specified either as offset or factor.
+
+Run as:
+
+`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in.xosc`
+
+Interactive variant:
+
+`./bin/esmini --window 60 60 800 400 --osc ./resources/xosc/cut-in_interactive.xosc`
+
+Drive with arrow keys, notice how the red car adapts to Ego speed.
 
 == Run ASAM OpenSCENARIO examples
 
@@ -3082,7 +4935,14 @@ With some limitations (see details https://github.com/esmini/esmini/blob/master/
 ``./bin/esmini --window 60 60 800 400 --osc c:/stuff/openscenario-v1.1.0/Examples/DoubleLaneChanger.xosc``
 
 == About this document
-The https://github.com/esmini/esmini/blob/master/docs/user_guide.adoc[source] of this document is written in the https://asciidoc-py.github.io/index.html[asciidoc] format. The html is generated with https://asciidoctor.org/[asciidoctor]. Code snippets, images and other resources are included in the process. Also the version numbers are automatically inserted to avoid "human errors".
+The https://github.com/esmini/esmini/blob/master/docs/user_guide.adoc[source] of this document is written in the https://asciidoc-py.github.io/index.html[asciidoc] format.
+
+=== How to generate HTML from AsciiDoc
+The html is generated with https://asciidoctor.org/[asciidoctor]. Code snippets, images and other resources are included in the process. Also the version numbers are automatically inserted to avoid "human errors".
+
+The final HTML document is published in this repo: https://github.com/esmini/esmini.github.io
+
+Access URL: https://esmini.github.io/
 
 Install tools:
 [horizontal]
@@ -3096,13 +4956,27 @@ Install tools:
   ** Install it. In the end you can leave "Run 'rid install' to setup MSYS2 and development toolchain" un-checked +
 * Then run: +
 ``gem install asciidoctor`` +
-``gem install coderay``
+``gem install coderay`` +
++
+Troubleshooting: If you get an error like +
+`Unable to download data from https://rubygems.org/ - SSL_connect ...` +
+try update RubyGems as follows: +
+``gem update --system``
 
-Generate html: ``asciidoctor user_guide.adoc``
+Generate html: ``asciidoctor user_guide.adoc -o index.html``
+
+=== How to view previous versions
+Full commit history is found https://github.com/esmini/esmini.github.io/commits/main[here]
+
+To view a previous version, utilizing https://htmlpreview.github.io/[htmlpreview.github.io], either refer to a https://github.com/esmini/esmini.github.io/tags[tag], like this:
+
+`https://htmlpreview.github.io/?https://raw.githubusercontent.com/esmini/esmini.github.io/refs/tags/v2.42.0/index.html`
+
+or refer to any commit, like this:
+
+`https://htmlpreview.github.io/?https://raw.githubusercontent.com/esmini/esmini.github.io/47a9267a5935d0bd2648950e4d9d3e23f1e8ff3a/index.html`
 
 == Version
 [%hardbreaks]
 include::../version.txt[lines=2..2]
 include::../version.txt[lines=1..1]
-
-Full commit history is found https://github.com/esmini/esmini.github.io/commits/main[here]

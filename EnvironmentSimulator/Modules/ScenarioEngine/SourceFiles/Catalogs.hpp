@@ -51,7 +51,7 @@ namespace scenarioengine
         }
 
         static std::string GetTypeAsStr_(CatalogType type);
-        std::string        GetTypeAsStr()
+        std::string        GetTypeAsStr() const
         {
             return GetTypeAsStr_(type_);
         }
@@ -73,7 +73,7 @@ namespace scenarioengine
             }
         }
 
-        CatalogType GetType()
+        CatalogType GetType() const
         {
             return type_;
         }
@@ -95,7 +95,7 @@ namespace scenarioengine
             return 0;
         }
 
-        std::string GetTypeAsStr()
+        std::string GetTypeAsStr() const
         {
             return Entry::GetTypeAsStr_(type_);
         }
@@ -151,7 +151,7 @@ namespace scenarioengine
 
             if (catalog == 0)
             {
-                LOG("Couldn't find catalog %s", catalog_name.c_str());
+                LOG_ERROR("Couldn't find catalog {}", catalog_name);
                 return 0;
             }
             else
@@ -159,7 +159,7 @@ namespace scenarioengine
                 entry = catalog->FindEntryByName(entry_name);
                 if (entry == 0)
                 {
-                    LOG("Couldn't find entry %s in catalog %s", entry_name.c_str(), catalog_name.c_str());
+                    LOG_ERROR("Couldn't find entry {} in catalog {}", entry_name, catalog_name);
                 }
             }
             return entry;
@@ -176,7 +176,7 @@ namespace scenarioengine
             }
             else
             {
-                LOG("Couldn't get element in entry %s in catalog %s", entry_name.c_str(), catalog_name.c_str());
+                LOG_ERROR("Couldn't get element in entry {} in catalog {}", entry_name, catalog_name);
             }
 
             return node;

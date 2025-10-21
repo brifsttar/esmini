@@ -1,6 +1,6 @@
 '''
    Python dependencies:
-      pip install protobuf==3.19
+      pip install protobuf==3.20.2
 
    Note: No need to install OSI as long as
    esmini/scripts/osi3 folder is available
@@ -45,8 +45,6 @@ class Sim:
 
     # Retrieve OSI message and print some info
     def GetAndPrintOSIInfo(self):
-        se.SE_UpdateOSIGroundTruth()
-
         msg_string = se.SE_GetOSIGroundTruth(ct.byref(self.msg_size))
         self.msg.ParseFromString(ct.string_at(msg_string, self.msg_size))
 

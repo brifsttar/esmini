@@ -17,25 +17,22 @@ int ReportTrafficCommand(osi3::TrafficCommand *tc, OSCPrivateAction *action, dou
 {
     tc->clear_timestamp();
     tc->mutable_timestamp()->set_seconds(static_cast<int64_t>(time));
-    tc->mutable_timestamp()->set_nanos(static_cast<uint32_t>(time - floor(time) * 1e9));
-
+    tc->mutable_timestamp()->set_nanos(static_cast<uint32_t>((time - floor(time)) * 1e9));
     Object *obj = action->object_;
 
     if (obj == nullptr)
     {
-        LOG("Error: Missing object in private action %s", action->GetName().c_str());
+        LOG_ERROR("Error: Missing object in private action {}", action->GetName());
         return -1;
     }
 
-    switch (action->type_)
+    switch (action->action_type_)
     {
         case OSCPrivateAction::ActionType::LAT_LANE_CHANGE:
         {
             osi3::TrafficAction *ta = tc->add_action();
 
-            LOG("OSITrafficCmd: Lane change action %s started for obj %d",
-                action->GetName().c_str(),
-                action->object_ ? action->object_->GetId() : -1);
+            LOG_DEBUG("OSITrafficCmd: Lane change action {} started for obj {}", action->GetName(), action->object_ ? action->object_->GetId() : -1);
             tc->mutable_traffic_participant_id()->set_value(action->object_ ? static_cast<unsigned int>(action->object_->GetId()) : UINT_MAX);
 
             ta->mutable_lane_change_action()->mutable_action_header()->mutable_action_id()->set_value(action->GetId());
@@ -76,7 +73,7 @@ int ReportTrafficCommand(osi3::TrafficCommand *tc, OSCPrivateAction *action, dou
             }
             else
             {
-                LOG("OSITrafficCmd: Unrecognized shape type: %d", a->transition_.shape_);
+                LOG_DEBUG("OSITrafficCmd: Unrecognized shape type: {}", a->transition_.shape_);
                 ta->mutable_lane_change_action()->set_dynamics_shape(osi3::TrafficAction_DynamicsShape_DYNAMICS_SHAPE_UNSPECIFIED);
             }
 
@@ -96,11 +93,11 @@ int ReportTrafficCommand(osi3::TrafficCommand *tc, OSCPrivateAction *action, dou
         {
             osi3::TrafficAction *ta = tc->add_action();
 
-            LOG("OSITrafficCmd: Speed action %s started for obj %d", action->GetName().c_str(), action->object_ ? action->object_->GetId() : -1);
+            LOG_DEBUG("OSITrafficCmd: Speed action {} started for obj {}", action->GetName(), action->object_ ? action->object_->GetId() : -1);
 
             tc->mutable_traffic_participant_id()->set_value(action->object_ ? static_cast<unsigned int>(action->object_->GetId()) : UINT_MAX);
 
-            ta->mutable_lane_change_action()->mutable_action_header()->mutable_action_id()->set_value(action->GetId());
+            ta->mutable_speed_action()->mutable_action_header()->mutable_action_id()->set_value(action->GetId());
 
             LongSpeedAction *a = reinterpret_cast<LongSpeedAction *>(action);
             if (a->transition_.dimension_ == OSCPrivateAction::DynamicsDimension::DISTANCE)
@@ -138,7 +135,7 @@ int ReportTrafficCommand(osi3::TrafficCommand *tc, OSCPrivateAction *action, dou
             }
             else
             {
-                LOG("Unrecognized shape type: %d", a->transition_.shape_);
+                LOG_DEBUG("Unrecognized shape type: {}", a->transition_.shape_);
                 ta->mutable_speed_action()->set_dynamics_shape(osi3::TrafficAction_DynamicsShape_DYNAMICS_SHAPE_UNSPECIFIED);
             }
 
@@ -157,29 +154,82 @@ int ReportTrafficCommand(osi3::TrafficCommand *tc, OSCPrivateAction *action, dou
         {
             osi3::TrafficAction *ta = tc->add_action();
 
-            LOG("OSITrafficCmd: Teleport action %s started for obj %d", action->GetName().c_str(), action->object_ ? action->object_->GetId() : -1);
+            LOG_DEBUG("OSITrafficCmd: Teleport action {} started for obj {}", action->GetName(), action->object_ ? action->object_->GetId() : -1);
 
             tc->mutable_traffic_participant_id()->set_value(action->object_ ? static_cast<unsigned int>(action->object_->GetId()) : UINT_MAX);
 
             ta->mutable_teleport_action()->mutable_action_header()->mutable_action_id()->set_value(action->GetId());
 
             TeleportAction *a = reinterpret_cast<TeleportAction *>(action);
-            a->position_->EvaluateRelation();
+            a->position_.EvaluateRelation();
 
-            ta->mutable_teleport_action()->mutable_position()->set_x(a->position_->GetX());
-            ta->mutable_teleport_action()->mutable_position()->set_y(a->position_->GetY());
-            ta->mutable_teleport_action()->mutable_position()->set_z(a->position_->GetZ());
+            ta->mutable_teleport_action()->mutable_position()->set_x(a->position_.GetX());
+            ta->mutable_teleport_action()->mutable_position()->set_y(a->position_.GetY());
+            ta->mutable_teleport_action()->mutable_position()->set_z(a->position_.GetZ());
 
-            ta->mutable_teleport_action()->mutable_orientation()->set_yaw(a->position_->GetH());
-            ta->mutable_teleport_action()->mutable_orientation()->set_pitch(a->position_->GetP());
-            ta->mutable_teleport_action()->mutable_orientation()->set_roll(a->position_->GetR());
+            ta->mutable_teleport_action()->mutable_orientation()->set_yaw(a->position_.GetH());
+            ta->mutable_teleport_action()->mutable_orientation()->set_pitch(a->position_.GetP());
+            ta->mutable_teleport_action()->mutable_orientation()->set_roll(a->position_.GetR());
+
+            break;
+        }
+
+        case OSCPrivateAction::ActionType::ASSIGN_ROUTE:
+        {
+            osi3::TrafficAction *ta = tc->add_action();
+
+            LOG_DEBUG("OSITrafficCmd: Assign route action {} started for obj {}", action->GetName(), action->object_ ? action->object_->GetId() : -1);
+
+            tc->mutable_traffic_participant_id()->set_value(action->object_ ? static_cast<unsigned int>(action->object_->GetId()) : UINT_MAX);
+
+            ta->mutable_follow_path_action()->mutable_action_header()->mutable_action_id()->set_value(action->GetId());
+
+            AssignRouteAction *a = reinterpret_cast<AssignRouteAction *>(action);
+
+            for (auto pos : a->route_->all_waypoints_)
+            {
+                osi3::StatePoint *point = ta->mutable_follow_path_action()->add_path_point();
+
+                point->mutable_position()->set_x(pos.GetX());
+                point->mutable_position()->set_y(pos.GetY());
+                point->mutable_position()->set_z(pos.GetZ());
+
+                point->mutable_orientation()->set_yaw(pos.GetH());
+                point->mutable_orientation()->set_pitch(pos.GetP());
+                point->mutable_orientation()->set_roll(pos.GetR());
+            }
+
+            break;
+        }
+
+        case OSCPrivateAction::ActionType::ACQUIRE_POSITION:
+        {
+            osi3::TrafficAction *ta = tc->add_action();
+
+            LOG_DEBUG("OSITrafficCmd: Acquire position action {} started for obj {}",
+                      action->GetName(),
+                      action->object_ ? action->object_->GetId() : -1);
+
+            tc->mutable_traffic_participant_id()->set_value(action->object_ ? static_cast<unsigned int>(action->object_->GetId()) : UINT_MAX);
+
+            ta->mutable_acquire_global_position_action()->mutable_action_header()->mutable_action_id()->set_value(action->GetId());
+
+            AcquirePositionAction *a = reinterpret_cast<AcquirePositionAction *>(action);
+
+            ta->mutable_acquire_global_position_action()->mutable_position()->set_x(a->target_position_.GetX());
+            ta->mutable_acquire_global_position_action()->mutable_position()->set_y(a->target_position_.GetY());
+            ta->mutable_acquire_global_position_action()->mutable_position()->set_z(a->target_position_.GetZ());
+
+            ta->mutable_acquire_global_position_action()->mutable_orientation()->set_yaw(a->target_position_.GetH());
+            ta->mutable_acquire_global_position_action()->mutable_orientation()->set_pitch(a->target_position_.GetP());
+            ta->mutable_acquire_global_position_action()->mutable_orientation()->set_roll(a->target_position_.GetR());
 
             break;
         }
 
         default:
 
-            LOG("OSITrafficCommand: Unsupported type %d of action %s", action->type_, action->GetName().c_str());
+            LOG_DEBUG("OSITrafficCommand: Unsupported type {} of action {}", action->action_type_, action->GetName());
     }
 
     return 0;

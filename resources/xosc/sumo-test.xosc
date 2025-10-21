@@ -1,7 +1,7 @@
 <?xml version="1.0" ?>
 <!-- Demonstrate a way of integrating SUMO vehicles in esmini simulations -->
-<OpenSCENARIO xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceShemaLocation="OpenSccenario.xsd">
-    <FileHeader author="Mandolin" date="2020-08-14 08:57:00.756371" decription="adaptspeed_example" revMajor="1" revMinor="0"/>
+<OpenSCENARIO>
+    <FileHeader author="Mandolin" date="2020-08-14T08:57:00" description="adaptspeed_example" revMajor="1" revMinor="3"/>
     <ParameterDeclarations/>
     <CatalogLocations>
         <VehicleCatalog>
@@ -28,6 +28,7 @@
                 <Controller name="SumoTraffic">
                     <Properties>
                         <Property name="esminiController" value="SumoController" />
+                        <Property name="overrideVehicleScaleMode" value="BBToModel" />
                         <File filepath="../sumo_inputs/multi_intersections.sumocfg"/>
                     </Properties>
                 </Controller>
@@ -46,9 +47,6 @@
                         </TeleportAction>
                     </PrivateAction>
                     <PrivateAction>
-                        <!-- <ActivateControllerAction longitudinal="true" lateral="true" /> -->
-                    </PrivateAction>
-                    <PrivateAction>
                         <LongitudinalAction>
                             <SpeedAction>
                                 <SpeedActionDynamics dynamicsDimension="time" dynamicsShape="step" value="1"/>
@@ -61,10 +59,6 @@
                 </Private>
             </Actions>
         </Init>
-        <Story name="mystory">
-            <ParameterDeclarations/>
-            <Act/>
-        </Story>
         <StopTrigger>
             <ConditionGroup>
                 <Condition conditionEdge="rising" delay="0" name="stop_simulation">

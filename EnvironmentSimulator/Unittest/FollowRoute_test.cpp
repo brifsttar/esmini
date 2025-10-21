@@ -90,7 +90,7 @@ TEST_F(FollowRouteTestSmall, FindPathSmallInvalidPosition)
     // Check invalid target
     ASSERT_TRUE(path.empty());
 
-    start  = Position(-1, -1, 10, 0);
+    start  = Position(ID_UNDEFINED, -1, 10, 0);
     target = Position(5, -2, 20, 0);
 
     path = router.CalculatePath(start, target);
@@ -173,7 +173,7 @@ TEST_F(FollowRouteTestSmall, CreateWaypointSmall2)
     ASSERT_EQ(Position::GetOpenDrive()->GetOpenDriveFilename(),
               "../../../EnvironmentSimulator/Unittest/xodr/highway_example_with_merge_and_split.xodr");
 
-    std::vector<Position> expectedWaypoints = {Position(0, -3, 105, 0),
+    std::vector<Position> expectedWaypoints = {Position(0, -3, 10, 0),
                                                Position(3, -3, 25, 0),
                                                Position(1, -3, 57.5, 0),
                                                Position(6, -3, 15, 0),
@@ -263,7 +263,7 @@ TEST_F(FollowRouteTestMedium, CreateWaypointMedium)
     ASSERT_NE(Position::GetOpenDrive(), nullptr);
     ASSERT_EQ(Position::GetOpenDrive()->GetOpenDriveFilename(), "../../../resources/xodr/multi_intersections.xodr");
 
-    std::vector<Position> expectedWaypoints = {Position(266, 1, 25, 0),
+    std::vector<Position> expectedWaypoints = {Position(266, 1, 50, 0),
                                                Position(258, -1, 8.85, 0),
                                                Position(261, -1, 54.5, 0),
                                                Position(196, 1, 54.5, 0),
@@ -609,7 +609,7 @@ TEST_F(FollowRouteTestMediumChangedSpeeds, LogWaypointMedium)
 TEST(FollowRouteTest, CalcWeightShortest)
 {
     RoadCalculations roadCalc;
-    Road             road1(1, "test");
+    Road             road1(1, "1", "test");
     road1.SetLength(200);
     double weigth = roadCalc.CalcWeight(nullptr, Position::RouteStrategy::SHORTEST, road1.GetLength(), &road1);
     ASSERT_NEAR(200, weigth, 0.01);
@@ -618,12 +618,12 @@ TEST(FollowRouteTest, CalcWeightShortest)
 TEST(FollowRouteTest, CalcWeightFastest)
 {
     RoadCalculations roadCalc;
-    Road             road1(1, "test");
+    Road             road1(1, "1", "test");
     road1.SetLength(200);
     Road::RoadTypeEntry* motorway = new Road::RoadTypeEntry;
     motorway->road_type_          = Road::RoadType::ROADTYPE_MOTORWAY;
     motorway->speed_              = 25;
-    road1.AddRoadType(motorway);
+    road1.AddRoadType(0.0, motorway);
     double weigth = roadCalc.CalcWeight(nullptr, Position::RouteStrategy::FASTEST, road1.GetLength(), &road1);
     // 200 / 25 = 8
     ASSERT_NEAR(8, weigth, 0.01);
@@ -632,7 +632,7 @@ TEST(FollowRouteTest, CalcWeightFastest)
 TEST(FollowRouteTest, CalcWeightMinIntersections)
 {
     RoadCalculations roadCalc;
-    Road             road1(1, "test");
+    Road             road1(1, "1", "test");
     road1.SetLength(200);
     RoadLink plink(LinkType::SUCCESSOR, RoadLink::ELEMENT_TYPE_JUNCTION, 1, ContactPointType::CONTACT_POINT_UNDEFINED);
     Node     pNode;
@@ -640,7 +640,7 @@ TEST(FollowRouteTest, CalcWeightMinIntersections)
     double weigth = roadCalc.CalcWeight(&pNode, Position::RouteStrategy::MIN_INTERSECTIONS, road1.GetLength(), &road1);
     ASSERT_NEAR(1, weigth, 0.01);
 
-    Road road2(2, "test");
+    Road road2(2, "2", "test");
     road1.SetLength(200);
     RoadLink plink2(LinkType::SUCCESSOR, RoadLink::ELEMENT_TYPE_ROAD, 1, ContactPointType::CONTACT_POINT_UNDEFINED);
     Node     pNode2;
@@ -653,10 +653,10 @@ TEST(FollowRouteTest, CalcAverageSpeedForRoadsWithoutSpeed)
 {
     RoadCalculations roadCalc;
 
-    Road                 road1(1, "420");
-    Road                 road2(2, "420");
-    Road                 road3(3, "420");
-    Road                 road4(4, "420");
+    Road                 road1(1, "1", "420");
+    Road                 road2(2, "2", "420");
+    Road                 road3(3, "3", "420");
+    Road                 road4(4, "4", "420");
     Road::RoadTypeEntry* lowSpeed = new Road::RoadTypeEntry;
     Road::RoadTypeEntry* town     = new Road::RoadTypeEntry;
     Road::RoadTypeEntry* rural    = new Road::RoadTypeEntry;
@@ -666,10 +666,10 @@ TEST(FollowRouteTest, CalcAverageSpeedForRoadsWithoutSpeed)
     rural->road_type_             = Road::RoadType::ROADTYPE_RURAL;
     motorway->road_type_          = Road::RoadType::ROADTYPE_MOTORWAY;
 
-    road1.AddRoadType(lowSpeed);
-    road2.AddRoadType(town);
-    road3.AddRoadType(rural);
-    road4.AddRoadType(motorway);
+    road1.AddRoadType(0.0, lowSpeed);
+    road2.AddRoadType(0.0, town);
+    road3.AddRoadType(0.0, rural);
+    road4.AddRoadType(0.0, motorway);
 
     double averageSpeed  = roadCalc.CalcAverageSpeed(&road1);
     double expectedSpeed = 8.333;
@@ -692,10 +692,10 @@ TEST(FollowRouteTest, CalcAverageSpeedForRoadsWithDefinedSpeed)
 {
     RoadCalculations roadCalc;
 
-    Road                 road1(1, "420");
-    Road                 road2(2, "420");
-    Road                 road3(3, "420");
-    Road                 road4(4, "420");
+    Road                 road1(1, "1", "420");
+    Road                 road2(2, "2", "420");
+    Road                 road3(3, "3", "420");
+    Road                 road4(4, "4", "420");
     Road::RoadTypeEntry* lowSpeed = new Road::RoadTypeEntry;
     Road::RoadTypeEntry* town     = new Road::RoadTypeEntry;
     Road::RoadTypeEntry* rural    = new Road::RoadTypeEntry;
@@ -709,10 +709,10 @@ TEST(FollowRouteTest, CalcAverageSpeedForRoadsWithDefinedSpeed)
     motorway->road_type_          = Road::RoadType::ROADTYPE_MOTORWAY;
     motorway->speed_              = 40;
 
-    road1.AddRoadType(lowSpeed);
-    road2.AddRoadType(town);
-    road3.AddRoadType(rural);
-    road4.AddRoadType(motorway);
+    road1.AddRoadType(0.0, lowSpeed);
+    road2.AddRoadType(0.0, town);
+    road3.AddRoadType(0.0, rural);
+    road4.AddRoadType(0.0, motorway);
 
     double averageSpeed  = roadCalc.CalcAverageSpeed(&road1);
     double expectedSpeed = 10;
@@ -735,14 +735,14 @@ TEST(FollowRouteTest, CalcAverageSpeedForTwoRoadTypes)
 {
     RoadCalculations roadCalc;
 
-    Road                 road(1, "420");
+    Road                 road(1, "1", "420");
     Road::RoadTypeEntry* lowSpeed = new Road::RoadTypeEntry;
     Road::RoadTypeEntry* town     = new Road::RoadTypeEntry;
     lowSpeed->road_type_          = Road::RoadType::ROADTYPE_LOWSPEED;
     town->road_type_              = Road::RoadType::ROADTYPE_TOWN;
 
-    road.AddRoadType(lowSpeed);
-    road.AddRoadType(town);
+    road.AddRoadType(0.0, lowSpeed);
+    road.AddRoadType(1.0, town);
 
     double averageSpeed  = roadCalc.CalcAverageSpeed(&road);
     double expectedSpeed = 11.11;
@@ -756,27 +756,24 @@ TEST(FollowRouteTest, CalcAverageSpeedForTwoRoadTypes)
     ASSERT_NEAR(averageSpeed, expectedSpeed, 0.01);
 }
 
-// Uncomment to print log output to console
-// #define LOG_TO_CONSOLE
-
-#ifdef LOG_TO_CONSOLE
-static void log_callback(const char* str)
-{
-    printf("%s\n", str);
-}
-#endif
-
 int main(int argc, char** argv)
 {
-#ifdef LOG_TO_CONSOLE
-    if (!(Logger::Inst().IsCallbackSet()))
-    {
-        Logger::Inst().SetCallback(log_callback);
-    }
-#endif
-
     // testing::GTEST_FLAG(filter) = "*TestOptionHandling*";
-
     testing::InitGoogleTest(&argc, argv);
+
+    if (argc > 1)
+    {
+        if (!strcmp(argv[1], "--disable_stdout"))
+        {
+            // disable logging to stdout from the test cases
+            SE_Env::Inst().GetOptions().SetOptionValue("disable_stdout", "", false, true);
+        }
+        else
+        {
+            printf("Usage: %s [--disable_stout] [google test options...]\n", argv[0]);
+            return -1;
+        }
+    }
+
     return RUN_ALL_TESTS();
 }

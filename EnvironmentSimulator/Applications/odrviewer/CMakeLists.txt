@@ -20,10 +20,6 @@ add_executable(
     ${TARGET}
     ${SOURCES})
 
-target_link_libraries(
-    ${TARGET}
-    PRIVATE project_options)
-
 target_include_directories(
     ${TARGET}
     PRIVATE ${SCENARIO_ENGINE_PATH}/SourceFiles
@@ -42,14 +38,18 @@ target_include_directories(
 
 target_link_libraries(
     ${TARGET}
-    PRIVATE RoadManager
-    PRIVATE CommonMini
-    PRIVATE ${TIME_LIB})
+    PRIVATE project_options
+            RoadManager
+            CommonMini
+            ${TIME_LIB})
 
 if(USE_OSG)
     target_link_libraries(
         ${TARGET}
         PRIVATE ViewerBase
+                RoadGeom
+                ScenarioEngine
+                Controllers
                 ${OSG_LIBRARIES})
 endif()
 

@@ -61,11 +61,15 @@ target_include_directories(
            ${EXTERNALS_OSG_INCLUDES}
            ${EXTERNALS_OSI_INCLUDES}
            ${EXTERNALS_PUGIXML_PATH}
-           ${EXTERNALS_IMPLOT_INCLUDES})
+           ${EXTERNALS_IMPLOT_INCLUDES}
+           ${EXTERNALS_YAML_INCLUDES}
+           ${EXTERNALS_FMT_INCLUDES})
 
 target_link_libraries(
     ${TARGET}
     PRIVATE project_options)
+
+target_link_libraries(${TARGET})
 
 disable_static_analysis(${TARGET})
 disable_iwyu(${TARGET})

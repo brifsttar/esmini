@@ -16,12 +16,14 @@
 #include "Action.hpp"
 #include "CommonMini.hpp"
 #include "Parameters.hpp"
-#include "Entities.hpp"
 #include "ScenarioGateway.hpp"
+#include "OSCEnvironment.hpp"
 #include "OSCAABBTree.hpp"
 #include <vector>
 #include "OSCUtils.hpp"
 #include "OSCPosition.hpp"
+#include "logger.hpp"
+#include "VehiclePool.hpp"
 
 namespace scenarioengine
 {
@@ -29,36 +31,24 @@ namespace scenarioengine
     using aabbTree::Solutions;
     using std::vector;
     using namespace Utils;
+    class VehiclePool;
 
     class OSCGlobalAction : public OSCAction
     {
     public:
-        typedef enum
-        {
-            ENVIRONMENT,  // not supported yet
-            ADD_ENTITY,
-            DELETE_ENTITY,
-            PARAMETER_SET,
-            VARIABLE_SET,
-            INFRASTRUCTURE,  // not supported yet
-            SWARM_TRAFFIC,
-        } Type;
-
-        Type type_;
-
-        OSCGlobalAction(OSCGlobalAction::Type type, StoryBoardElement* parent) : OSCAction(OSCAction::BaseType::GLOBAL, parent), type_(type)
+        OSCGlobalAction(OSCAction::ActionType action_type, StoryBoardElement* parent) : OSCAction(action_type, parent)
         {
         }
         virtual ~OSCGlobalAction() = default;
 
         virtual void print()
         {
-            LOG("Virtual, should be overridden");
+            LOG_WARN("Virtual, should be overridden");
         }
 
         virtual OSCGlobalAction* Copy()
         {
-            LOG("Virtual, should be overridden");
+            LOG_WARN("Virtual, should be overridden");
             return 0;
         };
 
@@ -75,13 +65,9 @@ namespace scenarioengine
         std::string value_;
         Parameters* parameters_;
 
-        ParameterSetAction(StoryBoardElement* parent)
-            : OSCGlobalAction(OSCGlobalAction::Type::PARAMETER_SET, parent),
-              name_(""),
-              value_(""),
-              parameters_(0){};
+        ParameterSetAction(StoryBoardElement* parent) : OSCGlobalAction(ActionType::PARAMETER_SET, parent), name_(""), value_(""), parameters_(0){};
 
-        ParameterSetAction(const ParameterSetAction& action) : OSCGlobalAction(OSCGlobalAction::Type::PARAMETER_SET, action.parent_)
+        ParameterSetAction(const ParameterSetAction& action) : OSCGlobalAction(ActionType::PARAMETER_SET, action.parent_)
         {
             name_   = action.name_;
             value_  = action.value_;
@@ -114,13 +100,9 @@ namespace scenarioengine
         std::string value_;
         Parameters* variables_;
 
-        VariableSetAction(StoryBoardElement* parent)
-            : OSCGlobalAction(OSCGlobalAction::Type::VARIABLE_SET, parent),
-              name_(""),
-              value_(""),
-              variables_(0){};
+        VariableSetAction(StoryBoardElement* parent) : OSCGlobalAction(ActionType::VARIABLE_SET, parent), name_(""), value_(""), variables_(0){};
 
-        VariableSetAction(const ParameterSetAction& action) : OSCGlobalAction(OSCGlobalAction::Type::VARIABLE_SET, action.parent_)
+        VariableSetAction(const ParameterSetAction& action) : OSCGlobalAction(ActionType::VARIABLE_SET, action.parent_)
         {
             name_  = action.name_;
             value_ = action.value_;
@@ -145,33 +127,107 @@ namespace scenarioengine
         }
     };
 
+    class VariableAddAction : public OSCGlobalAction
+    {
+    public:
+        std::string name_;
+        double      value_;
+        Parameters* variables_;
+
+        VariableAddAction(StoryBoardElement* parent) : OSCGlobalAction(ActionType::VARIABLE_ADD, parent), name_(""), value_(0), variables_(0){};
+
+        VariableAddAction(const VariableAddAction& action) : OSCGlobalAction(ActionType::VARIABLE_ADD, action.parent_)
+        {
+            name_  = action.name_;
+            value_ = action.value_;
+        }
+
+        OSCGlobalAction* Copy()
+        {
+            VariableAddAction* new_action = new VariableAddAction(*this);
+            return new_action;
+        }
+
+        std::string Type2Str()
+        {
+            return "VariableAddAction";
+        };
+
+        void Start(double simTime);
+        void Step(double simTime, double dt);
+
+        void print()
+        {
+        }
+    };
+
+    class VariableMultiplyByAction : public OSCGlobalAction
+    {
+    public:
+        std::string name_;
+        double      value_;
+        Parameters* variables_;
+
+        VariableMultiplyByAction(StoryBoardElement* parent)
+            : OSCGlobalAction(ActionType::VARIABLE_MULTIPLY_BY, parent),
+              name_(""),
+              value_(0),
+              variables_(0){};
+
+        VariableMultiplyByAction(const VariableMultiplyByAction& action) : OSCGlobalAction(ActionType::VARIABLE_MULTIPLY_BY, action.parent_)
+        {
+            name_  = action.name_;
+            value_ = action.value_;
+        }
+
+        OSCGlobalAction* Copy()
+        {
+            VariableMultiplyByAction* new_action = new VariableMultiplyByAction(*this);
+            return new_action;
+        }
+
+        std::string Type2Str()
+        {
+            return "VariableMultiplyByAction";
+        };
+
+        void Start(double simTime);
+        void Step(double simTime, double dt);
+
+        void print()
+        {
+        }
+    };
+
     class AddEntityAction : public OSCGlobalAction
     {
     public:
-        Object*                      entity_;
-        std::shared_ptr<OSCPosition> pos_OSCPosition_;
-        roadmanager::Position*       pos_;
-        Entities*                    entities_;
+        Object*                entity_;
+        roadmanager::Position* pos_;
+        Entities*              entities_;
 
-        AddEntityAction(StoryBoardElement* parent)
-            : OSCGlobalAction(OSCGlobalAction::Type::ADD_ENTITY, parent),
-              entity_(nullptr),
-              pos_(0),
-              entities_(nullptr){};
+        AddEntityAction(StoryBoardElement* parent) : OSCGlobalAction(ActionType::ADD_ENTITY, parent), entity_(nullptr), pos_(0), entities_(nullptr){};
 
         AddEntityAction(Object* entity, StoryBoardElement* parent)
-            : OSCGlobalAction(OSCGlobalAction::Type::ADD_ENTITY, parent),
+            : OSCGlobalAction(ActionType::ADD_ENTITY, parent),
               entity_(entity),
               pos_(0),
               entities_(nullptr){};
 
-        AddEntityAction(const AddEntityAction& action) : OSCGlobalAction(OSCGlobalAction::Type::ADD_ENTITY, action.parent_)
+        AddEntityAction(const AddEntityAction& action) : OSCGlobalAction(ActionType::ADD_ENTITY, action.parent_)
         {
             entity_   = action.entity_;
             entities_ = action.entities_;
             pos_      = action.pos_;
         }
-
+        ~AddEntityAction()
+        {
+            if (pos_ != nullptr)
+            {
+                delete pos_;
+                pos_ = nullptr;
+            }
+        }
         OSCGlobalAction* Copy()
         {
             AddEntityAction* new_action = new AddEntityAction(*this);
@@ -199,19 +255,18 @@ namespace scenarioengine
         ScenarioGateway* gateway_;
 
         DeleteEntityAction(StoryBoardElement* parent)
-            : OSCGlobalAction(OSCGlobalAction::Type::DELETE_ENTITY, parent),
+            : OSCGlobalAction(ActionType::DELETE_ENTITY, parent),
               entity_(nullptr),
               entities_(nullptr),
               gateway_(nullptr){};
 
         DeleteEntityAction(Object* entity, StoryBoardElement* parent)
-            : OSCGlobalAction(OSCGlobalAction::Type::DELETE_ENTITY, parent),
+            : OSCGlobalAction(ActionType::DELETE_ENTITY, parent),
               entity_(entity),
               entities_(nullptr),
               gateway_(nullptr){};
 
-        DeleteEntityAction(const DeleteEntityAction& action, StoryBoardElement* parent)
-            : OSCGlobalAction(OSCGlobalAction::Type::DELETE_ENTITY, parent)
+        DeleteEntityAction(const DeleteEntityAction& action, StoryBoardElement* parent) : OSCGlobalAction(ActionType::DELETE_ENTITY, parent)
         {
             entity_   = action.entity_;
             entities_ = action.entities_;
@@ -241,7 +296,46 @@ namespace scenarioengine
         }
     };
 
+    class EnvironmentAction : public OSCGlobalAction
+    {
+    public:
+        OSCEnvironment new_environment_;
+
+        EnvironmentAction(StoryBoardElement* parent) : OSCGlobalAction(ActionType::ENVIRONMENT, parent){};
+
+        EnvironmentAction(const EnvironmentAction& action, StoryBoardElement* parent) : OSCGlobalAction(ActionType::ENVIRONMENT, parent)
+        {
+            new_environment_ = action.new_environment_;
+        }
+
+        OSCGlobalAction* Copy()
+        {
+            EnvironmentAction* new_action = new EnvironmentAction(*this);
+            return new_action;
+        }
+
+        std::string Type2Str()
+        {
+            return "EnvironmentAction";
+        };
+
+        void Start(double simTime);
+        void Step(double simTime, double dt);
+        void SetEnvironment(OSCEnvironment* environment)
+        {
+            environment_ = environment;
+        }
+        void print()
+        {
+            LOG_INFO("EnvironmentAction");
+        }
+
+    private:
+        OSCEnvironment* environment_;
+    };
+
     class ScenarioReader;
+    class ScenarioEngine;
 
     class SwarmTrafficAction : public OSCGlobalAction
     {
@@ -250,7 +344,7 @@ namespace scenarioengine
         {
             int    vehicleID;
             int    outMidAreaCount;
-            int    roadID;
+            id_t   roadID;
             int    lane;
             double simTime;
         };
@@ -259,14 +353,12 @@ namespace scenarioengine
         {
             roadmanager::Position pos;
             roadmanager::Road*    road;
-            int                   nLanes;
+            unsigned int          nLanes;
         } SelectInfo;
 
         SwarmTrafficAction(StoryBoardElement* parent);
-        ~SwarmTrafficAction();
 
-        SwarmTrafficAction(const SwarmTrafficAction& action, StoryBoardElement* parent)
-            : OSCGlobalAction(OSCGlobalAction::Type::SWARM_TRAFFIC, parent)
+        SwarmTrafficAction(const SwarmTrafficAction& action, StoryBoardElement* parent) : OSCGlobalAction(ActionType::SWARM_TRAFFIC, parent)
         {
             spawnedV.clear();
             centralObject_ = action.centralObject_;
@@ -302,10 +394,8 @@ namespace scenarioengine
         {
             semiMinorAxis_ = axes;
         }
-        void SetEntities(Entities* entities)
-        {
-            entities_ = entities;
-        }
+        void SetScenarioEngine(ScenarioEngine* scenario_engine);
+
         void SetGateway(ScenarioGateway* gateway)
         {
             gateway_ = gateway;
@@ -328,13 +418,14 @@ namespace scenarioengine
         Entities*               entities_;
         ScenarioGateway*        gateway_;
         ScenarioReader*         reader_;
+        ScenarioEngine*         scenario_engine_;
         Object*                 centralObject_;
         aabbTree::ptTree        rTree;
         unsigned long           numberOfVehicles;
         std::vector<SpawnInfo>  spawnedV;
         roadmanager::OpenDrive* odrManager_;
         double                  innerRadius_, semiMajorAxis_, semiMinorAxis_, midSMjA, midSMnA, minSize_, lastTime;
-        std::vector<Vehicle*>   vehicle_pool_;
+        VehiclePool             vehicle_pool_;
         static int              counter_;
 
         int         despawn(double simTime);

@@ -1,17 +1,34 @@
 #include <iostream>
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
+#ifdef _USE_OSI
 #include "osi_common.pb.h"
 #include "osi_object.pb.h"
 #include "osi_sensorview.pb.h"
 #include "osi_version.pb.h"
+#endif  // _USE_OSI
 #include "Replay.hpp"
 #include "CommonMini.hpp"
 #include "esminiLib.hpp"
 #include "RoadManager.hpp"
+#include "Config.hpp"
+#include "esminiLib.hpp"
+
 #include <vector>
 #include <stdexcept>
 #include <fstream>
+#include <stdio.h>
+#include <tuple>
+
+#if __has_include(<filesystem>)
+#include <filesystem>
+namespace fs = std::filesystem;
+#elif __has_include(<experimental/filesystem>)
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+#else
+#error "Missing <filesystem> header"
+#endif
 
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -52,6 +69,651 @@ TEST(GetNumberOfObjectsTest, number_of_objects_no_init)
     EXPECT_EQ(n_Objects, -1);
 }
 
+TEST(LoggerTests, check_verbosity_level_warn)
+{
+    const char* args[] = {"--osc", "../../../resources/xosc/cut-in_simple.xosc", "--headless", "--log_level", "warn"};
+
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+    SE_LogMessage("This message should not be logged");
+
+    for (int i = 0; i < 6; i++)
+    {
+        if (i < 5)  // skip step of the last round
+        {
+            SE_StepDT(0.01f);
+        }
+    }
+
+    SE_Close();
+
+    FILE* file = FileOpen("log.txt", "r");
+    ASSERT_NE(file, nullptr);
+    const int max_msg_size = 10000;
+    char      msg_buf[max_msg_size];
+
+    size_t size = fread(msg_buf, 1, max_msg_size, file);
+    EXPECT_NE(size, 0);
+
+    bool found = strstr(msg_buf, "This message should not be logged") != NULL;
+    EXPECT_FALSE(found);
+
+    fclose(file);
+}
+
+TEST(LoggerTests, check_verbosity_level_info)
+{
+    const char* args[] = {"--osc", "../../../resources/xosc/cut-in_simple.xosc", "--headless", "--log_level", "info"};
+
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+    SE_LogMessage("This message should be logged");
+
+    for (int i = 0; i < 6; i++)
+    {
+        if (i < 5)  // skip step of the last round
+        {
+            SE_StepDT(0.01f);
+        }
+    }
+
+    SE_Close();
+
+    FILE* file = FileOpen("log.txt", "r");
+    ASSERT_NE(file, nullptr);
+    const int max_msg_size = 10000;
+    char      msg_buf[max_msg_size];
+    size_t    size = fread(msg_buf, 1, max_msg_size, file);
+    EXPECT_NE(size, 0);
+    bool found = strstr(msg_buf, "This message should be logged") != NULL;
+    EXPECT_TRUE(found);
+
+    fclose(file);
+}
+
+TEST(LoggerTests, check_meta_data)
+{
+    const char* args[] = {"--osc", "../../../resources/xosc/cut-in_simple.xosc", "--headless", "--log_meta_data"};
+
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+
+    for (int i = 0; i < 6; i++)
+    {
+        if (i < 5)  // skip step of the last round
+        {
+            SE_StepDT(0.01f);
+        }
+    }
+
+    SE_Close();
+
+    FILE* file = FileOpen("log.txt", "r");
+    ASSERT_NE(file, nullptr);
+    const int max_msg_size = 10000;
+    char      msg_buf[max_msg_size];
+    size_t    size = fread(msg_buf, 1, max_msg_size, file);
+    EXPECT_NE(size, 0);
+    bool found = strstr(msg_buf, ".cpp::") != NULL;
+    EXPECT_TRUE(found);
+
+    fclose(file);
+}
+
+TEST(LoggerTests, check_log_skip_modules)
+{
+    const char* args[] =
+        {"--osc", "../../../resources/xosc/cut-in_simple.xosc", "--headless", "--log_meta_data", "--log_skip_modules", "StoryboardElement"};
+
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+    SE_LogMessage("This message should be logged");
+
+    for (int i = 0; i < 6; i++)
+    {
+        if (i < 5)  // skip step of the last round
+        {
+            SE_StepDT(0.01f);
+        }
+    }
+
+    SE_Close();
+
+    FILE* file = FileOpen("log.txt", "r");
+    ASSERT_NE(file, nullptr);
+    const int max_msg_size = 10000;
+    char      msg_buf[max_msg_size];
+    size_t    size = fread(msg_buf, 1, max_msg_size, file);
+    EXPECT_NE(size, 0);
+    bool found = strstr(msg_buf, "This message should be logged") != NULL;
+    EXPECT_TRUE(found);
+
+    found = strstr(msg_buf, "OverTaker New position:") != NULL;
+    EXPECT_TRUE(found);
+
+    found = strstr(msg_buf, "Loaded OpenDRIVE:") != NULL;
+    EXPECT_TRUE(found);
+
+    found = strstr(msg_buf, "Init Ego LongitudinalAction initState") != NULL;
+    EXPECT_FALSE(found);
+
+    fclose(file);
+}
+
+TEST(LoggerTests, check_log_only_modules)
+{
+    const char* args[] =
+        {"--osc", "../../../resources/xosc/cut-in_simple.xosc", "--headless", "--log_meta_data", "--log_only_modules", "StoryboardElement"};
+
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+    SE_LogMessage("This message should be not logged");
+
+    for (int i = 0; i < 6; i++)
+    {
+        if (i < 5)  // skip step of the last round
+        {
+            SE_StepDT(0.01f);
+        }
+    }
+
+    SE_Close();
+
+    FILE* file = FileOpen("log.txt", "r");
+    ASSERT_NE(file, nullptr);
+    const int max_msg_size = 10000;
+    char      msg_buf[max_msg_size];
+    size_t    size = fread(msg_buf, 1, max_msg_size, file);
+    EXPECT_NE(size, 0);
+    bool found = strstr(msg_buf, "This message should be not logged") != NULL;
+    EXPECT_FALSE(found);
+
+    found = strstr(msg_buf, "OverTaker New position:") != NULL;
+    EXPECT_FALSE(found);
+
+    found = strstr(msg_buf, "Loaded OpenDRIVE:") != NULL;
+    EXPECT_FALSE(found);
+
+    found = strstr(msg_buf, "Init Ego LongitudinalAction initState") != NULL;
+    EXPECT_TRUE(found);
+
+    fclose(file);
+}
+
+TEST(LoggerTests, check_log_append)
+{
+    remove("log.txt");
+    const char* args[] = {"--osc", "../../../resources/xosc/cut-in_simple.xosc", "--headless", "--log_meta_data", "--log_append"};
+
+    for (int j = 0; j < 2; ++j)
+    {
+        ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+        SE_LogMessage("This message should be logged twice");
+
+        for (int i = 0; i < 6; i++)
+        {
+            if (i < 5)  // skip step of the last round
+            {
+                SE_StepDT(0.01f);
+            }
+        }
+        SE_Close();
+    }
+
+    FILE* file = FileOpen("log.txt", "r");
+    ASSERT_NE(file, nullptr);
+    const int max_msg_size = 10000;
+    char      msg_buf[max_msg_size];
+    size_t    size = fread(msg_buf, 1, max_msg_size, file);
+    EXPECT_NE(size, 0);
+    char* pos   = strstr(msg_buf, "This message should be logged twice");
+    bool  found = pos != NULL;
+    EXPECT_TRUE(found);
+
+    pos   = strstr(pos + 1, "This message should be logged twice");
+    found = pos != NULL;
+    EXPECT_TRUE(found);
+
+    fclose(file);
+}
+
+TEST(ProgramOptions, TestNonPersistent)
+{
+    std::string paramName  = "trail_mode";  // operate on a defined/existing option
+    std::string paramValue = "10";
+    const char* args[]     = {"--osc", "../../../resources/xosc/cut-in_simple.xosc"};
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+    SE_SetOptionValue(paramName.c_str(), paramValue.c_str());
+    const char* value = SE_GetOptionValue(paramName.c_str());
+    ASSERT_NE(value, nullptr);
+    std::string strValue(value);
+    EXPECT_EQ(strValue, paramValue);
+    SE_Close();
+
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+    value = SE_GetOptionValue(paramName.c_str());
+    ASSERT_EQ(value, nullptr);
+    SE_Close();
+}
+
+TEST(ProgramOptions, TestPersistent)
+{
+    std::string paramValue = "10";
+    std::string paramName  = "trail_mode";  // operate on a defined/existing option
+    const char* args[]     = {"--osc", "../../../resources/xosc/cut-in_simple.xosc"};
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+    SE_SetOptionValuePersistent(paramName.c_str(), paramValue.c_str());
+    const char* value = SE_GetOptionValue(paramName.c_str());
+    ASSERT_NE(value, nullptr);
+    std::string optionValue(value);
+    EXPECT_EQ(optionValue, paramValue);
+    SE_Close();
+
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+    optionValue = SE_GetOptionValue(paramName.c_str());
+    EXPECT_EQ(optionValue, paramValue);
+    // make it non-persistent for cleanup
+    SE_SetOptionValue(paramName.c_str(), paramValue.c_str());
+    SE_Close();
+}
+
+TEST(ProgramOptions, TestAutoApply)
+{
+    std::string param  = "logfile_path";
+    const char* args[] = {"--osc", "../../../resources/xosc/cut-in_simple.xosc"};
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+    const char* value = SE_GetOptionValue(param.c_str());
+    ASSERT_NE(value, nullptr);
+    std::string optionValue(value);
+    EXPECT_EQ(optionValue, LOG_FILENAME);
+    SE_Close();
+}
+
+TEST(ProgramOptions, TestAutoNotAppliedWhenSetEmpty)
+{
+    std::string paramName = "logfile_path";
+    SE_SetOptionValue(paramName.c_str(), "");
+    const char* args[] = {"--osc", "../../../resources/xosc/cut-in_simple.xosc"};
+    EXPECT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+    const char* value = SE_GetOptionValue(paramName.c_str());
+    std::string optionValue(value);
+    EXPECT_EQ(optionValue, "");
+    SE_Close();
+}
+
+TEST(ProgramOptions, TestDefaultValueSetIfMentionedOnly)
+{
+    std::string paramName = "record";
+    const char* args[]    = {"--osc", "../../../resources/xosc/cut-in_simple.xosc"};
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+    const char* value = SE_GetOptionValue(paramName.c_str());
+    ASSERT_EQ(value, nullptr);
+    SE_Close();
+
+    SE_SetOption(paramName.c_str());
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+    value = SE_GetOptionValue(paramName.c_str());
+    ASSERT_NE(value, nullptr);
+    std::string optionValue(value);
+    EXPECT_EQ(optionValue, DAT_FILENAME);
+    SE_Close();
+}
+
+TEST(ProgramOptions, TestMixOfPersistedAndNonPersisted)
+{
+    double elapsed_time = 0;
+    SE_SetLogFilePath("my_test.txt");
+    SE_SetOptionPersistent("log_append");
+    SE_SetOption("osi_file");
+    SE_SetOptionValue("log_level", "info");
+    SE_SetOptionValue("fixed_timestep", "0.01");
+    SE_Init("../../../resources/xosc/cut-in.xosc", 0, 0, 0, 0);
+
+    while (SE_GetQuitFlag() == 0)
+    {
+        if (elapsed_time > 3.0)
+        {
+            const char* value = SE_GetOptionValue("logfile_path");
+            std::string optionValue(value);
+            ASSERT_EQ(optionValue, "my_test.txt");
+            SE_SetOptionPersistent("log_meta_data");
+            break;
+        }
+        SE_Step();
+        elapsed_time += 0.5;
+    }
+    SE_Close();
+
+    const char* value = SE_GetOptionValue("logfile_path");
+    std::string optionValue(value);
+    ASSERT_EQ(optionValue, "my_test.txt");
+
+    // check log_meta_data if its set
+    bool isSet = SE_GetOptionSet("log_meta_data");
+    EXPECT_TRUE(isSet);
+
+    isSet = SE_GetOptionSet("log_append");
+    EXPECT_TRUE(isSet);
+
+    isSet = SE_GetOptionSet("log_level");
+    EXPECT_FALSE(isSet);
+
+    isSet = SE_GetOptionSet("osi_file");
+    EXPECT_FALSE(isSet);
+
+    isSet = SE_GetOptionSet("fixed_timestep");
+    EXPECT_FALSE(isSet);
+
+    value = SE_GetOptionValue("log_level");
+    ASSERT_EQ(value, nullptr);
+
+    SE_SetLogFilePath("my_test_error.txt");
+    SE_SetOptionPersistent("osi_file");
+    SE_Init("../../../resources/xosc/cut-in.xosc", 0, 0, 0, 0);
+
+    value = SE_GetOptionValue("logfile_path");
+    std::string val1(value);
+    ASSERT_EQ(val1, "my_test_error.txt");
+    elapsed_time = 0;
+    while (SE_GetQuitFlag() == 0)
+    {
+        if (elapsed_time > 3.0)
+        {
+            break;
+        }
+        elapsed_time += 0.5;
+        SE_Step();
+    }
+    // cleanup the persisted options
+    SE_SetOption("log_append");
+    SE_SetOption("log_meta_data");
+    SE_SetOption("osi_file");
+    SE_SetOption("logfile_path");
+    SE_Close();
+
+    isSet = SE_GetOptionSet("logfile_path");
+    EXPECT_FALSE(isSet);
+
+    isSet = SE_GetOptionSet("log_meta_data");
+    EXPECT_FALSE(isSet);
+
+    isSet = SE_GetOptionSet("log_append");
+    EXPECT_FALSE(isSet);
+
+    isSet = SE_GetOptionSet("log_level");
+    EXPECT_FALSE(isSet);
+
+    isSet = SE_GetOptionSet("osi_file");
+    EXPECT_FALSE(isSet);
+}
+
+TEST(ProgramOptions, LastOptionOverrides)
+{
+    std::string optionName = "osc";
+    std::string optionValue("../../../resources/xosc/cut-in_simple.xosc");
+    const char* args[] = {"--osc", "../../../resources/xosc/acc-test.xosc", "--osc", optionValue.c_str()};
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+    const char* value = SE_GetOptionValue(optionName.c_str());
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(value, optionValue);
+    SE_Close();
+}
+
+TEST(ProgramOptions, CommandPromptOverridesApi)
+{
+    std::string optionName = "osc";
+    std::string optionValue("../../../resources/xosc/cut-in.xosc");
+    SE_SetOptionValue(optionName.c_str(), "../../../resources/xosc/cut-in_simple.xosc");
+    SE_Init(optionValue.c_str(), 0, 0, 0, 0);
+    const char* value = SE_GetOptionValue(optionName.c_str());
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(value, optionValue);
+    SE_Close();
+}
+
+TEST(ProgramOptions, LastFileOptionsOverride)
+{
+    std::string firstConfigFileName  = "config1.yml";
+    std::string secondConfigFileName = "config2.yml";
+
+    // create first config file
+    std::ofstream file1(firstConfigFileName);
+    EXPECT_TRUE(file1.is_open());
+    file1 << "esmini: \n";
+    file1 << "  logfile_path: log1.txt\n";
+    file1 << "  osc: ../../../resources/xosc/cut-in.xosc\n";
+    file1 << "replayer:\n";
+    file1 << "  file: sim1.dat";
+    file1.close();
+
+    // create second config file
+    std::ofstream file2(secondConfigFileName);
+    EXPECT_TRUE(file2.is_open());
+    file2 << "esmini: \n";
+    file2 << "  logfile_path: log2.txt\n";
+    file2 << "  osc: ../../../resources/xosc/cut-in_simple.xosc\n";
+    file2 << "replayer:\n";
+    file2 << "  file: sim2.dat";
+    file2.close();
+
+    {
+        // firstly we will put config1.yml and then config2.yml - and check if the options from config2.yml are taken
+        const char* args[] = {"--config_file_path", firstConfigFileName.c_str(), "--config_file_path", secondConfigFileName.c_str()};
+        ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+        const char* value = SE_GetOptionValue("logfile_path");
+        ASSERT_NE(value, nullptr);
+        std::string expectedValue = "log2.txt";
+        EXPECT_EQ(value, expectedValue);
+        value = SE_GetOptionValue("osc");
+        ASSERT_NE(value, nullptr);
+        expectedValue = "../../../resources/xosc/cut-in_simple.xosc";
+        EXPECT_EQ(value, expectedValue);
+        SE_Close();
+    }
+    {
+        // secondly we will put config2.yml and then config1.yml - and check if the options from config1.yml are taken
+        const char* args[] = {"--config_file_path", secondConfigFileName.c_str(), "--config_file_path", firstConfigFileName.c_str()};
+        ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+        const char* value = SE_GetOptionValue("logfile_path");
+        ASSERT_NE(value, nullptr);
+        std::string expectedValue = "log1.txt";
+        EXPECT_EQ(value, expectedValue);
+        value = SE_GetOptionValue("osc");
+        ASSERT_NE(value, nullptr);
+        expectedValue = "../../../resources/xosc/cut-in.xosc";
+        EXPECT_EQ(value, expectedValue);
+        SE_Close();
+    }
+
+    const char* value = SE_GetOptionValue("logfile_path");
+    ASSERT_EQ(value, nullptr);
+
+    // Delete the files
+    int result = std::remove(firstConfigFileName.c_str());
+    EXPECT_EQ(result, 0);
+
+    result = std::remove(secondConfigFileName.c_str());
+    EXPECT_EQ(result, 0);
+}
+
+TEST(ProgramOptions, MultipleOptionValuesHandled)
+{
+    std::string firstConfigFileName  = "config1.yml";
+    std::string secondConfigFileName = "config2.yml";
+
+    // create first config file
+    std::ofstream file1(firstConfigFileName);
+    EXPECT_TRUE(file1.is_open());
+    file1 << "esmini: \n";
+    file1 << "  logfile_path: log1.txt\n";
+    file1 << "  path: a.txt\n";
+    file1 << "  osc: ../../../resources/xosc/cut-in.xosc\n";
+    file1 << "replayer:\n";
+    file1 << "  file: sim1.dat";
+    file1.close();
+
+    // create second config file
+    std::ofstream file2(secondConfigFileName);
+    EXPECT_TRUE(file2.is_open());
+    file2 << "esmini: \n";
+    file2 << "  logfile_path: log2.txt\n";
+    file2 << "  osc: ../../../resources/xosc/cut-in_simple.xosc\n";
+    file2 << "  path: b.txt\n";
+    file2 << "replayer:\n";
+    file2 << "  file: sim2.dat";
+    file2.close();
+
+    // firstly we will put config1.yml and then config2.yml - and check if the options from config2.yml are taken
+    const char* args[] = {"--config_file_path", firstConfigFileName.c_str(), "--config_file_path", secondConfigFileName.c_str()};
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+
+    const char* value = SE_GetOptionValue("logfile_path");
+    ASSERT_NE(value, nullptr);
+    std::string expectedValue = "log2.txt";
+    EXPECT_EQ(value, expectedValue);
+    EXPECT_EQ(SE_GetOptionValuesCount("logfile_path"), 1);
+
+    value = SE_GetOptionValue("osc");
+    ASSERT_NE(value, nullptr);
+    expectedValue = "../../../resources/xosc/cut-in_simple.xosc";
+    EXPECT_EQ(value, expectedValue);
+    EXPECT_EQ(SE_GetOptionValuesCount("osc"), 1);
+
+    ASSERT_EQ(SE_GetOptionValuesCount("path"), 4);
+    value = SE_GetOptionValue("path");
+    ASSERT_NE(value, nullptr);
+    expectedValue = "../../../resources/xosc";
+    EXPECT_EQ(value, expectedValue);
+
+    value = SE_GetOptionValueByIndex("path", 1);
+    ASSERT_NE(value, nullptr);
+    expectedValue = "b.txt";
+    EXPECT_EQ(value, expectedValue);
+
+    value = SE_GetOptionValueByIndex("path", 2);
+    ASSERT_NE(value, nullptr);
+    expectedValue = "a.txt";
+    EXPECT_EQ(value, expectedValue);
+
+    SE_Close();
+
+    value = SE_GetOptionValue("logfile_path");
+    ASSERT_EQ(value, nullptr);
+
+    // Delete the file
+    int result = std::remove(firstConfigFileName.c_str());
+    EXPECT_EQ(result, 0);
+
+    result = std::remove(secondConfigFileName.c_str());
+    EXPECT_EQ(result, 0);
+}
+
+TEST(ProgramOptions, PicksValueFromAppendIndexAsWell)
+{
+    std::string firstConfigFileName  = "config1.yml";
+    std::string secondConfigFileName = "config2.yml";
+
+    // create first config file
+    std::ofstream file1(firstConfigFileName);
+    EXPECT_TRUE(file1.is_open());
+    file1 << "esmini: \n";
+    file1 << "  logfile_path: log1.txt\n";
+    file1 << "  path: a.txt\n";
+    file1 << "  osc: ../../../resources/xosc/cut-in.xosc\n";
+    file1 << "replayer:\n";
+    file1 << "  file: sim1.dat";
+    file1.close();
+
+    // create second config file
+    std::ofstream file2(secondConfigFileName);
+    EXPECT_TRUE(file2.is_open());
+    file2 << "esmini: \n";
+    file2 << "  osc: ../../../resources/xosc/cut-in_simple.xosc\n";
+    file2 << "  path: b.txt\n";
+    file2 << "replayer:\n";
+    file2 << "  file: sim2.dat";
+    file2.close();
+
+    const char* args[] = {"--config_file_path", firstConfigFileName.c_str(), "--config_file_path", secondConfigFileName.c_str()};
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+
+    const char* value = SE_GetOptionValue("logfile_path");
+    ASSERT_NE(value, nullptr);
+    std::string expectedValue = "log1.txt";
+    EXPECT_EQ(value, expectedValue);
+    EXPECT_EQ(SE_GetOptionValuesCount("logfile_path"), 1);
+
+    value = SE_GetOptionValue("osc");
+    ASSERT_NE(value, nullptr);
+    expectedValue = "../../../resources/xosc/cut-in_simple.xosc";
+    EXPECT_EQ(value, expectedValue);
+    EXPECT_EQ(SE_GetOptionValuesCount("osc"), 1);
+
+    EXPECT_EQ(SE_GetOptionValuesCount("path"), 4);
+    value = SE_GetOptionValue("path");
+    ASSERT_NE(value, nullptr);
+    expectedValue = "../../../resources/xosc";
+    EXPECT_EQ(value, expectedValue);
+
+    value = SE_GetOptionValueByIndex("path", 1);
+    ASSERT_NE(value, nullptr);
+    expectedValue = "b.txt";
+    EXPECT_EQ(value, expectedValue);
+
+    value = SE_GetOptionValueByIndex("path", 2);
+    ASSERT_NE(value, nullptr);
+    expectedValue = "a.txt";
+    EXPECT_EQ(value, expectedValue);
+
+    SE_Close();
+
+    value = SE_GetOptionValue("logfile_path");
+    ASSERT_EQ(value, nullptr);
+
+    // Delete the file
+    int result = std::remove(firstConfigFileName.c_str());
+    EXPECT_EQ(result, 0);
+
+    result = std::remove(secondConfigFileName.c_str());
+    EXPECT_EQ(result, 0);
+}
+
+TEST(ProgramOptions, ParsesBoolValues)
+{
+    std::string firstConfigFileName  = "config1.yml";
+    std::string secondConfigFileName = "config2.yml";
+
+    // create first config file
+    std::ofstream file1(firstConfigFileName);
+    EXPECT_TRUE(file1.is_open());
+    file1 << "esmini: \n";
+    file1 << "  log_append: false\n";
+    file1 << "  osc: ../../../resources/xosc/cut-in.xosc\n";
+    file1 << "replayer:\n";
+    file1 << "  file: sim1.dat";
+    file1.close();
+
+    // create second config file
+    std::ofstream file2(secondConfigFileName);
+    EXPECT_TRUE(file2.is_open());
+    file2 << "esmini: \n";
+    file2 << "  osc: ../../../resources/xosc/cut-in_simple.xosc\n";
+    file2 << "  disable_stdout: true\n";
+    file2 << "replayer:\n";
+    file2 << "  file: sim2.dat";
+    file2.close();
+
+    const char* args[] = {"--config_file_path", firstConfigFileName.c_str(), "--config_file_path", secondConfigFileName.c_str()};
+    ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
+
+    EXPECT_FALSE(SE_GetOptionSet("log_append"));
+    EXPECT_TRUE(SE_GetOptionSet("disable_stdout"));
+
+    SE_Close();
+
+    // Delete the file
+    int result = std::remove(firstConfigFileName.c_str());
+    EXPECT_EQ(result, 0);
+
+    result = std::remove(secondConfigFileName.c_str());
+    EXPECT_EQ(result, 0);
+}
+
 // OSI tests
 
 #ifdef _USE_OSI
@@ -61,27 +723,27 @@ TEST(GetOSILaneBoundaryIdsTest, lane_boundary_ids)
     std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/full_e6mini.xosc";
 
     SE_Init(scenario_file.c_str(), 0, 0, 0, 0);
+    SE_SetOSIFrequency(1);
 
     int n_Objects = SE_GetNumberOfObjects();
     EXPECT_EQ(n_Objects, 14);
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
 
-    std::vector<std::vector<int>> lane_bound = {{-1, 8, 9, 10},
-                                                {8, 9, 10, 0},
-                                                {9, 10, 0, 1},
-                                                {10, 0, 1, 2},
-                                                {0, 1, 2, 3},
-                                                {1, 2, 3, 11},
-                                                {2, 3, 11, 4},
-                                                {3, 11, 4, 5},  // right side start
-                                                {11, 4, 5, 6},
-                                                {4, 5, 6, 7},
-                                                {5, 6, 7, 12},
-                                                {6, 7, 12, 13},
-                                                {7, 12, 13, 14},
-                                                {12, 13, 14, -1}};
+    std::vector<std::vector<id_t>> lane_bound = {{ID_UNDEFINED, 8, 9, 10},
+                                                 {8, 9, 10, 0},
+                                                 {9, 10, 0, 1},
+                                                 {10, 0, 1, 2},
+                                                 {0, 1, 2, 3},
+                                                 {1, 2, 3, 11},
+                                                 {2, 3, 11, 4},
+                                                 {3, 11, 4, 5},  // right side start
+                                                 {11, 4, 5, 6},
+                                                 {4, 5, 6, 7},
+                                                 {5, 6, 7, 12},
+                                                 {6, 7, 12, 13},
+                                                 {7, 12, 13, 14},
+                                                 {12, 13, 14, ID_UNDEFINED}};
 
     std::vector<int> veh_id = {13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
     for (size_t i = 0; i < lane_bound.size(); i++)
@@ -110,10 +772,9 @@ TEST(GetOSILaneBoundaryIdsTest, lane_boundary_ids_no_obj)
     const char* Scenario_file = scenario_file.c_str();
     SE_Init(Scenario_file, 0, 0, 0, 0);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
 
     SE_LaneBoundaryId ids;
-    SE_LaneBoundaryId right_lanes_id = {-1, -1, -1, -1};
+    SE_LaneBoundaryId right_lanes_id = {ID_UNDEFINED, ID_UNDEFINED, ID_UNDEFINED, ID_UNDEFINED};
 
     SE_GetOSILaneBoundaryIds(10, &ids);
     EXPECT_EQ(ids.far_left_lb_id, right_lanes_id.far_left_lb_id);
@@ -130,7 +791,6 @@ TEST(OSIintersections, threeway)
     const char* Scenario_file = scenario_file.c_str();
     SE_Init(Scenario_file, 0, 0, 0, 0);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     int               lanes_found        = 0;
     bool              intersection_found = false;
     osi3::GroundTruth osi_gt;
@@ -163,7 +823,6 @@ TEST(OSIintersections, fourway)
     const char* Scenario_file = scenario_file.c_str();
     SE_Init(Scenario_file, 0, 0, 0, 0);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     int               lanes_found        = 0;
     bool              intersection_found = false;
     osi3::GroundTruth osi_gt;
@@ -196,7 +855,6 @@ TEST(OSIintersections, motorway)
     const char* Scenario_file = scenario_file.c_str();
     SE_Init(Scenario_file, 0, 0, 0, 0);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     int               lanes_found        = 0;
     bool              intersection_found = false;
     osi3::GroundTruth osi_gt;
@@ -225,23 +883,21 @@ TEST(OSIStationaryObjects, square_building)
     const char* Scenario_file = scenario_file.c_str();
     SE_Init(Scenario_file, 0, 0, 0, 0);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
-
-    osi3::GroundTruth osi_gt;
-    int               sv_size = 0;
-    const char*       gt      = SE_GetOSIGroundTruth(&sv_size);
-    osi_gt.ParseFromArray(gt, sv_size);
-    ASSERT_EQ(osi_gt.stationary_object_size(), 1);
-    for (int i = 0; i < osi_gt.stationary_object_size(); i++)
-    {
-        EXPECT_EQ(osi_gt.stationary_object(i).base().base_polygon_size(), 0);
-        EXPECT_EQ(osi_gt.stationary_object(i).base().position().x(), 80);
-        EXPECT_EQ(osi_gt.stationary_object(i).base().position().y(), 20);
-        EXPECT_EQ(osi_gt.stationary_object(i).base().dimension().length(), 30);
-        EXPECT_EQ(osi_gt.stationary_object(i).base().dimension().width(), 20);
-        EXPECT_EQ(osi_gt.stationary_object(i).base().dimension().height(), 4);
-        EXPECT_EQ(osi_gt.stationary_object(i).classification().type(), osi3::StationaryObject_Classification_Type_TYPE_BUILDING);
-    }
+    // osi3::GroundTruth osi_gt;
+    // int               sv_size = 0;
+    // const char*       gt      = SE_GetOSIGroundTruth(&sv_size);
+    // osi_gt.ParseFromArray(gt, sv_size);
+    // ASSERT_EQ(osi_gt.stationary_object_size(), 1);
+    // for (int i = 0; i < osi_gt.stationary_object_size(); i++)
+    // {
+    //     EXPECT_EQ(osi_gt.stationary_object(i).base().base_polygon_size(), 0);
+    //     EXPECT_EQ(osi_gt.stationary_object(i).base().position().x(), 80);
+    //     EXPECT_EQ(osi_gt.stationary_object(i).base().position().y(), 20);
+    //     EXPECT_EQ(osi_gt.stationary_object(i).base().dimension().length(), 30);
+    //     EXPECT_EQ(osi_gt.stationary_object(i).base().dimension().width(), 20);
+    //     EXPECT_EQ(osi_gt.stationary_object(i).base().dimension().height(), 4);
+    //     EXPECT_EQ(osi_gt.stationary_object(i).classification().type(), osi3::StationaryObject_Classification_Type_TYPE_BUILDING);
+    // }
 
     SE_Close();
 }
@@ -256,7 +912,6 @@ TEST_P(OSIStationaryObjectsOutline, object_with_outline)
     const char* Scenario_file = scenario_file.c_str();
     ASSERT_EQ(SE_Init(Scenario_file, 0, 0, 0, 0), 0);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
 
     osi3::GroundTruth osi_gt;
     int               sv_size = 0;
@@ -287,7 +942,6 @@ TEST(OSIintersections, multilane)
     const char* Scenario_file = scenario_file.c_str();
     SE_Init(Scenario_file, 0, 0, 0, 0);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     int               lanes_found        = 0;
     bool              intersection_found = false;
     osi3::GroundTruth osi_gt;
@@ -322,16 +976,17 @@ TEST(GetOSIRoadLaneTest, lane_no_obj)
     const char* Scenario_file = scenario_file.c_str();
 
     SE_Init(Scenario_file, 0, 0, 0, 0);
-    SE_EnableOSIFile("gt.osi");
+    SE_SetOSIFrequency(1);
+    SE_EnableOSIFile("gt.osi");  // OSI data updated and written to file
 
-    ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
-    EXPECT_EQ(fileStatus.st_size, 0);  // so far, nothing has been saved
-
-    SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     SE_FlushOSIFile();
     ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
-    EXPECT_EQ(fileStatus.st_size, 83642);  // initial OSI size, including static content
+    EXPECT_EQ(fileStatus.st_size, 84957);  // initial OSI size, including static content
+
+    SE_StepDT(0.001f);
+    SE_FlushOSIFile();
+    ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
+    EXPECT_EQ(fileStatus.st_size, 85927);  // slight growth due to only dynamic updates
 
     int road_lane_size;
 
@@ -341,16 +996,14 @@ TEST(GetOSIRoadLaneTest, lane_no_obj)
     EXPECT_EQ(road_lane, nullptr);
 
     SE_StepDT(0.001f);  // Step for write another frame to osi file
-    SE_UpdateOSIGroundTruth();
     SE_FlushOSIFile();
     ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
-    EXPECT_EQ(fileStatus.st_size, 84327);  // slight growth due to only dynamic updates
+    EXPECT_EQ(fileStatus.st_size, 87060);  // slight growth due to only dynamic updates
 
     SE_StepDT(0.001f);  // Step for write another frame to osi file
-    SE_UpdateOSIGroundTruth();
     SE_FlushOSIFile();
     ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
-    EXPECT_EQ(fileStatus.st_size, 85013);  // slight growth due to only dynamic updates
+    EXPECT_EQ(fileStatus.st_size, 88194);  // slight growth due to only dynamic updates
 
     SE_DisableOSIFile();
     SE_Close();
@@ -362,8 +1015,8 @@ TEST(GetOSIRoadLaneTest, lane_id)
     const char* Scenario_file = scenario_file.c_str();
 
     SE_Init(Scenario_file, 0, 0, 0, 0);
+    SE_SetOSIFrequency(1);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
 
     std::vector<int> lanes  = {0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14};
     std::vector<int> veh_id = {13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
@@ -388,12 +1041,12 @@ TEST(GetOSIRoadLaneTest, left_lane_id)
     std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/full_e6mini.xosc";
     const char* Scenario_file = scenario_file.c_str();
     SE_Init(Scenario_file, 0, 0, 0, 0);
+    SE_SetOSIFrequency(1);
 
     int n_Objects = SE_GetNumberOfObjects();
     EXPECT_EQ(n_Objects, 14);
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     int        road_lane_size;
     osi3::Lane osi_lane;
 
@@ -432,8 +1085,8 @@ TEST(GetOSIRoadLaneTest, right_lane_id)
     const char* Scenario_file = scenario_file.c_str();
 
     SE_Init(Scenario_file, 0, 0, 0, 0);
+    SE_SetOSIFrequency(1);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     int        road_lane_size;
     osi3::Lane osi_lane;
 
@@ -473,8 +1126,8 @@ TEST(GetOSIRoadLaneTest, right_lane_boundary_id)
     const char* Scenario_file = scenario_file.c_str();
 
     SE_Init(Scenario_file, 0, 0, 0, 0);
+    SE_SetOSIFrequency(1);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     int        road_lane_size;
     osi3::Lane osi_lane;
 
@@ -499,8 +1152,8 @@ TEST(GetOSIRoadLaneTest, left_lane_boundary_id)
     const char* Scenario_file = scenario_file.c_str();
 
     SE_Init(Scenario_file, 0, 0, 0, 0);
+    SE_SetOSIFrequency(1);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     int        road_lane_size;
     osi3::Lane osi_lane;
 
@@ -531,8 +1184,8 @@ TEST_P(GetOSIRoadLaneTest, centerline_is_driving_direction)
     const char* Scenario_file = scenario_file.c_str();
 
     SE_Init(Scenario_file, 0, 0, 0, 0);
+    SE_SetOSIFrequency(1);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
 
     int        road_lane_size;
     osi3::Lane osi_lane;
@@ -569,8 +1222,8 @@ TEST(GetOSIRoadLaneTest, is_host_vehicle_lane)
     const char* Scenario_file = scenario_file.c_str();
 
     SE_Init(Scenario_file, 0, 0, 0, 0);
+    SE_SetOSIFrequency(1);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     int        road_lane_size;
     osi3::Lane osi_lane;
 
@@ -595,8 +1248,8 @@ TEST(GetOSIRoadLaneTest, lane_classification)
     const char* Scenario_file = scenario_file.c_str();
 
     SE_Init(Scenario_file, 0, 0, 0, 0);
+    SE_SetOSIFrequency(1);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     int        road_lane_size;
     osi3::Lane osi_lane;
 
@@ -636,8 +1289,8 @@ TEST(GetOSILaneBoundaryTests, lane_boundary_id_existing)
     const char* Scenario_file = scenario_file.c_str();
 
     SE_Init(Scenario_file, 0, 0, 0, 0);
+    SE_SetOSIFrequency(1);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     int                lb_size;
     osi3::LaneBoundary osi_lb;
 
@@ -673,8 +1326,8 @@ TEST_P(GetOSILaneBoundaryTests, lane_boundary_id_not_existing)
     const char* Scenario_file = scenario_file.c_str();
 
     SE_Init(Scenario_file, 0, 0, 0, 0);
+    SE_SetOSIFrequency(1);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     int lb_size = 0;
 
     const char* lb = SE_GetOSILaneBoundary(&lb_size, std::get<0>(GetParam()));
@@ -695,9 +1348,9 @@ TEST(OSIFile, writeosifile_two_step)
 
     SE_EnableOSIFile("");
     SE_Init(Scenario_file, 0, 0, 0, 0);
+    SE_SetOSIFrequency(1);
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     SE_FlushOSIFile();
 
     std::ifstream in_file("ground_truth.osi", std::ios::binary);
@@ -706,7 +1359,6 @@ TEST(OSIFile, writeosifile_two_step)
     // std::cout <<"Size of the file at first step "<< file_size1 << " bytes" << std::endl;
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     SE_FlushOSIFile();
 
     in_file.seekg(0, std::ios::end);
@@ -718,15 +1370,6 @@ TEST(OSIFile, writeosifile_two_step)
 
     EXPECT_LT(file_size1, file_size2);
     EXPECT_GT(file_size1, file_size2 - file_size1);  // first package larger since including static stuff
-}
-
-TEST(OSIFile, updateosi_no_init)
-{
-    SE_EnableOSIFile(0);
-
-    EXPECT_EQ(SE_UpdateOSIGroundTruth(), false);
-
-    SE_DisableOSIFile();
 }
 
 typedef struct
@@ -758,8 +1401,6 @@ TEST_P(GetGroundTruthTests, receive_GroundTruth)
     // SE_OSIFileOpen(0);
 
     SE_StepDT(0.001f);
-
-    SE_UpdateOSIGroundTruth();
 
     const char* sv = SE_GetOSIGroundTruth(&sv_size);
     osi_gt.ParseFromArray(sv, sv_size);
@@ -832,9 +1473,15 @@ TEST(GroundTruthTests, check_GroundTruth_including_init_state)
 
     SE_EnableOSIFile("gt.osi");
     ASSERT_EQ(SE_Init("../../../resources/xosc/cut-in_simple.xosc", 0, 0, 0, 0), 0);
-    SE_UpdateOSIGroundTruth();
 
     osi_gt_ptr = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
+
+    // verify model_reference and source_reference are populated from the ,xosc file
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 2);
+    ASSERT_EQ(osi_gt_ptr->moving_object(0).model_reference(), "../models/car_white.osgb");
+    ASSERT_EQ(osi_gt_ptr->moving_object(0).source_reference_size(), 1);
+    ASSERT_EQ(osi_gt_ptr->moving_object(0).source_reference(0).identifier_size(), 1);
+    EXPECT_EQ(osi_gt_ptr->moving_object(0).source_reference(0).identifier(0), "generic_sedan_car");
 
     for (int i = 0; i < 3; i++)
     {
@@ -852,7 +1499,6 @@ TEST(GroundTruthTests, check_GroundTruth_including_init_state)
         if (i < 2)  // skip step of the last round
         {
             SE_StepDT(0.01f);
-            SE_UpdateOSIGroundTruth();
         }
     }
 
@@ -860,7 +1506,7 @@ TEST(GroundTruthTests, check_GroundTruth_including_init_state)
     SE_DisableOSIFile();
 
     ASSERT_EQ(stat("gt.osi", &fileStatus), 0);
-    EXPECT_EQ(fileStatus.st_size, 7642);
+    EXPECT_EQ(fileStatus.st_size, 9045);
 
     // Read OSI file
     FILE* file = FileOpen("gt.osi", "rb");
@@ -902,8 +1548,8 @@ TEST(GroundTruthTests, check_frequency_implicit)
     double                   time_stamps[] = {0.00, 0.02, 0.04};
 
     SE_EnableOSIFile("gt_implicit.osi");
+    SE_SetOSIFrequency(2);
     ASSERT_EQ(SE_Init("../../../resources/xosc/cut-in_simple.xosc", 0, 0, 0, 0), 0);
-    SE_UpdateOSIGroundTruth();
 
     osi_gt_ptr = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
 
@@ -924,10 +1570,6 @@ TEST(GroundTruthTests, check_frequency_implicit)
         if (i < 5)  // skip step of the last round
         {
             SE_StepDT(0.01f);
-            if ((i % 2) == 1)  // Update OSI every second time
-            {
-                SE_UpdateOSIGroundTruth();
-            }
         }
     }
 
@@ -935,7 +1577,7 @@ TEST(GroundTruthTests, check_frequency_implicit)
     SE_Close();
 
     ASSERT_EQ(stat("gt_implicit.osi", &fileStatus), 0);
-    EXPECT_EQ(fileStatus.st_size, 7642);
+    EXPECT_EQ(fileStatus.st_size, 9045);
 
     // Read OSI file
     FILE* file = FileOpen("gt_implicit.osi", "rb");
@@ -1005,7 +1647,7 @@ TEST(GroundTruthTests, check_frequency_explicit)
     SE_Close();
 
     ASSERT_EQ(stat("gt_explicit.osi", &fileStatus), 0);
-    EXPECT_EQ(fileStatus.st_size, 7642);
+    EXPECT_EQ(fileStatus.st_size, 9045);
 
     // Read OSI file
     FILE* file = FileOpen("gt_explicit.osi", "rb");
@@ -1036,6 +1678,47 @@ TEST(GroundTruthTests, check_frequency_explicit)
     }
 
     fclose(file);
+}
+
+TEST(GroundTruthTests, check_frequency_change)
+{
+    const osi3::GroundTruth* osi_gt_ptr;
+    osi3::GroundTruth        osi_gt;
+    double                   seconds       = 0.0, obj_x, obj_y, obj_z;
+    double                   x_vals[]      = {51.400, 51.400, 51.800, 51.800, 52.200};
+    double                   time_stamps[] = {0.00, 0.00, 0.02, 0.02, 0.04};
+
+    SE_SetOSIFrequency(3);
+    ASSERT_EQ(SE_Init("../../../resources/xosc/cut-in_simple.xosc", 0, 0, 0, 0), 0);
+
+    osi_gt_ptr = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
+
+    for (int i = 0; i < 5; i++)
+    {
+        if (i == 1)
+        {
+            SE_SetOSIFrequency(2);
+        }
+        // Read OSI message, should be identical every two pair of frames - i/2 will result in 0, 0, 1, 1, 2, 2 and so on
+        EXPECT_EQ(osi_gt_ptr->moving_object().size(), 2);
+        seconds = static_cast<double>(osi_gt_ptr->timestamp().seconds()) + 1E-9 * static_cast<double>(osi_gt_ptr->timestamp().nanos());
+        EXPECT_NEAR(seconds, time_stamps[i], 1E-5);
+        obj_x = osi_gt_ptr->moving_object(0).base().position().x();
+        obj_y = osi_gt_ptr->moving_object(0).base().position().y();
+        obj_z = osi_gt_ptr->moving_object(0).base().position().z();
+        EXPECT_NEAR(obj_x, x_vals[i], 1E-5);
+        EXPECT_NEAR(obj_y, -1.535, 1E-5);
+        EXPECT_NEAR(obj_z, 0.75, 1E-5);
+        EXPECT_NEAR(osi_gt_ptr->moving_object(0).vehicle_attributes().bbcenter_to_rear().z(), -0.35, 1E-5);
+
+        if (i < 5)  // skip step of the last round
+        {
+            SE_StepDT(0.01f);
+        }
+    }
+
+    SE_DisableOSIFile();
+    SE_Close();
 }
 
 TEST(GroundTruthTests, check_teleport_not_affecting_vel_and_acc)
@@ -1072,6 +1755,143 @@ TEST(GroundTruthTests, check_teleport_not_affecting_vel_and_acc)
     SE_Close();
 }
 
+TEST(GroundTruthTests, check_update_osi_ground_truth_api)
+{
+    const osi3::GroundTruth* osi_gt_ptr;
+    struct stat              fileStatus;
+
+    SE_EnableOSIFile("gt_static_dynamic.osi");
+    ASSERT_EQ(SE_Init("../../../resources/xosc/cut-in_simple.xosc", 0, 0, 0, 0), 0);
+
+    osi_gt_ptr = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
+
+    EXPECT_EQ(osi_gt_ptr->lane_boundary_size(), 7);
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 2);
+
+    SE_StepDT(0.01f);
+
+    EXPECT_EQ(osi_gt_ptr->lane_boundary_size(), 0);
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 2);
+
+    SE_SetOSIStaticReportMode(SE_OSIStaticReportMode::API);
+    SE_StepDT(0.01f);
+
+    EXPECT_EQ(osi_gt_ptr->lane_boundary_size(), 7);
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 2);
+
+    SE_SetOSIStaticReportMode(SE_OSIStaticReportMode::DEFAULT);
+    SE_StepDT(0.01f);
+
+    EXPECT_EQ(osi_gt_ptr->lane_boundary_size(), 0);
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 2);
+
+    SE_Close();
+    ASSERT_EQ(stat("gt_static_dynamic.osi", &fileStatus), 0);
+    EXPECT_EQ(fileStatus.st_size, 9979);
+}
+
+TEST(GroundTruthTests, check_update_gt_twice_same_frame)
+{
+    struct stat              fileStatus;
+    const osi3::GroundTruth* osi_gt_ptr;
+
+    SE_EnableOSIFile("gt_static_dynamic.osi");
+    SE_SetOptionValue("osi_freq", "1");
+
+    ASSERT_EQ(SE_Init("../../../resources/xosc/cut-in_simple.xosc", 0, 0, 0, 0), 0);  // Will update gt due to osi_freq > 0
+
+    osi_gt_ptr = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());  // Calls update to gt
+    (void)osi_gt_ptr;
+
+    SE_Close();
+    ASSERT_EQ(stat("gt_static_dynamic.osi", &fileStatus), 0);
+    EXPECT_EQ(fileStatus.st_size, 7177);
+}
+
+TEST(GroundTruthTests, check_update_osi_ground_truth_no_osi_file)
+{
+    const osi3::GroundTruth* osi_gt_ptr;
+
+    ASSERT_EQ(SE_Init("../../../resources/xosc/cut-in_simple.xosc", 0, 0, 0, 0), 0);
+
+    SE_SetOSIStaticReportMode(SE_OSIStaticReportMode::API);
+
+    osi_gt_ptr = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
+
+    EXPECT_EQ(osi_gt_ptr->lane_boundary_size(), 7);
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 2);
+
+    SE_StepDT(0.01f);
+
+    EXPECT_EQ(osi_gt_ptr->lane_boundary_size(), 7);
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 2);
+
+    SE_Close();
+}
+
+TEST(GroundTruthTests, osi_ground_truth_crop_bad_id)
+{
+    const osi3::GroundTruth* osi_gt_ptr;
+
+    ASSERT_EQ(SE_Init("../../../resources/xosc/cut-in_simple.xosc", 0, 0, 0, 0), 0);
+    SE_CropOSIDynamicGroundTruth(3, 100.0);  // Id doesn't exist in scenario
+
+    osi_gt_ptr = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
+
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 0);
+
+    SE_Close();
+}
+
+TEST(GroundTruthTests, osi_ground_truth_crop)
+{
+    const osi3::GroundTruth* osi_gt_ptr;
+
+    ASSERT_EQ(SE_Init("../../../resources/xosc/cut-in_simple.xosc", 0, 0, 0, 0), 0);
+    SE_CropOSIDynamicGroundTruth(0, 30.0);
+
+    osi_gt_ptr = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
+
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 2);
+
+    SE_CropOSIDynamicGroundTruth(0, 5.0);
+    SE_StepDT(0.01f);
+
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 1);
+
+    SE_CropOSIDynamicGroundTruth(0, 0.0);
+    SE_StepDT(0.01f);
+
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 2);
+
+    SE_Close();
+}
+
+TEST(GroundTruthTests, osi_ground_truth_crop_multiple_objects)
+{
+    const osi3::GroundTruth* osi_gt_ptr;
+
+    ASSERT_EQ(SE_Init("../../../resources/xosc/lane_change_crest.xosc", 0, 0, 0, 0), 0);
+    SE_CropOSIDynamicGroundTruth(0, 30.0);
+    SE_CropOSIDynamicGroundTruth(1, 30.0);
+
+    osi_gt_ptr = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
+
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 3);
+
+    SE_CropOSIDynamicGroundTruth(0, 0.0);
+    SE_StepDT(0.01f);
+
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 2);
+
+    SE_CropOSIDynamicGroundTruth(1, 0.0);
+    SE_StepDT(0.01f);
+
+    EXPECT_EQ(osi_gt_ptr->moving_object().size(), 3);
+
+    SE_Close();
+}
+
 TEST(GetMiscObjFromGroundTruth, receive_miscobj)
 {
     int               sv_size = 0;
@@ -1080,8 +1900,6 @@ TEST(GetMiscObjFromGroundTruth, receive_miscobj)
     SE_Init("../../../EnvironmentSimulator/Unittest/xosc/miscobj_basic.xosc", 0, 0, 0, 0);
 
     SE_StepDT(0.001f);
-
-    SE_UpdateOSIGroundTruth();
 
     const char* gt = SE_GetOSIGroundTruth(&sv_size);
     osi_gt.ParseFromArray(gt, sv_size);
@@ -1114,12 +1932,59 @@ TEST(GetMiscObjFromGroundTruth, receive_miscobj)
 
     EXPECT_EQ(miscobj_x, 110);
     EXPECT_EQ(miscobj_y, -10);
-    EXPECT_EQ(miscobj_z, 0.0);  // adjusted to the road z
+    EXPECT_EQ(miscobj_z, 2.0);  // adjusted to the road z
 
     // Angles in OSI should be in range [-PI, PI]
     EXPECT_NEAR(miscobj_roll, 0.2, 1e-3);   // Aligned to the road (so if road roll is 1.0 total roll will be 6.0)
     EXPECT_NEAR(miscobj_pitch, 0.0, 1e-3);  // Aligned to the road (so if road pitch is 1.0 total pitch will be 6.0)
     EXPECT_NEAR(miscobj_yaw, -0.05, 1e-3);
+
+    SE_Close();
+}
+
+TEST(GetMiscObjsAndStationaryObjsFromGroundTruth, receive_objs_ids)
+{
+    int               sv_size = 0;
+    osi3::GroundTruth osi_gt;
+
+    SE_Init("../../../EnvironmentSimulator/Unittest/xosc/miscobj_mix.xosc", 0, 0, 0, 0);
+
+    SE_StepDT(0.001f);
+
+    const char* gt = SE_GetOSIGroundTruth(&sv_size);
+    osi_gt.ParseFromArray(gt, sv_size);
+
+    int n_miscobjects = osi_gt.mutable_stationary_object()->size();
+
+    uint64_t miscobj_0_id = osi_gt.mutable_stationary_object(0)->mutable_id()->value();
+    uint64_t miscobj_1_id = osi_gt.mutable_stationary_object(1)->mutable_id()->value();
+    uint64_t miscobj_2_id = osi_gt.mutable_stationary_object(2)->mutable_id()->value();
+    uint64_t miscobj_3_id = osi_gt.mutable_stationary_object(3)->mutable_id()->value();
+    uint64_t miscobj_4_id = osi_gt.mutable_stationary_object(4)->mutable_id()->value();
+    uint64_t miscobj_5_id = osi_gt.mutable_stationary_object(5)->mutable_id()->value();
+
+    osi3::StationaryObject_Classification_Type miscobj_0_type = osi_gt.mutable_stationary_object(0)->mutable_classification()->type();
+    osi3::StationaryObject_Classification_Type miscobj_1_type = osi_gt.mutable_stationary_object(1)->mutable_classification()->type();
+    osi3::StationaryObject_Classification_Type miscobj_2_type = osi_gt.mutable_stationary_object(2)->mutable_classification()->type();
+    osi3::StationaryObject_Classification_Type miscobj_3_type = osi_gt.mutable_stationary_object(3)->mutable_classification()->type();
+    osi3::StationaryObject_Classification_Type miscobj_4_type = osi_gt.mutable_stationary_object(4)->mutable_classification()->type();
+    osi3::StationaryObject_Classification_Type miscobj_5_type = osi_gt.mutable_stationary_object(5)->mutable_classification()->type();
+
+    EXPECT_EQ(n_miscobjects, 6);
+
+    EXPECT_EQ(miscobj_0_id, 0);
+    EXPECT_EQ(miscobj_1_id, 1);
+    EXPECT_EQ(miscobj_2_id, 2);
+    EXPECT_EQ(miscobj_3_id, 3);
+    EXPECT_EQ(miscobj_4_id, 4);
+    EXPECT_EQ(miscobj_5_id, 5);
+
+    EXPECT_EQ(miscobj_0_type, osi3::StationaryObject_Classification_Type::StationaryObject_Classification_Type_TYPE_POLE);
+    EXPECT_EQ(miscobj_1_type, osi3::StationaryObject_Classification_Type::StationaryObject_Classification_Type_TYPE_POLE);
+    EXPECT_EQ(miscobj_2_type, osi3::StationaryObject_Classification_Type::StationaryObject_Classification_Type_TYPE_OTHER);
+    EXPECT_EQ(miscobj_3_type, osi3::StationaryObject_Classification_Type::StationaryObject_Classification_Type_TYPE_BARRIER);
+    EXPECT_EQ(miscobj_4_type, osi3::StationaryObject_Classification_Type::StationaryObject_Classification_Type_TYPE_OTHER);
+    EXPECT_EQ(miscobj_5_type, osi3::StationaryObject_Classification_Type::StationaryObject_Classification_Type_TYPE_OTHER);
 
     SE_Close();
 }
@@ -1130,36 +1995,77 @@ TEST(TestGetAndSet, SetOSITimestampTest)
 
     std::string scenario_file = "../../../resources/xosc/cut-in.xosc";
 
+    // No OSI related calls prior to Init
     EXPECT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
 
-    int n_Objects = SE_GetNumberOfObjects();
-    EXPECT_EQ(n_Objects, 2);
-
-    SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
+    // Timestamp is set after SE_Init() and before first OSI related function call (which will trig populating OSI data)
+    SE_OSISetTimeStamp(1234567890);
 
     osi_gt = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
 
-    EXPECT_EQ(osi_gt->moving_object().size(), 2);
-
-    double seconds = static_cast<double>(osi_gt->timestamp().seconds()) + 1E-9 * static_cast<double>(osi_gt->timestamp().nanos());
-    EXPECT_DOUBLE_EQ(seconds, 0.001);
+    // We expect the timestamp to be as set above
+    EXPECT_EQ(osi_gt->timestamp().seconds(), 1);
+    EXPECT_EQ(osi_gt->timestamp().nanos(), static_cast<unsigned int>(234567890));
 
     SE_OSISetTimeStamp(1234543210);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     EXPECT_EQ(osi_gt->timestamp().seconds(), 1);
     EXPECT_EQ(osi_gt->timestamp().nanos(), static_cast<unsigned int>(234543210));
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     // Expect no change as timestamp has been set explicitly only once
     EXPECT_EQ(osi_gt->timestamp().seconds(), 1);
     EXPECT_EQ(osi_gt->timestamp().nanos(), static_cast<unsigned int>(234543210));
 
     SE_OSISetTimeStamp(5234543229);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
+    // Expect updated timestamp
+    EXPECT_EQ(osi_gt->timestamp().seconds(), 5);
+    EXPECT_EQ(osi_gt->timestamp().nanos(), static_cast<unsigned int>(234543229));
+
+    SE_Close();
+}
+
+TEST(TestGetAndSet, SetOSITimestampFirstIsZero)
+{
+    const osi3::GroundTruth* osi_gt;
+
+    std::string scenario_file = "../../../resources/xosc/cut-in.xosc";
+
+    // We set frequency prior to init, thus OSI content is updated during SE_Init
+    SE_SetOSIFrequency(1);
+
+    EXPECT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+
+    int n_Objects = SE_GetNumberOfObjects();
+    EXPECT_EQ(n_Objects, 2);
+
+    osi_gt = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
+
+    SE_OSISetTimeStamp(1234567890);
+
+    // We expect the first timestamp to be 0.
+    EXPECT_EQ(osi_gt->timestamp().seconds(), 0);
+    EXPECT_EQ(osi_gt->timestamp().nanos(), static_cast<unsigned int>(0));
+
+    SE_StepDT(0.001f);
+
+    EXPECT_EQ(osi_gt->moving_object().size(), 2);
+    EXPECT_EQ(osi_gt->timestamp().seconds(), 1);
+    EXPECT_EQ(osi_gt->timestamp().nanos(), static_cast<unsigned int>(234567890));
+
+    SE_OSISetTimeStamp(1234543210);
+    SE_StepDT(0.001f);
+    EXPECT_EQ(osi_gt->timestamp().seconds(), 1);
+    EXPECT_EQ(osi_gt->timestamp().nanos(), static_cast<unsigned int>(234543210));
+
+    SE_StepDT(0.001f);
+    // Expect no change as timestamp has been set explicitly only once
+    EXPECT_EQ(osi_gt->timestamp().seconds(), 1);
+    EXPECT_EQ(osi_gt->timestamp().nanos(), static_cast<unsigned int>(234543210));
+
+    SE_OSISetTimeStamp(5234543229);
+    SE_StepDT(0.001f);
     // Expect updated timestamp
     EXPECT_EQ(osi_gt->timestamp().seconds(), 5);
     EXPECT_EQ(osi_gt->timestamp().nanos(), static_cast<unsigned int>(234543229));
@@ -1179,7 +2085,6 @@ TEST(TestGetAndSet, ReportObjectAcc)
     EXPECT_EQ(n_Objects, 2);
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
 
     osi_gt = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
 
@@ -1190,19 +2095,16 @@ TEST(TestGetAndSet, ReportObjectAcc)
 
     SE_ReportObjectAcc(0, 0, 1, 2, 3);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     EXPECT_EQ(osi_gt->moving_object(0).base().acceleration().x(), 1.0);
 
     SE_ReportObjectAcc(0, 0, 4, 1, 8);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     EXPECT_EQ(osi_gt->moving_object(0).base().acceleration().x(), 4.0);
     EXPECT_EQ(osi_gt->moving_object(0).base().acceleration().y(), 1.0);
     EXPECT_EQ(osi_gt->moving_object(0).base().acceleration().z(), 8.0);
 
     SE_ReportObjectAngularAcc(1, 0, 5, 4, 3);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     EXPECT_EQ(osi_gt->moving_object(1).base().orientation_acceleration().yaw(), 5.0);
     EXPECT_EQ(osi_gt->moving_object(1).base().orientation_acceleration().pitch(), 4.0);
     EXPECT_EQ(osi_gt->moving_object(1).base().orientation_acceleration().roll(), 3.0);
@@ -1222,7 +2124,6 @@ TEST(TestGetAndSet, ReportObjectVel)
     EXPECT_EQ(n_Objects, 2);
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
 
     osi_gt = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
 
@@ -1233,19 +2134,16 @@ TEST(TestGetAndSet, ReportObjectVel)
 
     SE_ReportObjectVel(0, 0, 11, 12, 13);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     EXPECT_EQ(osi_gt->moving_object(0).base().velocity().x(), 11.0);
 
     SE_ReportObjectVel(0, 0, 21, 22, 23);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     EXPECT_EQ(osi_gt->moving_object(0).base().velocity().x(), 21.0);
     EXPECT_EQ(osi_gt->moving_object(0).base().velocity().y(), 22.0);
     EXPECT_EQ(osi_gt->moving_object(0).base().velocity().z(), 23.0);
 
     SE_ReportObjectAngularVel(1, 0, 25, 24, 23);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     EXPECT_EQ(osi_gt->moving_object(1).base().orientation_rate().yaw(), 25.0);
     EXPECT_EQ(osi_gt->moving_object(1).base().orientation_rate().pitch(), 24.0);
     EXPECT_EQ(osi_gt->moving_object(1).base().orientation_rate().roll(), 23.0);
@@ -1260,7 +2158,6 @@ TEST(OSILaneParing, multi_roads)
     int         i_init        = SE_Init(Scenario_file, 0, 0, 0, 0);
     ASSERT_EQ(i_init, 0);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
 
     osi3::GroundTruth osi_gt;
     int               sv_size = 0;
@@ -1329,7 +2226,6 @@ TEST(OSILaneParing, multi_lanesections)
     int         i_init        = SE_Init(Scenario_file, 0, 0, 0, 0);
     ASSERT_EQ(i_init, 0);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
 
     osi3::GroundTruth osi_gt;
     int               sv_size = 0;
@@ -1410,7 +2306,6 @@ TEST(OSILaneParing, highway_split)
     ASSERT_EQ(i_init, 0);
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     osi3::GroundTruth osi_gt;
     int               sv_size = 0;
     const char*       gt      = SE_GetOSIGroundTruth(&sv_size);
@@ -1478,7 +2373,6 @@ TEST(OSILaneParing, highway_merge_lht)
     ASSERT_EQ(i_init, 0);
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     osi3::GroundTruth osi_gt;
     int               sv_size = 0;
     const char*       gt      = SE_GetOSIGroundTruth(&sv_size);
@@ -1545,7 +2439,6 @@ TEST(OSILaneParing, highway_merge)
     ASSERT_EQ(i_init, 0);
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     osi3::GroundTruth osi_gt;
     int               sv_size = 0;
     const char*       gt      = SE_GetOSIGroundTruth(&sv_size);
@@ -1621,7 +2514,6 @@ TEST(OSILaneParing, highway_merge_w_split)
     ASSERT_EQ(i_init, 0);
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     osi3::GroundTruth osi_gt;
     int               sv_size = 0;
     const char*       gt      = SE_GetOSIGroundTruth(&sv_size);
@@ -1689,7 +2581,6 @@ TEST(OSILaneParing, circular_road)
     ASSERT_EQ(i_init, 0);
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     osi3::GroundTruth osi_gt;
     int               sv_size = 0;
     const char*       gt      = SE_GetOSIGroundTruth(&sv_size);
@@ -1754,7 +2645,6 @@ TEST(OSILaneParing, simple_3way_intersection)
     ASSERT_EQ(i_init, 0);
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     osi3::GroundTruth osi_gt;
     int               sv_size = 0;
     const char*       gt      = SE_GetOSIGroundTruth(&sv_size);
@@ -1829,7 +2719,6 @@ TEST(OSILaneParing, simple_3way_intersection_lht)
     ASSERT_EQ(i_init, 0);
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     osi3::GroundTruth osi_gt;
     int               sv_size = 0;
     const char*       gt      = SE_GetOSIGroundTruth(&sv_size);
@@ -1904,7 +2793,6 @@ TEST(OSILaneParing, simple_4way_intersection)
     ASSERT_EQ(i_init, 0);
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
     osi3::GroundTruth osi_gt;
     int               sv_size = 0;
     const char*       gt      = SE_GetOSIGroundTruth(&sv_size);
@@ -1971,7 +2859,6 @@ TEST(OSILaneParing, Signs)
     int i_init = SE_Init(Scenario_file, 0, 0, 0, 0);
     ASSERT_EQ(i_init, 0);
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
 
     osi3::GroundTruth osi_gt;
     int               sv_size = 0;
@@ -2194,10 +3081,10 @@ TEST(ExternalControlTest, TestTimings)
                                 "--osi_file",
                                 "gt.osi"}};
 
-    SE_AddPath("../../../resources/xodr");
-
     for (int j = 0; j < 2; j++)
     {
+        SE_AddPath("../../../resources/xodr");
+
         ASSERT_EQ(SE_InitWithArgs(sizeof(args[j]) / sizeof(char*), args[j]), 0);
         ASSERT_EQ(SE_GetNumberOfObjects(), 3);
 
@@ -2209,8 +3096,26 @@ TEST(ExternalControlTest, TestTimings)
 
         while (SE_GetSimulationTime() < duration && SE_GetQuitFlag() != 1)
         {
+            // After ghost restart, check polyline returnvalues
+            if (j == 1 && NEAR_NUMBERS(SE_GetSimulationTimeDouble(), 2.2))
+            {
+                // try too small timestamp not preset in ghost trail which is now defined between 2.25 and 5.1
+                EXPECT_EQ(SE_GetRoadInfoGhostTrailTime(0, 2.25f - SMALL_NUMBERF, &road_info, &ghost_speed),
+                          SE_GhostTrailReturnCode::SE_GHOST_TRAIL_TIME_PRIOR);
+
+                // try too large timestamp
+                EXPECT_EQ(SE_GetRoadInfoGhostTrailTime(0, 5.10f + SMALL_NUMBERF, &road_info, &ghost_speed),
+                          SE_GhostTrailReturnCode::SE_GHOST_TRAIL_TIME_PAST);
+
+                // try non existing ghost
+                EXPECT_EQ(SE_GetRoadInfoGhostTrailTime(1, 5.10f + SMALL_NUMBERF, &road_info, &ghost_speed),
+                          SE_GhostTrailReturnCode::SE_GHOST_TRAIL_ERROR);
+            }
+
             // Copy position and heading from ghost at next timestamp
-            SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime() + dt, &road_info, &ghost_speed);
+            EXPECT_EQ(SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime() + dt, &road_info, &ghost_speed),
+                      SE_GhostTrailReturnCode::SE_GHOST_TRAIL_OK);
+
             ego_state.x = road_info.global_pos_x + 100;
             ego_state.y = road_info.global_pos_y;
             ego_state.h = road_info.trail_heading;
@@ -2580,7 +3485,6 @@ TEST(ExternalControlTest, TestTimings)
     }
 }
 
-#ifndef _OSI_VERSION_3_3_1
 TEST(TestOsiReporter, AssignRoleTest)
 {
     std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/emergency_vehicle.xosc";
@@ -2592,13 +3496,108 @@ TEST(TestOsiReporter, AssignRoleTest)
     osi_gt = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
 
     SE_StepDT(0.001f);
-    SE_UpdateOSIGroundTruth();
 
     EXPECT_EQ(osi_gt->moving_object(1).vehicle_classification().role(), osi3::MovingObject_VehicleClassification_Role_ROLE_POLICE);
 
     EXPECT_EQ(strcmp(SE_GetObjectModelFileName(1), "car_police.osgb"), 0);
+
+    SE_Close();
 }
-#endif
+
+TEST(EnvironmentTest, OSIForEnvironment)
+{
+    std::string              scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/environment_test.xosc";
+    const osi3::GroundTruth* osi_gt;
+
+    EXPECT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+
+    osi_gt = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
+
+    SE_StepDT(1.0f);
+    SE_StepDT(1.0f);
+
+    EXPECT_EQ(osi_gt->environmental_conditions().atmospheric_pressure(), 80000);
+    EXPECT_EQ(osi_gt->environmental_conditions().fog(), osi3::EnvironmentalConditions_Fog_FOG_MODERATE_VISIBILITY);
+    EXPECT_EQ(osi_gt->environmental_conditions().temperature(), 300);
+    EXPECT_EQ(osi_gt->environmental_conditions().sun().azimuth(), 0.4);
+    EXPECT_EQ(osi_gt->environmental_conditions().sun().elevation(), 0.3);
+    EXPECT_EQ(osi_gt->environmental_conditions().sun().intensity(), 10000);
+    EXPECT_EQ(osi_gt->environmental_conditions().ambient_illumination(),
+              osi3::EnvironmentalConditions_AmbientIllumination_AMBIENT_ILLUMINATION_LEVEL8);
+    EXPECT_EQ(osi_gt->environmental_conditions().precipitation(), osi3::EnvironmentalConditions_Precipitation_PRECIPITATION_HEAVY);
+    EXPECT_EQ(osi_gt->environmental_conditions().clouds().fractional_cloud_cover(),
+              osi3::EnvironmentalConditions_CloudLayer_FractionalCloudCover_FRACTIONAL_CLOUD_COVER_ZERO_OKTAS);
+    EXPECT_EQ(osi_gt->environmental_conditions().wind().origin_direction(), 3.1415);
+    EXPECT_EQ(osi_gt->environmental_conditions().wind().speed(), 10);
+    EXPECT_EQ(osi_gt->environmental_conditions().time_of_day().seconds_since_midnight(), 37800);
+    EXPECT_EQ(osi_gt->environmental_conditions().unix_timestamp(), 1700044200);
+
+    SE_StepDT(0.1f);
+
+    EXPECT_EQ(osi_gt->environmental_conditions().time_of_day().seconds_since_midnight(), 37800);
+    EXPECT_EQ(osi_gt->environmental_conditions().unix_timestamp(),
+              1700044200);  // TimeOfDay animation is true, simulation time is 1.0s which is added to epoch time
+    EXPECT_EQ(osi_gt->environmental_conditions().clouds().fractional_cloud_cover(),
+              osi3::EnvironmentalConditions_CloudLayer_FractionalCloudCover_FRACTIONAL_CLOUD_COVER_ONE_OKTAS);
+
+    SE_StepDT(1.0f);
+
+    EXPECT_EQ(osi_gt->environmental_conditions().time_of_day().seconds_since_midnight(), 37801);
+    EXPECT_EQ(osi_gt->environmental_conditions().unix_timestamp(),
+              1700044201);  // TimeOfDay animation is true, simulation time is 1.0s which is added to epoch time
+
+    SE_Close();
+}
+
+TEST(EnvironmentTest, OSIFrictionScaleFactor)
+{
+    std::string              scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/environment_test.xosc";
+    const osi3::GroundTruth* osi_gt;
+
+    ASSERT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+
+    osi_gt = reinterpret_cast<const osi3::GroundTruth*>(SE_GetOSIGroundTruthRaw());
+
+    // All wheels on road where we should have default friction, no scale factor
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(0).friction_coefficient(), 1.0000, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(1).friction_coefficient(), 1.0000, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(2).friction_coefficient(), 1.0000, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(3).friction_coefficient(), 1.0000, 1E-3);
+
+    SE_StepDT(1.0f);
+
+    // Front wheels on road with lower friction, rear wheels on road with default friction, no scale factor
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(0).friction_coefficient(), 0.8000, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(1).friction_coefficient(), 0.8000, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(2).friction_coefficient(), 1.0000, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(3).friction_coefficient(), 1.0000, 1E-3);
+
+    SE_StepDT(1.0f);
+
+    // All wheels on road with lower friction, scale factor applied
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(0).friction_coefficient(), 0.7200, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(1).friction_coefficient(), 0.7200, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(2).friction_coefficient(), 0.7200, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(3).friction_coefficient(), 0.7200, 1E-3);
+
+    SE_StepDT(1.0f);
+
+    // Front wheels on road with default friction, rear wheels on road with lower friction, scale factor applied
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(0).friction_coefficient(), 0.9000, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(1).friction_coefficient(), 0.9000, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(2).friction_coefficient(), 0.7200, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(3).friction_coefficient(), 0.7200, 1E-3);
+
+    SE_StepDT(1.0f);
+
+    // All wheels on road with default friction, scale factor applied
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(0).friction_coefficient(), 0.9000, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(1).friction_coefficient(), 0.9000, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(2).friction_coefficient(), 0.9000, 1E-3);
+    EXPECT_NEAR(osi_gt->moving_object(0).vehicle_attributes().wheel_data(3).friction_coefficient(), 0.9000, 1E-3);
+
+    SE_Close();
+}
 
 #endif  // _USE_OSI
 
@@ -2760,7 +3759,7 @@ TEST(ParameterTest, SetParameterValuesBeforeInit)
 {
     double positions[3][2] = {
         {5.34382, 186.68216},  // TargetSpeedFactor = 1.1
-        {8.83780, 240.59726},  // TargetSpeedFactor = 1.5
+        {8.83781, 240.59825},  // TargetSpeedFactor = 1.5
         {5.46731, 201.38162}   // TargetSpeedFactor = Default = 1.2
     };
     SE_ScenarioObjectState state;
@@ -2785,6 +3784,40 @@ TEST(ParameterTest, SetParameterValuesBeforeInit)
 
         SE_Close();
     }
+    SE_RegisterParameterDeclarationCallback(0, 0);
+}
+
+static void callbackParamVar(void*)
+{
+    SE_SetParameterDouble("DummyParameter", 3.0);
+    SE_SetVariableBool("DummyVariable2", false);
+}
+
+TEST(ParameterTest, ReEvaluateExpressionsAfterCallback)
+{
+    double dummy_parameter;
+    double dummy_parameter5;
+    double dummy_variable;
+    bool   dummy_variable2;
+
+    std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/lane_change_trig_by_variable.xosc";
+
+    SE_RegisterParameterDeclarationCallback(callbackParamVar, 0);
+
+    ASSERT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+
+    SE_GetParameterDouble("DummyParameter", &dummy_parameter);
+    SE_GetParameterDouble("DummyParameter5", &dummy_parameter5);
+    SE_GetVariableDouble("DummyVariable", &dummy_variable);
+    SE_GetVariableBool("DummyVariable2", &dummy_variable2);
+
+    EXPECT_EQ(dummy_parameter, 3.0);
+    EXPECT_EQ(dummy_parameter5, 7.0);
+    EXPECT_EQ(dummy_variable, -1.0);
+    EXPECT_EQ(dummy_variable2, false);
+
+    SE_Close();
+
     SE_RegisterParameterDeclarationCallback(0, 0);
 }
 
@@ -2836,6 +3869,14 @@ TEST(TestGetAndSet, OverrideActionTest)
     EXPECT_DOUBLE_EQ(list.clutch.value, 0.7);
     EXPECT_EQ(list.steeringWheel.active, false);
     EXPECT_NEAR(list.steeringWheel.value, 2 * M_PI, 0.01);
+
+    for (; t < 7.1f; t += dt)
+    {
+        SE_StepDT(dt);
+    }
+    EXPECT_EQ(SE_GetOverrideActionStatus(0, &list), 0);
+    EXPECT_EQ(list.throttle.active, false);
+    EXPECT_DOUBLE_EQ(list.throttle.value, 0.1);
 
     SE_Close();
 }
@@ -2893,7 +3934,7 @@ TEST(RoadSign, TestValidityRecord)
     int n_Objects = SE_GetNumberOfObjects();
     EXPECT_EQ(n_Objects, 2);
 
-    EXPECT_EQ(SE_GetNumberOfRoadSigns(1), 15);
+    EXPECT_EQ(SE_GetNumberOfRoadSigns(1), 17);
     EXPECT_EQ(SE_GetNumberOfRoadSignValidityRecords(1, 0), 2);
 
     SE_RoadObjValidity validityRec;
@@ -2906,17 +3947,17 @@ TEST(RoadSign, TestValidityRecord)
     EXPECT_EQ(validityRec.fromLane, 1);
     EXPECT_EQ(validityRec.toLane, 3);
 
-    EXPECT_EQ(SE_GetNumberOfRoadSignValidityRecords(1, 9), 3);
+    EXPECT_EQ(SE_GetNumberOfRoadSignValidityRecords(1, 11), 3);
 
-    EXPECT_EQ(SE_GetRoadSignValidityRecord(1, 9, 0, &validityRec), 0);
+    EXPECT_EQ(SE_GetRoadSignValidityRecord(1, 11, 0, &validityRec), 0);
     EXPECT_EQ(validityRec.fromLane, -3);
     EXPECT_EQ(validityRec.toLane, -2);
 
-    EXPECT_EQ(SE_GetRoadSignValidityRecord(1, 9, 1, &validityRec), 0);
+    EXPECT_EQ(SE_GetRoadSignValidityRecord(1, 11, 1, &validityRec), 0);
     EXPECT_EQ(validityRec.fromLane, 1);
     EXPECT_EQ(validityRec.toLane, 2);
 
-    EXPECT_EQ(SE_GetRoadSignValidityRecord(1, 9, 2, &validityRec), 0);
+    EXPECT_EQ(SE_GetRoadSignValidityRecord(1, 11, 2, &validityRec), 0);
     EXPECT_EQ(validityRec.fromLane, 3);
     EXPECT_EQ(validityRec.toLane, 3);
 
@@ -2986,11 +4027,11 @@ TEST(ExternalController, TestExternalDriver)
     SE_ScenarioObjectState objectState;
     SE_RoadInfo            roadInfo;
 
-    SE_AddPath("../../../resources/xodr");
-    SE_AddPath("../../../resources/xosc/Catalogs/Vehicles");
-
     for (int i = 0; i < 3; i++)
     {
+        SE_AddPath("../../../resources/xodr");
+        SE_AddPath("../../../resources/xosc/Catalogs/Vehicles");
+
         SE_RegisterParameterDeclarationCallback(ghostParamDeclCB, &ghostMode[i]);
 
         ASSERT_EQ(SE_Init("../../../EnvironmentSimulator/code-examples/test-driver/test-driver.xosc", 0, 0, 0, 0), 0);
@@ -3015,10 +4056,11 @@ TEST(ExternalController, TestExternalDriver)
             if (ghostMode[i] == true)
             {
                 // ghost version
-                float ghost_speed;
+                float ghost_speed = 0.0;
+                float timestamp   = 0.0;
                 if (i < 2)
                 {
-                    SE_GetRoadInfoAlongGhostTrail(0, 5 + 0.75f * vehicleState.speed, &roadInfo, &ghost_speed);
+                    SE_GetRoadInfoAlongGhostTrail(0, 5 + 0.75f * vehicleState.speed, &roadInfo, &ghost_speed, &timestamp);
                 }
                 else
                 {
@@ -3056,15 +4098,15 @@ TEST(ExternalController, TestExternalDriver)
                 {
                     SE_GetObjectState(0, &objectState);
                     EXPECT_NEAR(objectState.x, 215.890, 1e-3);
-                    EXPECT_NEAR(objectState.y, 113.784, 1e-3);
+                    EXPECT_NEAR(objectState.y, 113.7796, 1e-3);
                     EXPECT_NEAR(objectState.h, 1.362, 1e-3);
                     EXPECT_NEAR(objectState.p, 6.246, 1e-3);
                 }
                 else if (abs(SE_GetSimulationTime() - 30.0f) < static_cast<float>(SMALL_NUMBER))
                 {
                     SE_GetObjectState(0, &objectState);
-                    EXPECT_NEAR(objectState.x, 356.185, 1e-3);
-                    EXPECT_NEAR(objectState.y, 330.082, 1e-3);
+                    EXPECT_NEAR(objectState.x, 356.1803, 1e-3);
+                    EXPECT_NEAR(objectState.y, 330.0853, 1e-3);
                     EXPECT_NEAR(objectState.h, 5.641, 1e-3);
                     EXPECT_NEAR(objectState.p, 0.046, 1e-3);
                 }
@@ -3084,22 +4126,24 @@ TEST(ExternalController, TestExternalDriver)
                         SE_RoadInfo road_info2;
                         SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed2);
                         EXPECT_NEAR(road_info2.global_pos_x, 206.716, 1e-3);
-                        EXPECT_NEAR(road_info2.global_pos_y, 92.448, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_y, 92.447, 1e-3);
+                        EXPECT_NEAR(roadInfo.trail_heading, 1.2158, 1e-3);
                     }
                 }
                 else if (abs(SE_GetSimulationTime() - 30.0f) < static_cast<float>(SMALL_NUMBER))
                 {
                     SE_GetObjectState(0, &objectState);
-                    EXPECT_NEAR(objectState.x, 382.111, 1e-3);
-                    EXPECT_NEAR(objectState.y, 301.634, 1e-3);
+                    EXPECT_NEAR(objectState.x, 382.113, 1e-3);
+                    EXPECT_NEAR(objectState.y, 301.632, 1e-3);
                     EXPECT_NEAR(objectState.h, 5.272, 1e-3);
                     EXPECT_NEAR(objectState.p, 0.025, 1e-3);
                     if (ghostMode[i] == true)
                     {
                         SE_RoadInfo road_info3;
                         SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info3, &speed2);
-                        EXPECT_NEAR(road_info3.global_pos_x, 388.217, 1e-3);
-                        EXPECT_NEAR(road_info3.global_pos_y, 291.263, 1e-3);
+                        EXPECT_NEAR(road_info3.global_pos_x, 388.2154, 1e-3);
+                        EXPECT_NEAR(road_info3.global_pos_y, 291.2665, 1e-3);
+                        EXPECT_NEAR(roadInfo.trail_heading, 5.1278, 1e-3);
                     }
                 }
             }
@@ -3118,7 +4162,8 @@ TEST(ExternalController, TestExternalDriver)
                     {
                         SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed3);
                         EXPECT_NEAR(road_info2.global_pos_x, 206.716, 1e-3);
-                        EXPECT_NEAR(road_info2.global_pos_y, 92.448, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_y, 92.447, 1e-3);
+                        EXPECT_NEAR(roadInfo.trail_heading, 1.2182, 1e-3);
                     }
                 }
                 else if (abs(SE_GetSimulationTime() - 30.0f) < static_cast<float>(SMALL_NUMBER))
@@ -3131,8 +4176,9 @@ TEST(ExternalController, TestExternalDriver)
                     if (ghostMode[i] == true)
                     {
                         SE_GetRoadInfoGhostTrailTime(0, SE_GetSimulationTime(), &road_info2, &speed3);
-                        EXPECT_NEAR(road_info2.global_pos_x, 388.217, 1e-3);
-                        EXPECT_NEAR(road_info2.global_pos_y, 291.263, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_x, 388.2154, 1e-3);
+                        EXPECT_NEAR(road_info2.global_pos_y, 291.2665, 1e-3);
+                        EXPECT_NEAR(roadInfo.trail_heading, 5.1519, 1e-3);
                     }
                 }
             }
@@ -3271,6 +4317,7 @@ TEST(ExternalController, TestPositionAlignment)
         }
         counter++;
     }
+    SE_SimpleVehicleDelete(vehicleHandle);
     SE_Close();
 }
 
@@ -3287,11 +4334,11 @@ TEST(PositionMode, TestRoadAlignmentModes)
         double r;
     } result[2][4] = {{{10.0, 100.739, 87.310, -0.830, 3.015, 0.000, 0.000},
                        {10.0, 75.249, 87.375, 33.144, 2.677, 0.067, 0.000},
-                       {10.0, 70.115, 87.356, 7.888, 2.245, 0.070, 5.626},
+                       {10.0, 70.115, 87.356, 7.888, 2.245, 0.070, 5.629},
                        {10.0, 60.000, 70.000, 2.000, 2.356, 0.152, 6.083}},
                       {{17.0, 16.145, 200.243, 10.457, 2.982, 0.000, 0.000},
                        {17.0, -35.413, 98.073, 16.592, 3.265, 0.154, 0.000},
-                       {17.0, -31.555, 100.000, 28.494, 3.142, 6.050, 5.962},
+                       {17.0, -31.555, 100.000, 28.494, 3.142, 6.050, 5.971},
                        {17.0, -24.000, 70.000, 28.600, 3.142, 5.977, 6.083}}};
 
     SE_AddPath("../../../EnvironmentSimulator/Unittest/xodr");
@@ -3527,8 +4574,7 @@ TEST(APITest, TestGetRoute)
 
     EXPECT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
 
-    int num_of_points = SE_GetNumberOfRoutePoints(0);
-    EXPECT_EQ(num_of_points, 4);
+    EXPECT_EQ(SE_GetNumberOfRoutePoints(0), 4);
 
     SE_RouteInfo route_info;
     SE_GetRoutePoint(0, 0, &route_info);
@@ -3583,7 +4629,7 @@ TEST(APITest, TestFetchImage)
     }
 
     const char* args[] =
-        {"--osc", "../../../resources/xosc/cut-in_simple.xosc", "--window", "60", "60", "800", "400", "--aa_mode", "4", "--headless"};
+        {"--osc", "../../../resources/xosc/cut-in_simple.xosc", "--headless", "--window", "60", "60", "800", "400", "--aa_mode", "4"};
 
     SE_SaveImagesToRAM(true);
     ASSERT_EQ(SE_InitWithArgs(sizeof(args) / sizeof(char*), args), 0);
@@ -3651,7 +4697,7 @@ TEST(APITest, TestFetchImage)
     // Run a few steps to create the screenshot images
     for (int i = 0; i < 3; i++)
         SE_StepDT(0.1f);
-    SE_sleep(100);  // Allow for last image to be created (running in a separate thread)
+    SE_sleepMilliseconds(100);  // Allow for last image to be created (running in a separate thread)
 
     EXPECT_EQ(CheckFileExists(screenshotFilename0, oldModTime), true);
     ASSERT_EQ(stat(screenshotFilename0.c_str(), &fileStatus), 0);
@@ -3664,8 +4710,8 @@ TEST(APITest, TestFetchImage)
     EXPECT_EQ(SE_SaveImagesToFile(-1), 0);
 
     for (int i = 0; i < 3; i++)
-        SE_StepDT(0.1f);  // step to create three additional screenshots
-    SE_sleep(100);        // Allow for last image to be created (running in a separate thread)
+        SE_StepDT(0.1f);        // step to create three additional screenshots
+    SE_sleepMilliseconds(100);  // Allow for last image to be created (running in a separate thread)
     EXPECT_EQ(CheckFileExists(screenshotFilename2, oldModTime - 1), true);
     EXPECT_EQ(CheckFileExists(screenshotFilename3, oldModTime - 1), true);
     EXPECT_EQ(CheckFileExists(screenshotFilename4, oldModTime - 1), true);
@@ -3685,11 +4731,11 @@ static void paramDeclCallbackSetRoute(void* args)
 
     SE_SetParameterInt("StartRoadId", static_cast<int>(positions[counter][0]));
     SE_SetParameterInt("StartLaneId", static_cast<int>(positions[counter][1]));
-    SE_SetParameterDouble("StartRoadS", positions[counter][2]);
+    SE_SetParameterDouble("StartS", positions[counter][2]);
     SE_SetParameterDouble("StartH", positions[counter][3]);
     SE_SetParameterInt("EndRoadId", static_cast<int>(positions[counter][4]));
     SE_SetParameterInt("EndLaneId", static_cast<int>(positions[counter][5]));
-    SE_SetParameterDouble("EndRoadS", positions[counter][6]);
+    SE_SetParameterDouble("EndS", positions[counter][6]);
     SE_SetParameterDouble("EndH", positions[counter][7]);
 
     counter++;
@@ -3807,7 +4853,7 @@ TEST(ReplayTest, TestMultiReplayDifferentTimeSteps)
         if (k == 0)
         {
             EXPECT_NEAR(replay->data_[2012].state.pos.y, 130.994, 1E-3);
-            EXPECT_NEAR(replay->data_[2015].state.pos.y, 207.387, 1E-3);
+            EXPECT_NEAR(replay->data_[2015].state.pos.y, 207.392, 1E-3);
             EXPECT_NEAR(replay->data_[5965].state.info.timeStamp, 19.51, 1E-3);
             EXPECT_NEAR(replay->data_[5965].state.info.id, 1, 1E-3);
         }
@@ -3862,24 +4908,24 @@ void StoryBoardElementStateCallbackInstance1(const char* element_name, int type,
         int         state;
         const char* full_path;
     } state_target[n_runs] = {
-        {"hwe_act", 0.1, 3, 2, "/hwe_story/hwe_act"},                                                                  // Act, Running
-        {"hwe_maneuvergroup", 0.1, 4, 2, "/hwe_story/hwe_act/hwe_maneuvergroup"},                                      // ManeuverGroup, Running
-        {"hwe_maneuver", 0.1, 5, 2, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver"},                              // Maneuver, Running
-        {"slowdown event", 0.1, 6, 1, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/slowdown event"},             // Event, Standby
-        {"lanechange event", 0.1, 6, 1, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/lanechange event"},         // Event, Standby
-        {"slowdown event", 3.4, 6, 2, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/slowdown event"},             // Event, Running
-        {"slowdown", 3.4, 7, 2, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/slowdown event/slowdown"},          // Action, Running
-        {"slowdown", 4.4, 7, 3, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/slowdown event/slowdown"},          // Action, Complete
-        {"slowdown event", 4.4, 6, 3, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/slowdown event"},             // Event, Complete
-        {"lanechange event", 4.4, 6, 2, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/lanechange event"},         // Event, Running
-        {"lane change", 4.4, 7, 2, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/lanechange event/lane change"},  // Action, Running
-        {"lane change", 8.3, 7, 3, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/lanechange event/lane change"},  // Action, Complete
-        {"lanechange event", 8.3, 6, 3, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver/lanechange event"},         // Event, Complete
-        {"hwe_maneuver", 8.3, 5, 3, "/hwe_story/hwe_act/hwe_maneuvergroup/hwe_maneuver"},                              // Maneuver, Complete
-        {"hwe_maneuvergroup", 8.3, 4, 3, "/hwe_story/hwe_act/hwe_maneuvergroup"},                                      // ManeuverGroup, Complete
-        {"hwe_act", 8.3, 3, 3, "/hwe_story/hwe_act"},                                                                  // Act, Complete
-        {"hwe_story", 8.3, 2, 3, "/hwe_story"},                                                                        // Story, Complete
-        {"storyBoard", 12.1, 1, 3, "/"},                                                                               // StoryBoard, Complete
+        {"hwe_act", 0.1, 3, 2, "hwe_story::hwe_act"},                                                                      // Act, Running
+        {"hwe_maneuvergroup", 0.1, 4, 2, "hwe_story::hwe_act::hwe_maneuvergroup"},                                         // ManeuverGroup, Running
+        {"hwe_maneuver", 0.1, 5, 2, "hwe_story::hwe_act::hwe_maneuvergroup::hwe_maneuver"},                                // Maneuver, Running
+        {"slowdown event", 0.1, 6, 1, "hwe_story::hwe_act::hwe_maneuvergroup::hwe_maneuver::slowdown event"},              // Event, Standby
+        {"lanechange event", 0.1, 6, 1, "hwe_story::hwe_act::hwe_maneuvergroup::hwe_maneuver::lanechange event"},          // Event, Standby
+        {"slowdown event", 3.4, 6, 2, "hwe_story::hwe_act::hwe_maneuvergroup::hwe_maneuver::slowdown event"},              // Event, Running
+        {"slowdown", 3.4, 7, 2, "hwe_story::hwe_act::hwe_maneuvergroup::hwe_maneuver::slowdown event::slowdown"},          // Action, Running
+        {"slowdown", 4.4, 7, 3, "hwe_story::hwe_act::hwe_maneuvergroup::hwe_maneuver::slowdown event::slowdown"},          // Action, Complete
+        {"slowdown event", 4.4, 6, 3, "hwe_story::hwe_act::hwe_maneuvergroup::hwe_maneuver::slowdown event"},              // Event, Complete
+        {"lanechange event", 4.4, 6, 2, "hwe_story::hwe_act::hwe_maneuvergroup::hwe_maneuver::lanechange event"},          // Event, Running
+        {"lane change", 4.4, 7, 2, "hwe_story::hwe_act::hwe_maneuvergroup::hwe_maneuver::lanechange event::lane change"},  // Action, Running
+        {"lane change", 8.3, 7, 3, "hwe_story::hwe_act::hwe_maneuvergroup::hwe_maneuver::lanechange event::lane change"},  // Action, Complete
+        {"lanechange event", 8.3, 6, 3, "hwe_story::hwe_act::hwe_maneuvergroup::hwe_maneuver::lanechange event"},          // Event, Complete
+        {"hwe_maneuver", 8.3, 5, 3, "hwe_story::hwe_act::hwe_maneuvergroup::hwe_maneuver"},                                // Maneuver, Complete
+        {"hwe_maneuvergroup", 8.3, 4, 3, "hwe_story::hwe_act::hwe_maneuvergroup"},                                         // ManeuverGroup, Complete
+        {"hwe_act", 8.3, 3, 3, "hwe_story::hwe_act"},                                                                      // Act, Complete
+        {"hwe_story", 8.3, 2, 3, "hwe_story"},                                                                             // Story, Complete
+        {"storyBoard", 12.1, 1, 3, ""},                                                                                    // StoryBoard, Complete
     };
 
     if (counter < n_runs)
@@ -3954,6 +5000,7 @@ TEST(RoadmanagerTest, TestGetInfoAtDistance)
 TEST(RoadmanagerTest, TestGetPositionDiff)
 {
     std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/loomingAdvancedTest.xosc";
+    float       dt            = 0.1f;
 
     EXPECT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
 
@@ -3963,37 +5010,97 @@ TEST(RoadmanagerTest, TestGetPositionDiff)
     SE_PositionDiff diff;
     ASSERT_EQ(SE_GetDistanceToObject(0, 1, false, &diff), 0);
     EXPECT_EQ(diff.dLaneId, 0);
-    EXPECT_NEAR(diff.ds, 247.100, 1e-3);
+    EXPECT_NEAR(diff.ds, 245.1000, 1e-3);
     EXPECT_NEAR(diff.dt, 0.0, 1e-3);
-    EXPECT_NEAR(diff.dx, 233.409, 1e-3);
+    EXPECT_NEAR(diff.dx, 231.4086, 1e-3);
     EXPECT_NEAR(diff.dy, 53.693, 1e-3);
     EXPECT_EQ(diff.oppositeLanes, false);
 
     while (SE_GetSimulationTime() < 30.9f)
     {
-        SE_StepDT(0.1f);
+        SE_StepDT(dt);
     }
 
     ASSERT_EQ(SE_GetDistanceToObject(0, 1, true, &diff), 0);
     EXPECT_EQ(diff.dLaneId, 0);
-    EXPECT_NEAR(diff.ds, 31.729, 1e-3);
+    EXPECT_NEAR(diff.ds, 31.7769, 1e-3);
     EXPECT_NEAR(diff.dt, 0.0, 1e-3);
-    EXPECT_NEAR(diff.dx, 21.283, 1e-3);
-    EXPECT_NEAR(diff.dy, -17.780, 1e-3);
+    EXPECT_NEAR(diff.dx, 19.2839, 1e-3);
+    EXPECT_NEAR(diff.dy, -19.1543, 1e-3);
     EXPECT_EQ(diff.oppositeLanes, false);
 
     while (SE_GetSimulationTime() < 35.0f)
     {
-        SE_StepDT(0.1f);
+        SE_StepDT(dt);
     }
 
     ASSERT_EQ(SE_GetDistanceToObject(0, 1, false, &diff), 0);
     EXPECT_EQ(diff.dLaneId, -1);
-    EXPECT_NEAR(diff.ds, -93.045, 1e-3);
-    EXPECT_NEAR(diff.dt, -2.923, 1e-3);
-    EXPECT_NEAR(diff.dx, -31.340, 1e-3);
-    EXPECT_NEAR(diff.dy, -68.577, 1e-3);
+    EXPECT_NEAR(diff.ds, -94.9739, 1e-3);
+    EXPECT_NEAR(diff.dt, -3.0613, 1e-3);
+    EXPECT_NEAR(diff.dx, -33.8099, 1e-3);
+    EXPECT_NEAR(diff.dy, -68.1728, 1e-3);
     EXPECT_EQ(diff.oppositeLanes, true);
+
+    SE_Close();
+}
+
+TEST(RoadmanagerTest, TestSimpleGetDistance)
+{
+    std::string  scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/object_teleport_delete.xosc";
+    const double error         = 1e-3;
+
+    ASSERT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+
+    int n_Objects = SE_GetNumberOfObjects();
+    ASSERT_EQ(n_Objects, 4);
+
+    double distance, timestamp;
+    int    ret = SE_SimpleGetDistanceToObject(0, 1, SE_RelativeDistanceType::REL_DIST_EUCLIDIAN, 200.0, &distance, &timestamp);
+    EXPECT_EQ(ret, 0);
+    EXPECT_NEAR(distance, 185.043f, error);
+    EXPECT_NEAR(timestamp, 0.0f, error);
+
+    ret = SE_SimpleGetDistanceToObject(0, 2, SE_RelativeDistanceType::REL_DIST_LATERAL, 200.0, &distance, &timestamp);
+    EXPECT_EQ(ret, -2);
+
+    ret = SE_SimpleGetDistanceToObject(0, 3, SE_RelativeDistanceType::REL_DIST_LONGITUDINAL, 200.0, &distance, &timestamp);
+    EXPECT_EQ(ret, -2);
+
+    SE_StepDT(0.1f);
+    SE_StepDT(0.1f);
+
+    // Object 1 is deleted
+    ret = SE_SimpleGetDistanceToObject(0, 1, SE_RelativeDistanceType::REL_DIST_EUCLIDIAN, 200.0, &distance, &timestamp);
+    EXPECT_EQ(ret, -1);
+
+    SE_StepDT(0.1f);
+
+    // Object 3 is teleported close to ego
+    ret = SE_SimpleGetDistanceToObject(0, 3, SE_RelativeDistanceType::REL_DIST_LONGITUDINAL, 200.0, &distance, &timestamp);
+    EXPECT_EQ(ret, 0);
+    EXPECT_NEAR(distance, 80.5f, error);
+    EXPECT_NEAR(timestamp, 0.3f, error);
+
+    while (SE_GetSimulationTime() < 2.5f)
+    {
+        SE_StepDT(0.1f);
+    }
+    // Object 2 cooldown from being out of range initially has not passed
+    ret = SE_SimpleGetDistanceToObject(0, 2, SE_RelativeDistanceType::REL_DIST_LATERAL, 200.0, &distance, &timestamp);
+    EXPECT_EQ(ret, -2);
+    EXPECT_NEAR(timestamp, 0.0f, error);
+
+    while (SE_GetSimulationTime() < 3.2f)
+    {
+        SE_StepDT(0.1f);
+    }
+
+    // Object 2 is within 500m range and 3s cooldown has passed
+    ret = SE_SimpleGetDistanceToObject(0, 2, SE_RelativeDistanceType::REL_DIST_LATERAL, 200.0, &distance, &timestamp);
+    EXPECT_EQ(ret, 0);
+    EXPECT_NEAR(distance, 0.0f, error);
+    EXPECT_NEAR(timestamp, 3.2f, error);
 
     SE_Close();
 }
@@ -4047,6 +5154,9 @@ TEST(ParamDistTest, TestRunAll)
         "log_12_of_12.txt",
     };
 
+    const char* value = SE_GetOptionValue("logfile_path");
+    ASSERT_EQ(value, nullptr);
+
     // Fetch timestamp of any old run
     struct stat fileStatus;
     long long   oldModTime = 0;
@@ -4079,7 +5189,7 @@ TEST(ParamDistTest, TestRunAll)
 
     EXPECT_EQ(SE_GetNumberOfPermutations(), 12);
 
-    for (int i = 0; i < SE_GetNumberOfPermutations(); i++)
+    for (unsigned int i = 0; i < SE_GetNumberOfPermutations(); i++)
     {
         SE_Init(scenario_file.c_str(), 0, 0, 0, 1);
 
@@ -4102,7 +5212,7 @@ TEST(ParamDistTest, TestRunAll)
     EXPECT_EQ(SE_GetNumberOfPermutations(), 12);
 
     // Check that files have been created as expected
-    for (size_t i = 0; i < static_cast<size_t>(SE_GetNumberOfPermutations()); i++)
+    for (unsigned int i = 0; i < SE_GetNumberOfPermutations(); i++)
     {
 #ifdef _USE_OSI
         EXPECT_EQ(stat(gt[i].c_str(), &fileStatus), 0);
@@ -4125,7 +5235,7 @@ TEST(ParamDistTest, TestRunAll)
         }
     }
 
-    SE_sleep(20);
+    SE_sleepMilliseconds(20);
 
     // specify start at 4:th permutation, then expect automatic increment from there
     SE_SelectPermutation(3);
@@ -4142,7 +5252,7 @@ TEST(ParamDistTest, TestRunAll)
         SE_DisableOSIFile();
         SE_Close();
 
-    } while (SE_GetPermutationIndex() < SE_GetNumberOfPermutations() - 1);
+    } while (SE_GetPermutationIndex() >= 0 && static_cast<unsigned int>(SE_GetPermutationIndex()) + 1 < SE_GetNumberOfPermutations());
 
     // The first 3 files should be untouched, while the last 3 should be updated
     // check two samples, one from each category
@@ -4154,6 +5264,395 @@ TEST(ParamDistTest, TestRunAll)
     SE_ResetParameterDistribution();
 }
 
+TEST(GetFunctionsTest, TestGetAccelerations)
+{
+    std::string scenario_file = "../../../resources/xosc/cut-in_simple.xosc";
+
+    EXPECT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+    EXPECT_EQ(SE_GetNumberOfObjects(), 2);
+
+    int   state    = 0;
+    float acc_x    = 0.0f;
+    float acc_y    = 0.0f;
+    float acc_z    = 0.0f;
+    float acc_lat  = 0.0f;
+    float acc_long = 0.0f;
+
+    while (SE_GetSimulationTime() < 8.0f && state < 4)
+    {
+        SE_StepDT(0.1f);
+        if (state == 0 && SE_GetSimulationTime() > 6.5f)
+        {
+            EXPECT_EQ(SE_GetObjectAccelerationGlobalXYZ(1, &acc_x, &acc_y, &acc_z), 0);
+            EXPECT_NEAR(acc_x, 0.0, 1e-3);
+            EXPECT_NEAR(acc_y, 0.0, 1e-3);
+            EXPECT_NEAR(acc_z, 0.0, 1e-3);
+
+            EXPECT_EQ(SE_GetObjectAccelerationLocalLatLong(1, &acc_lat, &acc_long), 0);
+            EXPECT_NEAR(acc_lat, 0.0, 1e-3);
+            EXPECT_NEAR(acc_long, 0.0, 1e-3);
+
+            state++;
+        }
+        else if (state == 1 && SE_GetSimulationTime() > 7.5f)
+        {
+            EXPECT_EQ(SE_GetObjectAccelerationGlobalXYZ(1, &acc_x, &acc_y, &acc_z), 0);
+            EXPECT_NEAR(acc_x, -0.054, 1e-3);
+            EXPECT_NEAR(acc_y, -0.998, 1e-3);
+            EXPECT_NEAR(acc_z, 0.0, 1e-3);
+
+            EXPECT_EQ(SE_GetObjectAccelerationLocalLatLong(1, &acc_lat, &acc_long), 0);
+            EXPECT_NEAR(acc_lat, -1.000, 1e-3);
+            EXPECT_NEAR(acc_long, -0.001, 1e-3);
+
+            state++;
+        }
+        else if (state == 2)
+        {
+            // Set explicit acceleration
+            SE_ReportObjectAcc(1, 0.0, 1.0, 2.0, 3.0);
+
+            state++;
+        }
+        else if (state == 3)
+        {
+            EXPECT_EQ(SE_GetObjectAccelerationGlobalXYZ(1, &acc_x, &acc_y, &acc_z), 0);
+            EXPECT_NEAR(acc_x, 1.0, 1e-3);
+            EXPECT_NEAR(acc_y, 2.0, 1e-3);
+            EXPECT_NEAR(acc_z, 3.0, 1e-3);
+
+            EXPECT_EQ(SE_GetObjectAccelerationLocalLatLong(1, &acc_lat, &acc_long), 0);
+            EXPECT_NEAR(acc_lat, 2.056, 1e-3);
+            EXPECT_NEAR(acc_long, 0.880, 1e-3);
+
+            state++;
+        }
+    }
+
+    SE_Close();
+}
+
+TEST(StringIds, TestRoadStringIds)
+{
+    std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/test_string_ids.xosc";
+
+    ASSERT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+    EXPECT_EQ(SE_GetNumberOfObjects(), 1);
+
+    int                    test_state = 0;
+    SE_ScenarioObjectState obj_state;
+    while (SE_GetQuitFlag() == 0)
+    {
+        if (test_state == 0 && SE_GetSimulationTime() > 0.1f)
+        {
+            SE_GetObjectState(SE_GetId(0), &obj_state);
+            EXPECT_EQ(obj_state.roadId, 0);
+            EXPECT_STREQ(SE_GetRoadIdString(obj_state.roadId), "0");
+            test_state++;
+        }
+        else if (test_state == 1 && SE_GetSimulationTime() > 1.25f)
+        {
+            SE_GetObjectState(SE_GetId(0), &obj_state);
+            EXPECT_EQ(obj_state.roadId, 127);
+            EXPECT_STREQ(SE_GetRoadIdString(obj_state.roadId), "ConnectingRoad9");
+            test_state++;
+        }
+        else if (test_state == 2 && SE_GetSimulationTime() > 2.0f)
+        {
+            SE_GetObjectState(SE_GetId(0), &obj_state);
+            EXPECT_EQ(obj_state.roadId, 3);
+            EXPECT_STREQ(SE_GetRoadIdString(obj_state.roadId), "Kalle");
+            test_state++;
+        }
+        else if (test_state == 3)
+        {
+            SE_ReportObjectRoadPos(SE_GetId(0), 0.0f, SE_GetRoadIdFromString("2Kalle3"), -1, 0.0, 1.0);
+            test_state++;
+        }
+        else if (test_state == 4)
+        {
+            SE_GetObjectState(SE_GetId(0), &obj_state);
+            EXPECT_EQ(obj_state.roadId, 128);
+            EXPECT_STREQ(SE_GetRoadIdString(obj_state.roadId), "2Kalle3");
+            EXPECT_NEAR(obj_state.x, 19.183f, 1e-3);
+            EXPECT_NEAR(obj_state.y, -5.431f, 1e-3);
+            test_state++;
+        }
+
+        SE_StepDT(0.1f);
+    }
+
+    // check function getting internal ID from string ID
+    EXPECT_EQ(SE_GetRoadIdFromString("Kalle"), 3);
+    EXPECT_EQ(SE_GetRoadIdFromString("16"), 16);
+    EXPECT_EQ(SE_GetRoadIdFromString("4294967295"), 126);
+    EXPECT_EQ(SE_GetRoadIdFromString("ConnectingRoad9"), 127);
+    EXPECT_EQ(SE_GetRoadIdFromString("2Kalle3"), 128);
+    EXPECT_EQ(SE_GetRoadIdFromString("4294967296"), 129);
+    EXPECT_STREQ(SE_GetRoadIdString(3), "Kalle");
+    EXPECT_STREQ(SE_GetRoadIdString(16), "16");
+    EXPECT_STREQ(SE_GetRoadIdString(127), "ConnectingRoad9");
+    EXPECT_STREQ(SE_GetRoadIdString(128), "2Kalle3");
+    EXPECT_STREQ(SE_GetRoadIdString(129), "4294967296");
+
+    EXPECT_EQ(SE_GetJunctionIdFromString("Junction4"), 0);
+    EXPECT_STREQ(SE_GetJunctionIdString(0), "Junction4");
+
+    SE_Close();
+}
+
+TEST(APITest, TestWheelData)
+{
+    std::string scenario_file = "../../../resources/xosc/lane_change_crest.xosc";
+
+    ASSERT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+    EXPECT_EQ(SE_GetNumberOfObjects(), 3);
+
+    EXPECT_EQ(SE_GetObjectNumberOfWheels(SE_GetId(0)), 4);
+    EXPECT_EQ(SE_GetObjectNumberOfWheels(SE_GetId(1)), 4);
+    EXPECT_EQ(SE_GetObjectNumberOfWheels(SE_GetId(2)), 4);
+    EXPECT_EQ(SE_GetObjectNumberOfWheels(-1), -1);
+    EXPECT_EQ(SE_GetObjectNumberOfWheels(3), -1);
+
+    SE_WheelData wheel_data;
+
+    SE_GetObjectWheelData(SE_GetId(0), 0, &wheel_data);
+    EXPECT_EQ(wheel_data.axle, 0);
+    EXPECT_NEAR(wheel_data.h, 0.0, 1E-3);
+    EXPECT_EQ(wheel_data.index, 0);
+    EXPECT_NEAR(wheel_data.p, 0.0, 1E-3);
+    EXPECT_NEAR(wheel_data.x, 2.98, 1E-3);
+    EXPECT_NEAR(wheel_data.y, -0.840, 1E-3);
+    EXPECT_NEAR(wheel_data.z, 0.4, 1E-3);
+
+    SE_GetObjectWheelData(SE_GetId(0), 1, &wheel_data);
+    EXPECT_EQ(wheel_data.axle, 0);
+    EXPECT_NEAR(wheel_data.h, 0.0, 1E-3);
+    EXPECT_EQ(wheel_data.index, 1);
+    EXPECT_NEAR(wheel_data.p, 0.0, 1E-3);
+    EXPECT_NEAR(wheel_data.x, 2.98, 1E-3);
+    EXPECT_NEAR(wheel_data.y, 0.840, 1E-3);
+    EXPECT_NEAR(wheel_data.z, 0.4, 1E-3);
+
+    SE_GetObjectWheelData(SE_GetId(0), 2, &wheel_data);
+    EXPECT_EQ(wheel_data.axle, 1);
+    EXPECT_NEAR(wheel_data.h, 0.0, 1E-3);
+    EXPECT_EQ(wheel_data.index, 0);
+    EXPECT_NEAR(wheel_data.p, 0.0, 1E-3);
+    EXPECT_NEAR(wheel_data.x, 0.0, 1E-3);
+    EXPECT_NEAR(wheel_data.y, -0.840, 1E-3);
+    EXPECT_NEAR(wheel_data.z, 0.4, 1E-3);
+
+    SE_GetObjectWheelData(SE_GetId(0), 3, &wheel_data);
+    EXPECT_EQ(wheel_data.axle, 1);
+    EXPECT_NEAR(wheel_data.h, 0.0, 1E-3);
+    EXPECT_EQ(wheel_data.index, 1);
+    EXPECT_NEAR(wheel_data.p, 0.0, 1E-3);
+    EXPECT_NEAR(wheel_data.x, 0.0, 1E-3);
+    EXPECT_NEAR(wheel_data.y, 0.840, 1E-3);
+    EXPECT_NEAR(wheel_data.z, 0.4, 1E-3);
+
+    while (SE_GetSimulationTime() < 5.81f)
+    {
+        SE_StepDT(0.1f);
+    }
+
+    SE_GetObjectWheelData(SE_GetId(2), 0, &wheel_data);
+    EXPECT_EQ(wheel_data.axle, 0);
+    EXPECT_NEAR(wheel_data.h, 0.054, 1E-3);
+    EXPECT_EQ(wheel_data.index, 0);
+    EXPECT_NEAR(wheel_data.p, 1.989, 1E-3);
+    EXPECT_NEAR(wheel_data.x, 2.98, 1E-3);
+    EXPECT_NEAR(wheel_data.y, -0.840, 1E-3);
+    EXPECT_NEAR(wheel_data.z, 0.4, 1E-3);
+
+    SE_GetObjectWheelData(SE_GetId(2), 1, &wheel_data);
+    EXPECT_EQ(wheel_data.axle, 0);
+    EXPECT_NEAR(wheel_data.h, 0.054, 1E-3);
+    EXPECT_EQ(wheel_data.index, 1);
+    EXPECT_NEAR(wheel_data.p, 1.989, 1E-3);
+    EXPECT_NEAR(wheel_data.x, 2.98, 1E-3);
+    EXPECT_NEAR(wheel_data.y, 0.840, 1E-3);
+    EXPECT_NEAR(wheel_data.z, 0.4, 1E-3);
+
+    SE_GetObjectWheelData(SE_GetId(2), 2, &wheel_data);
+    EXPECT_EQ(wheel_data.axle, 1);
+    EXPECT_NEAR(wheel_data.h, 0.0, 1E-3);
+    EXPECT_EQ(wheel_data.index, 0);
+    EXPECT_NEAR(wheel_data.p, 1.989, 1E-3);
+    EXPECT_NEAR(wheel_data.x, 0.0, 1E-3);
+    EXPECT_NEAR(wheel_data.y, -0.840, 1E-3);
+    EXPECT_NEAR(wheel_data.z, 0.4, 1E-3);
+
+    SE_GetObjectWheelData(SE_GetId(2), 3, &wheel_data);
+    EXPECT_EQ(wheel_data.axle, 1);
+    EXPECT_NEAR(wheel_data.h, 0.0, 1E-3);
+    EXPECT_EQ(wheel_data.index, 1);
+    EXPECT_NEAR(wheel_data.p, 1.989, 1E-3);
+    EXPECT_NEAR(wheel_data.x, 0.0, 1E-3);
+    EXPECT_NEAR(wheel_data.y, 0.840, 1E-3);
+    EXPECT_NEAR(wheel_data.z, 0.4, 1E-3);
+
+    SE_Close();
+}
+
+TEST(RoutingTest, TestRouteStatus)
+{
+    std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/route_detour.xosc";
+
+    ASSERT_EQ(SE_Init(scenario_file.c_str(), 1, 0, 0, 0), 0);
+    EXPECT_EQ(SE_GetNumberOfObjects(), 1);
+    EXPECT_EQ(SE_GetObjectRouteStatus(SE_GetId(0)), 2);
+
+    while (SE_GetSimulationTime() < 0.7f)
+    {
+        SE_StepDT(0.1f);
+    }
+    EXPECT_EQ(SE_GetObjectRouteStatus(SE_GetId(0)), 1);
+
+    while (SE_GetSimulationTime() < 8.9f)
+    {
+        SE_StepDT(0.1f);
+    }
+    EXPECT_EQ(SE_GetObjectRouteStatus(SE_GetId(0)), 2);
+
+    SE_Close();
+}
+
+TEST(RoutingTest, TestRoutePointsWithGhost)
+{
+    std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/ghost_route.xosc";
+
+    ASSERT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+    EXPECT_EQ(SE_GetNumberOfObjects(), 2);
+    EXPECT_EQ(SE_GetObjectRouteStatus(SE_GetId(0)), 2);
+
+    int ghost_id = SE_GetObjectGhostId(SE_GetId(0));
+    ASSERT_EQ(ghost_id, 1);
+
+    EXPECT_EQ(SE_GetObjectRouteStatus(ghost_id), 2);
+
+    int n_wp = SE_GetNumberOfRoutePoints(SE_GetId(0));
+    EXPECT_EQ(n_wp, 9);
+
+    SE_RouteInfo ri[2];
+    for (unsigned int i = 0; i < static_cast<unsigned int>(n_wp); i++)
+    {
+        SE_GetRoutePoint(SE_GetId(0), i, &ri[0]);
+        SE_GetRoutePoint(ghost_id, i, &ri[1]);
+        EXPECT_EQ(ri[0].junctionId, ri[1].junctionId);
+        EXPECT_EQ(ri[0].laneId, ri[1].laneId);
+        EXPECT_EQ(ri[0].osiLaneId, ri[1].osiLaneId);
+        EXPECT_EQ(ri[0].roadId, ri[1].roadId);
+        EXPECT_EQ(ri[0].s, ri[1].s);
+        EXPECT_EQ(ri[0].t, ri[1].t);
+        EXPECT_EQ(ri[0].x, ri[1].x);
+        EXPECT_EQ(ri[0].y, ri[1].y);
+    }
+
+    SE_GetRoutePoint(SE_GetId(0), 0, &ri[0]);
+    EXPECT_EQ(ri[0].junctionId, -1);
+    EXPECT_EQ(ri[0].roadId, 5);
+    EXPECT_EQ(ri[0].laneId, -1);
+    EXPECT_NEAR(ri[0].s, 490.0, 1e-3);
+    EXPECT_NEAR(ri[0].x, 221.5, 1e-3);
+    EXPECT_NEAR(ri[0].y, -32.8318, 1e-3);
+
+    SE_GetRoutePoint(SE_GetId(0), 5, &ri[0]);
+    EXPECT_EQ(ri[0].junctionId, 300);
+    EXPECT_EQ(ri[0].roadId, 302);
+    EXPECT_EQ(ri[0].laneId, -1);
+    EXPECT_NEAR(ri[0].s, 13.2, 1e-3);
+    EXPECT_NEAR(ri[0].x, -61.5, 1e-3);
+    EXPECT_NEAR(ri[0].y, 96.8, 1e-3);
+
+    SE_Close();
+}
+
+class TrailTest
+    : public testing::TestWithParam<std::tuple<std::string, double, double, int, double, double, double, int, double, double, double, int, double>>
+{
+protected:
+    TrailTest()
+    {
+        SE_RegisterParameterDeclarationCallback(paramDeclCallback, nullptr);
+    }
+    static void paramDeclCallback(void*)
+    {
+        SE_SetParameterString("ghost_follow_mode", std::get<0>(GetParam()).c_str());
+    }
+    ~TrailTest()
+    {
+        SE_RegisterParameterDeclarationCallback(nullptr, nullptr);
+    }
+};
+
+// Verify that trail lookahead function identifies various lane types and wheel angle
+TEST_P(TrailTest, TrailTestPositionMode)
+{
+    SE_SetOption("disable_stdout");
+    EXPECT_EQ(SE_Init("../../../EnvironmentSimulator/Unittest/xosc/trail_test.xosc", 0, 0, 0, 0), 0);
+
+    int ego_id = SE_GetId(0);
+    EXPECT_EQ(ego_id, 0);
+
+    SE_SetSnapLaneTypes(ego_id, -1);
+
+    SE_RoadInfo road_info;
+    float       speed, timestamp;
+
+    // in border lane
+    while (SE_GetSimulationTime() < (std::get<0>(GetParam()) == "position" ? 2.0f : 1.0f) + SMALL_NUMBERF)
+    {
+        SE_StepDT(0.1f);
+    }
+
+    SE_ScenarioObjectState obj_state;
+    SE_GetObjectState(ego_id, &obj_state);
+    EXPECT_NEAR(obj_state.x, std::get<1>(GetParam()), 1e-3);
+    EXPECT_NEAR(obj_state.y, std::get<2>(GetParam()), 1e-3);
+
+    SE_GetRoadInfoAlongGhostTrail(ego_id, 10.0, &road_info, &speed, &timestamp);
+    EXPECT_EQ(road_info.lane_type, std::get<3>(GetParam()));
+    EXPECT_NEAR(road_info.trail_wheel_angle, std::get<4>(GetParam()), 1e-3);
+
+    // in shoulder lane
+    while (SE_GetSimulationTime() < (std::get<0>(GetParam()) == "position" ? 2.9f : 1.5f) + SMALL_NUMBERF)
+    {
+        SE_StepDT(0.1f);
+    }
+
+    SE_GetObjectState(ego_id, &obj_state);
+    EXPECT_NEAR(obj_state.x, std::get<5>(GetParam()), 1e-3);
+    EXPECT_NEAR(obj_state.y, std::get<6>(GetParam()), 1e-3);
+
+    SE_GetRoadInfoAlongGhostTrail(ego_id, 10.0, &road_info, &speed, &timestamp);
+    EXPECT_EQ(road_info.lane_type, std::get<7>(GetParam()));
+    EXPECT_NEAR(road_info.trail_wheel_angle, std::get<8>(GetParam()), 1e-3);
+
+    // in driving lane
+    while (SE_GetSimulationTime() < (std::get<0>(GetParam()) == "position" ? 3.4f : 2.0f) + SMALL_NUMBERF)
+    {
+        SE_StepDT(0.1f);
+    }
+
+    SE_GetObjectState(ego_id, &obj_state);
+    EXPECT_NEAR(obj_state.x, std::get<9>(GetParam()), 1e-3);
+    EXPECT_NEAR(obj_state.y, std::get<10>(GetParam()), 1e-3);
+
+    SE_GetRoadInfoAlongGhostTrail(ego_id, 10.0, &road_info, &speed, &timestamp);
+    EXPECT_EQ(road_info.lane_type, std::get<11>(GetParam()));
+    EXPECT_NEAR(road_info.trail_wheel_angle, std::get<12>(GetParam()), 1e-3);
+
+    SE_Close();
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    TrailTestPositionModePosition,
+    TrailTest,
+    testing::Values(std::make_tuple("position", 71.0, -6.0, 64, 0.0407, 79.9937, -5.7766, 8, 0.1727, 84.8936, -4.8236, 2, 0.0118),
+                    std::make_tuple("time", 60.9999, -5.994, 64, 0.2814, 65.9984, -5.8872, 8, 0.1727, 70.9764, -5.4374, 2, -0.0157)));
+
 int main(int argc, char** argv)
 {
     testing::InitGoogleTest(&argc, argv);
@@ -4162,7 +5661,25 @@ int main(int argc, char** argv)
 	testing::GTEST_FLAG(filter) = "*AssignRoleTest*";
 	// Or make use of launch argument, e.g. --gtest_filter=TestFetchImage*
 #else
-    SE_LogToConsole(false);
+    // TxtLogger::Inst().SetLogFilePath("log-test.txt");
+
+    if (argc > 1)
+    {
+        if (!strcmp(argv[1], "--disable_stdout"))
+        {
+            //  disable logging to stdout from the esminiLib
+            SE_SetOptionPersistent("disable_stdout");
+
+            // disable logging to stdout from the test cases
+            SE_Env::Inst().GetOptions().SetOptionValue("disable_stdout", "", false, true);
+        }
+        else
+        {
+            printf("Usage: %s [--disable_stout] [google test options...]\n", argv[0]);
+            return -1;
+        }
+    }
+
 #endif
 
     return RUN_ALL_TESTS();

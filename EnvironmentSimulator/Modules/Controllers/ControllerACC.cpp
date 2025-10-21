@@ -19,6 +19,7 @@
 #include "Entities.hpp"
 #include "ScenarioGateway.hpp"
 #include "playerbase.hpp"
+#include "logger.hpp"
 
 using namespace scenarioengine;
 
@@ -36,8 +37,11 @@ ControllerACC::ControllerACC(InitArgs* args)
       setSpeed_(0),
       lateralDist_(5.0),
       currentSpeed_(0),
-      setSpeedSet_(false)
+      setSpeedSet_(false),
+      virtual_(false)
 {
+    operating_domains_ = static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LONG);
+
     if (args && args->properties && args->properties->ValueExists("timeGap"))
     {
         timeGap_ = strtod(args->properties->GetValueStr("timeGap"));
@@ -58,13 +62,23 @@ ControllerACC::ControllerACC(InitArgs* args)
         // in override mode setSpeed is set explicitly (if missing
         // the current speed when controller is activated will be
         // used as setSpeed)
-        mode_ = Controller::Mode::MODE_ADDITIVE;
+        mode_ = ControlOperationMode::MODE_ADDITIVE;
+    }
+    if (args && args->properties && args->properties->ValueExists("virtual"))
+    {
+        virtual_ = args->properties->GetValueStr("virtual") == "true" ? true : false;
     }
 }
 
 void ControllerACC::Init()
 {
     Controller::Init();
+}
+
+void ControllerACC::InitPostPlayer()
+{
+    // Uncomment line below to enable example how to add sensors. Press 'r' to visualize sensor frustum.
+    // player_->AddObjectSensor(object_, 4.0, 0.0, 0.5, 0.0, 1.0, 50.0, 1.2, 100);
 }
 
 void ControllerACC::Step(double timeStep)
@@ -76,9 +90,15 @@ void ControllerACC::Step(double timeStep)
     const double accelerationFactor = 0.7;
 
     // First check if speed has been set from somewhere else (another action or controller), respect it and update setSpeed
-    if (abs(object_->GetSpeed() - currentSpeed_) > 1e-3)
+    if (virtual_)
     {
-        LOG("New setspeed: %.2f", setSpeed_);
+        currentSpeed_ = object_->GetSpeed();
+    }
+    else if (
+        // mode_ == ControlOperationMode::MODE_ADDITIVE &&
+        abs(object_->GetSpeed() - currentSpeed_) > 1e-3)
+    {
+        LOG_INFO("New setspeed: {:5.2f}", setSpeed_);
         setSpeed_ = object_->GetSpeed();
     }
 
@@ -144,6 +164,7 @@ void ControllerACC::Step(double timeStep)
         }
     }
 
+    double acc = 0.0;
     if (minObjIndex > -1)
     {
         if (minGapLength < 1)
@@ -156,7 +177,6 @@ void ControllerACC::Step(double timeStep)
             double speedForTimeGap = MAX(currentSpeed_, entities_->object_[static_cast<unsigned int>(minObjIndex)]->GetSpeed());
             double followDist      = minDist + timeGap_ * fabs(speedForTimeGap);  // (m)
             double dist            = minGapLength - followDist;
-            double acc             = 0.0;
             double distFactor      = MIN(1.0, dist / followDist);
 
             double dvMin = currentSpeed_ - MIN(setSpeed_, entities_->object_[static_cast<unsigned int>(minObjIndex)]->GetSpeed());
@@ -166,7 +186,9 @@ void ControllerACC::Step(double timeStep)
             acc = CLAMP(acc, -object_->GetMaxDeceleration(), object_->GetMaxAcceleration());
 
             currentSpeed_ += acc * timeStep;
-            currentSpeed_ = MAX(0.0, currentSpeed_);
+
+            // ensure positiove speed and not exceeding setSpeed
+            currentSpeed_ = MIN(MAX(0.0, currentSpeed_), setSpeed_);
         }
 
         object_->SetSensorPosition(entities_->object_[static_cast<unsigned int>(minObjIndex)]->pos_.GetX(),
@@ -176,7 +198,10 @@ void ControllerACC::Step(double timeStep)
     else
     {
         // no lead vehicle to adapt to, adjust according to setSpeed
-        double tmpSpeed = currentSpeed_ + SIGN(setSpeed_ - currentSpeed_) * accelerationFactor * object_->GetMaxAcceleration() * timeStep;
+        acc             = (setSpeed_ - currentSpeed_) * accelerationFactor * object_->GetMaxAcceleration();
+        acc             = CLAMP(acc, -object_->GetMaxDeceleration(), accelerationFactor * object_->GetMaxAcceleration());
+        double tmpSpeed = currentSpeed_ + acc * timeStep;
+
         if (abs(tmpSpeed - setSpeed_) > abs(currentSpeed_ - setSpeed_))
         {
             // passed target speed
@@ -190,28 +215,37 @@ void ControllerACC::Step(double timeStep)
         object_->SetSensorPosition(object_->pos_.GetX(), object_->pos_.GetY(), object_->pos_.GetZ());
     }
 
-    if (mode_ == Mode::MODE_OVERRIDE)
+    if (mode_ == ControlOperationMode::MODE_OVERRIDE && !virtual_)
     {
         object_->MoveAlongS(currentSpeed_ * timeStep);
         gateway_->updateObjectPos(object_->GetId(), 0.0, &object_->pos_);
     }
 
-    gateway_->updateObjectSpeed(object_->GetId(), 0.0, currentSpeed_);
+    if (virtual_)
+    {
+        double acc_v[2] = {0.0, 0.0};
+        RotateVec2D(acc, 0.0, object_->pos_.GetH(), acc_v[0], acc_v[1]);
+        gateway_->updateObjectAcc(object_->GetId(), 0.0, acc_v[0], acc_v[1], 0.0);
+    }
+    else
+    {
+        gateway_->updateObjectSpeed(object_->GetId(), 0.0, currentSpeed_);
+    }
 
     Controller::Step(timeStep);
 }
 
-void ControllerACC::Activate(DomainActivation lateral, DomainActivation longitudinal)
+int ControllerACC::Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)])
 {
     currentSpeed_ = object_->GetSpeed();
-    if (mode_ == Mode::MODE_ADDITIVE || setSpeedSet_ == false)
+    if (mode_ == ControlOperationMode::MODE_ADDITIVE || setSpeedSet_ == false)
     {
         setSpeed_ = object_->GetSpeed();
     }
 
-    Controller::Activate(lateral, longitudinal);
+    Controller::Activate(mode);
 
-    if (IsActiveOnDomains(ControlDomains::DOMAIN_LAT))
+    if (IsActiveOnDomains(static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LAT)))
     {
         // Make sure heading is aligned with road driving direction
         object_->pos_.SetHeadingRelative((object_->pos_.GetHRelative() > M_PI_2 && object_->pos_.GetHRelative() < 3 * M_PI_2) ? M_PI : 0.0);
@@ -221,6 +255,8 @@ void ControllerACC::Activate(DomainActivation lateral, DomainActivation longitud
     {
         player_->SteeringSensorSetVisible(object_->GetId(), true);
     }
+
+    return 0;
 }
 
 void ControllerACC::ReportKeyEvent(int key, bool down)

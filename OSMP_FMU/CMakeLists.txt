@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 
-set(TARGET EsminiOsiSource)
+set(TARGET esmini)
 project(${TARGET})
 
 execute_process(
@@ -103,7 +103,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../E
 link_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../bin
-    ${CMAKE_CURRENT_SOURCE_DIR}/../externals/osi/${EXT_INCL_DIR}/lib
+    ${CMAKE_CURRENT_SOURCE_DIR}/../externals/osi/${EXT_INCL_DIR}/lib/release
     ${CMAKE_CURRENT_SOURCE_DIR}/../externals/sumo/${EXT_INCL_DIR}/lib
     ${CMAKE_CURRENT_SOURCE_DIR}/../externals/osg/${EXT_INCL_DIR}/lib
     ${CMAKE_CURRENT_SOURCE_DIR}/../externals/osg/${EXT_INCL_DIR}/lib/osgPlugins-3.6.5
@@ -117,7 +117,7 @@ link_directories(
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../externals/fmi2/headers)
 
-add_library(${TARGET} SHARED EsminiOsiSource.cpp)
+add_library(${TARGET} SHARED esmini.cpp)
 set_target_properties(${TARGET} PROPERTIES PREFIX "")
 target_compile_definitions(${TARGET} PRIVATE "FMU_SHARED_OBJECT")
 
@@ -137,6 +137,16 @@ if(STATIC_LINKING)
     include(${CMAKE_CURRENT_SOURCE_DIR}/../support/cmake/external/osg.cmake)
     set_osg_libs()
 
+
+    set(FMT_SHARED OFF)
+    set(CMAKE_POSITION_INDEPENDENT_CODE
+        ON)
+    add_subdirectory(../externals/fmt fmt)
+
+    if(LINUX)
+        # add link lib for missing filesystem functions in case gcc 7.5 is usedAdd commentMore actions
+        set(FMT_LIBRARIES ${FMT_LIBRARIES} "-lstdc++fs")
+    endif()
     target_link_libraries(
         ${TARGET}
         PRIVATE esminiLib_static${LIB_POSTFIX}
@@ -144,11 +154,15 @@ if(STATIC_LINKING)
                 ScenarioEngine${LIB_POSTFIX}
                 Controllers${LIB_POSTFIX}
                 ViewerBase${LIB_POSTFIX}
+                RoadGeom${LIB_POSTFIX}
                 RoadManager${LIB_POSTFIX}
                 CommonMini${LIB_POSTFIX}
                 ${OSI_LIBRARIES}
                 ${SUMO_LIBRARIES}
                 ${OSG_LIBRARIES}
+                fmt
+                pugixml_lib
+                stdc++fs
                 ${ADDITIONAL_LIBS})
 else()
     message("Link esmini dynamically")
@@ -165,6 +179,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${TARGET}> $<$<PLATFORM_ID:Windows>:$<$<CONFIG:Debug>:$<TARGET_PDB_FILE:${TARGET}>>>
             "${CMAKE_CURRENT_BINARY_DIR}/buildfmu/binaries/${FMI_BINARIES_PLATFORM}"
     COMMAND
-        ${CMAKE_COMMAND} -E chdir "${CMAKE_CURRENT_BINARY_DIR}/buildfmu" ${CMAKE_COMMAND} -E tar "cfv" "../EsminiOsiSource.fmu" --format=zip
+        ${CMAKE_COMMAND} -E chdir "${CMAKE_CURRENT_BINARY_DIR}/buildfmu" ${CMAKE_COMMAND} -E tar "cfv" "../esmini.fmu" --format=zip
         "modelDescription.xml" "${CMAKE_CURRENT_BINARY_DIR}/buildfmu/sources"
         "${CMAKE_CURRENT_BINARY_DIR}/buildfmu/binaries/${FMI_BINARIES_PLATFORM}")

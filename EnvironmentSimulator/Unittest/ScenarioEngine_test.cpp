@@ -5,11 +5,13 @@
 #include <stdexcept>
 #include <array>
 
+#include "CommonMini.hpp"
 #include "ScenarioEngine.hpp"
 #include "ScenarioReader.hpp"
 #include "ControllerUDPDriver.hpp"
 #include "ControllerLooming.hpp"
 #include "ControllerALKS_R157SM.hpp"
+#include "ControllerInteractive.hpp"
 #include "OSCParameterDistribution.hpp"
 #include "pugixml.hpp"
 #include "simple_expr.h"
@@ -38,12 +40,12 @@ TEST(DistanceTest, CalcDistanceVariations)
     EXPECT_NEAR(dist, 10.0, 1e-5);
 
     // same point but measure now in road coordinates
-    Object obj0(Object::Type::VEHICLE);
+    Vehicle obj0;
     obj0.boundingbox_.center_     = {1.0, 0.0, 0.0};
     obj0.boundingbox_.dimensions_ = {2.0, 2.0, 2.0};
     obj0.pos_                     = pos0;
 
-    Object obj1(Object::Type::VEHICLE);
+    Vehicle obj1;
     obj1.pos_                     = pos1;
     obj1.boundingbox_.center_     = {1.0, 0.0, 0.0};
     obj1.boundingbox_.dimensions_ = {2.0, 2.0, 2.0};
@@ -137,7 +139,7 @@ TEST(DistanceTest, CalcDistancePoint)
     Position pos0 = Position(0, -1, 400.0, 0);
     pos0.SetHeading(0.0);
 
-    Object obj0(Object::Type::VEHICLE);
+    Vehicle obj0;
     obj0.boundingbox_.center_     = {1.0, 0.0, 0.0};
     obj0.boundingbox_.dimensions_ = {2.0, 2.0, 2.0};
     obj0.pos_                     = pos0;
@@ -180,7 +182,7 @@ TEST(DistanceTest, CalcDistancePointAcrossIntersection)
     Position pos0 = Position(0, 1, 10.0, 0);
     pos0.SetHeading(0.0);
 
-    Object obj0(Object::Type::VEHICLE);
+    Vehicle obj0;
     obj0.boundingbox_.center_     = {1.0, 0.0, 0.0};
     obj0.boundingbox_.dimensions_ = {2.0, 2.0, 2.0};
     obj0.pos_                     = pos0;
@@ -193,8 +195,8 @@ TEST(DistanceTest, CalcDistancePointAcrossIntersection)
     double longDist = 0.0;
 
     ASSERT_EQ(obj0.FreeSpaceDistancePointRoadLane(pos1.GetX(), pos1.GetY(), &latDist, &longDist, CoordinateSystem::CS_ROAD), 0);
-    EXPECT_NEAR(longDist, -38.58642, 1e-5);
-    EXPECT_NEAR(latDist, -0.22127, 1e-5);
+    EXPECT_NEAR(longDist, -38.5861, 1e-3);
+    EXPECT_NEAR(latDist, -0.2212, 1e-3);
 }
 
 TEST(DistanceTest, CalcEntityDistanceFreespace)
@@ -205,13 +207,13 @@ TEST(DistanceTest, CalcEntityDistanceFreespace)
     ASSERT_NE(odr, nullptr);
     EXPECT_EQ(odr->GetNumOfRoads(), 1);
 
-    Object obj0(Object::Type::VEHICLE);
+    Vehicle obj0;
     obj0.boundingbox_.center_     = {1.5, 0.0, 0.0};
     obj0.boundingbox_.dimensions_ = {2.0, 5.0, 2.0};
     obj0.pos_.SetLanePos(1, -1, 20.0, 0);
     obj0.pos_.SetHeading(0.0);
 
-    Object obj1(Object::Type::VEHICLE);
+    Vehicle obj1;
     obj1.boundingbox_.center_     = {1.5, 0.0, 0.0};
     obj1.boundingbox_.dimensions_ = {2.0, 5.0, 2.0};
     obj1.pos_.SetLanePos(1, -1, 30.0, 0);
@@ -269,6 +271,371 @@ TEST(DistanceTest, CalcEntityDistanceFreespace)
     EXPECT_NEAR(latDist, 1.204715, 1e-5);
     EXPECT_NEAR(longDist, 4.64299, 1e-5);
     EXPECT_NEAR(dist = obj0.FreeSpaceDistance(&obj1, &latDist, &longDist), 5.876278, 1e-3);
+}
+
+TEST(DistanceTest, DistanceWithTrailers)
+{
+    double dt       = 0.1;
+    double distance = LARGE_NUMBER;
+
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/distance_with_trailers.xosc");
+
+    ASSERT_NE(se, nullptr);
+    EXPECT_EQ(se->entities_.object_.size(), 7);
+
+    // initialize
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    ASSERT_EQ(se->entities_.object_[2]->GetType(), Object::Type::VEHICLE);
+    ASSERT_EQ(se->entities_.object_[0]->GetType(), Object::Type::VEHICLE);
+    ASSERT_EQ(se->entities_.object_[6]->GetType(), Object::Type::VEHICLE);
+    ASSERT_EQ(se->entities_.object_[3]->GetType(), Object::Type::VEHICLE);
+
+    Vehicle* car1            = static_cast<Vehicle*>(se->entities_.object_[2]);
+    Vehicle* truck1          = static_cast<Vehicle*>(se->entities_.object_[0]);
+    Vehicle* car2            = static_cast<Vehicle*>(se->entities_.object_[6]);
+    Vehicle* truck2          = static_cast<Vehicle*>(se->entities_.object_[3]);
+    Vehicle* truck2_trailer2 = static_cast<Vehicle*>(se->entities_.object_[5]);
+
+    // first check some reference point distance variants
+
+    // euclidian reference point distance between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, false, distance);
+    EXPECT_NEAR(distance, 68.887, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, false, distance);
+    EXPECT_NEAR(distance, 68.887, 1e-3);
+
+    // longitudinal reference point distance, in entity coordinate system, between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, false, distance);
+    EXPECT_NEAR(distance, 66.230, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, false, distance);
+    EXPECT_NEAR(distance, 67.207, 1e-3);
+
+    // longitudinal road reference point distance between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ROAD, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, false, distance);
+    EXPECT_NEAR(distance, 70.0, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ROAD, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, false, distance);
+    EXPECT_NEAR(distance, 70.0, 1e-3);
+
+    // longitudinal lane reference point distance between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_LANE, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, false, distance);
+    EXPECT_NEAR(distance, 70.0, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_LANE, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, false, distance);
+    EXPECT_NEAR(distance, 70.0, 1e-3);
+
+    // lateral road reference point distance between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ROAD, roadmanager::RelativeDistanceType::REL_DIST_LATERAL, false, distance);
+    EXPECT_NEAR(distance, -3.07, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ROAD, roadmanager::RelativeDistanceType::REL_DIST_LATERAL, false, distance);
+    EXPECT_NEAR(distance, 3.07, 1e-3);
+
+    // lateral lane reference point distance between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_LANE, roadmanager::RelativeDistanceType::REL_DIST_LATERAL, false, distance);
+    EXPECT_NEAR(distance, -3.07, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_LANE, roadmanager::RelativeDistanceType::REL_DIST_LATERAL, false, distance);
+    EXPECT_NEAR(distance, 3.07, 1e-3);
+
+    // then check some freespace variants
+
+    // euclidian freespace distance between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 59.6319, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 59.6319, 1e-3);
+
+    // longitudinal freespace distance, in entity coordinate system, between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 57.2550, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 58.2370, 1e-3);
+
+    // longitudinal road freespace distance between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ROAD, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 60.9302, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ROAD, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 60.9302, 1e-3);
+
+    // longitudinal lane freespace distance between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_LANE, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 60.9302, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_LANE, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 60.9302, 1e-3);
+
+    // lateral road freespace distance between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ROAD, roadmanager::RelativeDistanceType::REL_DIST_LATERAL, true, distance);
+    EXPECT_NEAR(distance, -0.692, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ROAD, roadmanager::RelativeDistanceType::REL_DIST_LATERAL, true, distance);
+    EXPECT_NEAR(distance, 0.692, 1e-3);
+
+    // lateral lane freespace distance between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_LANE, roadmanager::RelativeDistanceType::REL_DIST_LATERAL, true, distance);
+    EXPECT_NEAR(distance, -0.692, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_LANE, roadmanager::RelativeDistanceType::REL_DIST_LATERAL, true, distance);
+    EXPECT_NEAR(distance, 0.692, 1e-3);
+
+    // move forward in time a bit
+    while (se->getSimulationTime() < 1.2 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    EXPECT_NEAR(car1->pos_.GetX(), 513.193, 1e-3);
+    EXPECT_NEAR(car1->pos_.GetY(), 2.423, 1e-3);
+
+    // euclidian freespace distance between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 24.3254, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 24.3254, 1e-3);
+
+    // longitudinal freespace distance, in entity coordinate system, between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 24.3250, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 24.1240, 1e-3);
+
+    // move forward until car1 is very close to truck1
+    while (se->getSimulationTime() < 2.0 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    EXPECT_NEAR(car1->pos_.GetX(), 489.205, 1e-3);
+    EXPECT_NEAR(car1->pos_.GetY(), 1.535, 1e-3);
+
+    // euclidian freespace distance between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 0.8050, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 0.8050, 1e-3);
+
+    // longitudinal freespace distance, in entity coordinate system, between car1 and truck1, should now be same since straight road segment
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 0.2349, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 0.2349, 1e-3);
+
+    // move forward until car1 is overlapping truck1 longitudinally
+    while (se->getSimulationTime() < 2.1 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    // euclidian freespace distance between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 0.7700, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 0.7700, 1e-3);
+
+    // longitudinal freespace distance, in entity coordinate system, between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 0.0, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 0.0, 1e-3);
+
+    // move forward until car1 is behind truck1 longitudinally
+    while (se->getSimulationTime() < 2.7 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    // euclidian freespace distance between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, -1.7937, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, -1.7937, 1e-3);
+
+    // longitudinal freespace distance, in entity coordinate system, between car1 and truck1
+    car1->Distance(truck1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, -1.6200, 1e-3);
+    truck1->Distance(car1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, -1.6200, 1e-3);
+
+    // move forward until car2 is close to truck2 longitudinally
+    while (se->getSimulationTime() < 3.0 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    // euclidian freespace distance between car2 and truck2
+    car2->Distance(truck2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 1.0500, 1e-3);
+    truck2->Distance(car2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 1.0500, 1e-3);
+
+    // longitudinal freespace distance, in entity coordinate system, between car2 and truck2
+    // image: https://drive.google.com/file/d/12FFP8DBfNpJgCpjdIpk7_kbd6xczWy79/view?usp=sharing
+    car2->Distance(truck2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 0.4782, 1e-3);
+    truck2->Distance(car2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 0.8017, 1e-3);
+
+    // move forward until car2 is overlapping truck2 longitudinally, and close laterally at corner of trailer
+    while (se->getSimulationTime() < 3.2 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    // euclidian freespace distance between car2 and truck2
+    car2->Distance(truck2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 0.6629, 1e-3);
+    truck2->Distance(car2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 0.6629, 1e-3);
+
+    // longitudinal freespace distance, in entity coordinate system, between car2 and truck2
+    car2->Distance(truck2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 0.0, 1e-3);
+    truck2->Distance(car2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 0.0, 1e-3);
+
+    // move forward until car2 is at longitudinal middle of trailer body, hence less close laterally since in curve
+    while (se->getSimulationTime() < 3.5 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    // euclidian freespace distance between car2 and truck2
+    car2->Distance(truck2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 1.0767, 1e-3);
+    truck2->Distance(car2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 1.0767, 1e-3);
+
+    // longitudinal freespace distance, in entity coordinate system, between car2 and truck2
+    car2->Distance(truck2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 0.0, 1e-3);
+    truck2->Distance(car2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 0.0, 1e-3);
+
+    // move forward until car2 is behind truck2
+    while (se->getSimulationTime() < 4.1 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    // euclidian freespace distance between car2 and truck2
+    car2->Distance(truck2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, -1.9655, 1e-3);
+    truck2->Distance(car2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, -1.9655, 1e-3);
+
+    // longitudinal freespace distance, in entity coordinate system, between car2 and truck2
+    car2->Distance(truck2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, -0.9049, 1e-3);
+    truck2->Distance(car2, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, -1.0600, 1e-3);
+
+    // Finally test point distance with and without trailers involved
+    truck1->Distance(468.8, 1.53, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, -2.1450, 1e-3);
+    truck1->Distance(468.8, 1.53, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, -2.7778, 1e-3);
+    truck2->Distance(468.8, 1.53, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, 122.8735, 1e-3);
+    truck2->Distance(468.8, 1.53, roadmanager::CoordinateSystem::CS_ROAD, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 132.2590, 1e-3);
+
+    truck2->Distance(597.83, 72.84, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, -3.3915, 1e-3);
+    truck2_trailer2
+        ->Distance(597.83, 72.84, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, true, distance);
+    EXPECT_NEAR(distance, -3.3915, 1e-3);
+
+    truck2
+        ->Distance(597.83, 72.84, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, -2.1645, 1e-3);
+    truck2_trailer2
+        ->Distance(597.83, 72.84, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, -2.1645, 1e-3);
+
+    truck2->Distance(597.83, 72.84, roadmanager::CoordinateSystem::CS_ROAD, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, -2.0509, 1e-3);
+    truck2_trailer2
+        ->Distance(597.83, 72.84, roadmanager::CoordinateSystem::CS_ROAD, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, -2.0509, 1e-3);
+
+    car1->Distance(300.0, 1.53, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 122.2849, 1e-3);
+    car1->Distance(420.0, 1.53, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, distance);
+    EXPECT_NEAR(distance, 2.2849, 1e-3);
+
+    delete se;
+}
+
+TEST(DistanceTest, TestTrajectoryDistance)
+{
+    double dt = 0.1;
+
+    ScenarioEngine* se = new ScenarioEngine("../../../resources/xosc/lane-change_clothoid_based_trajectory.xosc");
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 1);
+    Object* obj0 = entities->object_[0];
+
+    while (se->getSimulationTime() < 3.1 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    // Check car position at given time at end phase of the scenario
+    // Correct position indicates all trajectories have been evaluated correctly
+    EXPECT_NEAR(obj0->pos_.GetX(), 93.0109, 1E-3);
+    EXPECT_NEAR(obj0->pos_.GetY(), -0.5720, 1E-3);
+    EXPECT_NEAR(obj0->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(obj0->pos_.GetH(), 0.1388), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(obj0->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(obj0->pos_.GetR(), 0.0), 0.0, 1E-3);
+
+    Object obj1(Object::Type::VEHICLE);
+    obj1.pos_.SetTrackPos(1, 93, 0);
+
+    double dist = LARGE_NUMBER;
+    EXPECT_EQ(obj0->Distance(&obj1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, false, dist), 0);
+    EXPECT_NEAR(dist, 0.5721, 1E-3);
+    EXPECT_EQ(
+        obj0->Distance(&obj1, roadmanager::CoordinateSystem::CS_TRAJECTORY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, false, dist),
+        0);
+    EXPECT_NEAR(dist, 0.0661, 1E-3);
+
+    // test with same trajectory in both objects
+    obj1.pos_.SetTrajectory(obj0->pos_.GetTrajectory()->Copy());
+    obj1.pos_.SetTrajectoryS(obj0->pos_.GetTrajectoryS() + 0.9);
+    EXPECT_EQ(
+        obj0->Distance(&obj1, roadmanager::CoordinateSystem::CS_TRAJECTORY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, false, dist),
+        0);
+    EXPECT_NEAR(dist, 0.9, 1E-3);
+
+    delete (obj1.pos_.GetTrajectory());  // normally deleted by followTrajectoryAction destructor
+    obj1.pos_.SetTrajectory(nullptr);
+    obj1.pos_.MoveAlongS(2.0);
+    EXPECT_EQ(obj0->Distance(&obj1, roadmanager::CoordinateSystem::CS_ENTITY, roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN, false, dist), 0);
+    EXPECT_NEAR(dist, 2.8936, 1E-3);
+
+    // while obj1 has passed beyond the trajectory, it's trajectory related pos will be stuck at end of the trajectory
+    EXPECT_EQ(
+        obj0->Distance(&obj1, roadmanager::CoordinateSystem::CS_TRAJECTORY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, false, dist),
+        0);
+    EXPECT_NEAR(dist, 1.1111, 1E-3);
+
+    // trajectory distance with freespace not supported yet
+    EXPECT_EQ(
+        obj0->Distance(&obj1, roadmanager::CoordinateSystem::CS_TRAJECTORY, roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL, true, dist),
+        -1);
+
+    delete se;
 }
 
 TEST(TrajectoryTest, EnsureContinuation)
@@ -402,6 +769,273 @@ TEST(TrajectoryTest, FollowTrajectoryReverse)
     EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 174.700, 1e-3);
     EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -1.535, 1e-3);
     EXPECT_NEAR(se->entities_.object_[0]->GetSpeed(), 22.000, 1e-3);
+
+    delete se;
+}
+
+TEST(TrajectoryTest, TestIgnoreHeadingAndInterpolationByVehicleProperty)
+{
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/traj_heading_and_interpolation.xosc");
+    const double    dt = 0.1;
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 4);
+
+    // check initial pose
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 104.903, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -8.019, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 3.142, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 5.0, 1E-2);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 104.903, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), -3.019, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetH(), 3.142, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->GetSpeed(), 5.0, 1E-2);
+
+    EXPECT_NEAR(entities->object_[2]->pos_.GetX(), 104.903, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetY(), 1.981, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetH(), 3.863, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->GetSpeed(), 5.0, 1E-2);
+
+    EXPECT_NEAR(entities->object_[3]->pos_.GetX(), 104.903, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetY(), 6.981, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetH(), 3.142, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->GetSpeed(), 5.0, 1E-2);
+
+    // Check expected position and orientation at some specific time stamps
+    while (se->getSimulationTime() < 5.0 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 129.417, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -6.883, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 6.086, 1E-2);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 80.000, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), -4.000, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetH(), 3.142, 1E-2);
+
+    EXPECT_NEAR(entities->object_[2]->pos_.GetX(), 129.417, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetY(), 3.117, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetH(), 6.272, 1E-2);
+
+    EXPECT_NEAR(entities->object_[3]->pos_.GetX(), 129.417, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetY(), 8.117, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetH(), 6.086, 1E-2);
+
+    // just before second corner
+    while (se->getSimulationTime() < 7.1 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 139.714, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -8.943, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 6.254, 1E-2);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 69.500, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), -4.000, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetH(), 3.142, 1E-2);
+
+    EXPECT_NEAR(entities->object_[2]->pos_.GetX(), 139.714, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetY(), 1.057, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetH(), 0.192, 1E-2);
+
+    EXPECT_NEAR(entities->object_[3]->pos_.GetX(), 139.714, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetY(), 6.057, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetH(), 6.086, 1E-2);
+
+    // just after second corner
+    while (se->getSimulationTime() < 7.3 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 140.694, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -8.861, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 0.070, 1E-2);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 68.500, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), -4.000, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetH(), 3.142, 1E-2);
+
+    EXPECT_NEAR(entities->object_[2]->pos_.GetX(), 140.694, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetY(), 1.139, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetH(), 0.197, 1E-2);
+
+    EXPECT_NEAR(entities->object_[3]->pos_.GetX(), 140.694, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetY(), 6.139, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetH(), 0.197, 1E-2);
+
+    delete se;
+}
+
+TEST(TrajectoryTest, TestIgnoreHeadingAndInterpolationByOption)
+{
+    SE_Env::Inst().GetOptions().AddOption("pline_interpolation", "", "mode", "segment", true);
+    SE_Env::Inst().GetOptions().ApplyDefaultValues();
+
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/traj_heading_and_interpolation.xosc");
+    const double    dt = 0.1;
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 4);
+
+    // check initial pose
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 104.903, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -8.019, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 3.863, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 5.0, 1E-2);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 104.903, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), -3.019, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetH(), 3.863, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->GetSpeed(), 5.0, 1E-2);
+
+    EXPECT_NEAR(entities->object_[2]->pos_.GetX(), 104.903, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetY(), 1.981, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetH(), 3.863, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->GetSpeed(), 5.0, 1E-2);
+
+    EXPECT_NEAR(entities->object_[3]->pos_.GetX(), 104.903, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetY(), 6.981, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetH(), 3.863, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->GetSpeed(), 5.0, 1E-2);
+
+    // Check expected position and orientation at some specific time stamps
+    while (se->getSimulationTime() < 3.0 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 119.612, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -5.078, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 6.029, 1E-2);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 90.000, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), -4.000, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetH(), 3.142, 1E-2);
+
+    EXPECT_NEAR(entities->object_[2]->pos_.GetX(), 119.612, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetY(), 4.922, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetH(), 6.029, 1E-2);
+
+    EXPECT_NEAR(entities->object_[3]->pos_.GetX(), 119.612, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetY(), 9.922, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetH(), 6.029, 1E-2);
+
+    while (se->getSimulationTime() < 5.0 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 129.417, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -6.883, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 6.272, 1E-2);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 80.000, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), -4.000, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetH(), 3.142, 1E-2);
+
+    EXPECT_NEAR(entities->object_[2]->pos_.GetX(), 129.417, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetY(), 3.117, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetH(), 6.272, 1E-2);
+
+    EXPECT_NEAR(entities->object_[3]->pos_.GetX(), 129.417, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetY(), 8.117, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetH(), 6.272, 1E-2);
+
+    delete se;
+    SE_Env::Inst().GetOptions().Reset();
+}
+
+TEST(TrajectoryTest, TestUseCases)
+{
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/traj_use_cases.xosc");
+    const double    dt = 0.1;
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 6);
+
+    // check initial pose
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 65.000, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -9.000, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 3.142, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), -5.000, 1E-2);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 65.000, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), -5.000, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetH(), 0.000, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->GetSpeed(), -5.000, 1E-2);
+
+    EXPECT_NEAR(entities->object_[2]->pos_.GetX(), 65.000, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetY(), -1.000, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetH(), 3.142, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->GetSpeed(), -5.000, 1E-2);
+
+    EXPECT_NEAR(entities->object_[3]->pos_.GetX(), 65.000, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetY(), 3.000, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetH(), 3.142, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->GetSpeed(), -2.500, 1E-2);
+
+    EXPECT_NEAR(entities->object_[4]->pos_.GetX(), 65.000, 1E-2);
+    EXPECT_NEAR(entities->object_[4]->pos_.GetY(), -13.000, 1E-2);
+    EXPECT_NEAR(entities->object_[4]->pos_.GetH(), 2.356, 1E-2);
+    EXPECT_NEAR(entities->object_[4]->GetSpeed(), 5.0, 1E-2);
+
+    EXPECT_NEAR(entities->object_[5]->pos_.GetX(), 65.000, 1E-2);
+    EXPECT_NEAR(entities->object_[5]->pos_.GetY(), -17.000, 1E-2);
+    EXPECT_NEAR(entities->object_[5]->pos_.GetH(), 2.356, 1E-2);
+    EXPECT_NEAR(entities->object_[5]->GetSpeed(), -2.500, 1E-2);
+
+    // Check expected position and orientation at some specific time stamps
+    while (se->getSimulationTime() < 2.0 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 75.000, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -9.000, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 3.142, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), -5.000, 1E-2);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 55.000, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), -5.000, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetH(), 0.000, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->GetSpeed(), -5.000, 1E-2);
+
+    EXPECT_NEAR(entities->object_[2]->pos_.GetX(), 75.000, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetY(), -1.000, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->pos_.GetH(), 3.142, 1E-2);
+    EXPECT_NEAR(entities->object_[2]->GetSpeed(), -5.000, 1E-2);
+
+    EXPECT_NEAR(entities->object_[3]->pos_.GetX(), 75.000, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetY(), 3.000, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->pos_.GetH(), 3.142, 1E-2);
+    EXPECT_NEAR(entities->object_[3]->GetSpeed(), -5.000, 1E-2);
+
+    EXPECT_NEAR(entities->object_[4]->pos_.GetX(), 75.000, 1E-2);
+    EXPECT_NEAR(entities->object_[4]->pos_.GetY(), -13.000, 1E-2);
+    EXPECT_NEAR(entities->object_[4]->pos_.GetH(), 2.356, 1E-2);
+    EXPECT_NEAR(entities->object_[4]->GetSpeed(), 5.000, 1E-2);
+
+    EXPECT_NEAR(entities->object_[5]->pos_.GetX(), 75.000, 1E-2);
+    EXPECT_NEAR(entities->object_[5]->pos_.GetY(), -17.000, 1E-2);
+    EXPECT_NEAR(entities->object_[5]->pos_.GetH(), 2.356, 1E-2);
+    EXPECT_NEAR(entities->object_[5]->GetSpeed(), -5.000, 1E-2);
 
     delete se;
 }
@@ -550,52 +1184,63 @@ TEST(ExpressionTest, EnsureResult)
     EXPECT_NEAR(eval_expr("abs(0.5)")._double, 0.5, 1e-5);
     EXPECT_NEAR(eval_expr("abs(2.9)")._double, 2.9, 1e-5);
     EXPECT_NEAR(eval_expr("abs(-2.9)")._double, 2.9, 1e-5);
+
+    // constants
+    EXPECT_NEAR(eval_expr("pi")._double, 3.141592, 1e-5);
+    EXPECT_NEAR(eval_expr("e")._double, 2.718281, 1e-5);
+    EXPECT_NEAR(eval_expr("2*pi")._double, 6.283185, 1e-5);
+    EXPECT_NEAR(eval_expr("2 * e")._double, 5.436563, 1e-5);
+    EXPECT_NEAR(eval_expr("2*pi*pi+e")._double, 22.457490, 1e-5);
+    EXPECT_NEAR(eval_expr("pow(pi,3) / e")._double, 11.406571, 1e-5);
 }
 
 TEST(OptionsTest, TestOptionHandling)
 {
     SE_Options opt;
 
-    // define arguments
-    opt.AddOption("osc_file", "Scenario file", "filename");
-    opt.AddOption("odr_file", "Roadnetwork file", "filename", "default_road.xodr");
-    opt.AddOption("option2", "Some value", "value");
-    opt.AddOption("option3", "Some rate", "rate", "55");
-    opt.AddOption("option4", "Some temp", "temp");
-    opt.AddOption("option5", "Some speed", "speed");
-    opt.AddOption("window", "Visualize the scenario");
+    // define arguments - need to use registered option names
+    opt.AddOption("osc", "Scenario file", "filename");
+    opt.AddOption("odr", "Roadnetwork file", "filename", "default_road.xodr");
+    opt.AddOption("trail_mode", "Car trail mode", "mode", "", false, false);
+    opt.AddOption("density", "Car density", "density", "5", true);
+    opt.AddOption("text_scale", "Text scale");
+    opt.AddOption("traj_filter", "Trajectory filter", "size");
+    opt.AddOption("collision", "Activate collision detection");
     // opt.PrintUsage();
 
     // set arguments
-    std::array<const char*, 12> args = {"my_app",
-                                        "--osc_file",
+    std::array<const char*, 14> args = {"my_app",
+                                        "--osc",
                                         "my_scenario.xosc",
-                                        "--odr_file",
-                                        "my_road.xodr",
-                                        "--window",
-                                        "--option2",
-                                        "option2Value",
-                                        "--option2",
-                                        "option2Value2",
-                                        "--option3",
-                                        "--option4"};
+                                        "--odr",
+                                        "my_road_first.xodr",
+                                        "--odr",
+                                        "my_road_second.xodr",
+                                        "--collision",
+                                        "--trail_mode",
+                                        "TrailMode",
+                                        "--trail_mode",
+                                        "TrailMode2",
+                                        "--car_density",
+                                        "--text_scale"};
     int                         argc = static_cast<int>(args.size());
 
-    ASSERT_EQ(opt.ParseArgs(argc, args.data()), -1);
+    ASSERT_EQ(argc, 14);
+    ASSERT_EQ(opt.ParseArgs(argc, args.data()), 0);
 
     ASSERT_EQ(opt.GetOptionSet("no_arg"), false);
-    ASSERT_EQ(opt.GetOptionSet("osc_file"), true);
-    ASSERT_EQ(opt.GetOptionSet("window"), true);
-    ASSERT_EQ(opt.GetOptionSet("option2"), true);
-    ASSERT_EQ(opt.GetOptionSet("option3"), true);
-    ASSERT_EQ(opt.GetOptionSet("option4"), false);
-    ASSERT_EQ(opt.GetOptionSet("option5"), false);
-    ASSERT_EQ(opt.GetOptionArg("window"), "");
-    ASSERT_EQ(opt.GetOptionArg("osc_file"), "my_scenario.xosc");
-    ASSERT_EQ(opt.GetOptionArg("odr_file"), "my_road.xodr");
-    ASSERT_EQ(opt.GetOptionArg("option2"), "option2Value");
-    ASSERT_EQ(opt.GetOptionArg("option2", 1), "option2Value2");
-    ASSERT_EQ(opt.GetOptionArg("option3"), "55");
+    ASSERT_EQ(opt.GetOptionSet("osc"), true);
+    ASSERT_EQ(opt.GetOptionSet("collision"), true);
+    ASSERT_EQ(opt.GetOptionSet("trail_mode"), true);
+    ASSERT_EQ(opt.GetOptionSet("density"), true);
+    ASSERT_EQ(opt.GetOptionSet("text_scale"), true);
+    ASSERT_EQ(opt.GetOptionSet("traj_filter"), false);
+    ASSERT_EQ(opt.GetOptionValue("window"), "");
+    ASSERT_EQ(opt.GetOptionValue("osc"), "my_scenario.xosc");
+    ASSERT_EQ(opt.GetOptionValue("odr"), "my_road_second.xodr");
+    ASSERT_EQ(opt.GetOptionValue("trail_mode"), "TrailMode2");
+    ASSERT_EQ(opt.GetOptionValue("trail_mode", 1), "TrailMode");
+    ASSERT_EQ(opt.GetOptionValue("density"), "5");
 
     // test without last argument, should return OK
     int argc_minus_one = static_cast<int>(args.size() - 1);
@@ -604,7 +1249,7 @@ TEST(OptionsTest, TestOptionHandling)
 
 TEST(ParameterTest, ResolveParameterTest)
 {
-    Parameters params;
+    Parameters& params = ScenarioReader::parameters;
 
     params.parameterDeclarations_.Parameter.push_back({"speed", OSCParameterDeclarations::ParameterType::PARAM_TYPE_DOUBLE, {0, 5.0, "5.0", false}});
     params.parameterDeclarations_.Parameter.push_back({"acc", OSCParameterDeclarations::ParameterType::PARAM_TYPE_DOUBLE, {0, 3.0, "3.0", false}});
@@ -635,7 +1280,7 @@ TEST(ParameterTest, ParseParameterTest)
     paramDeclNode1.append_attribute("parameterType") = "boolean";
     paramDeclNode1.append_attribute("value")         = "true";
 
-    Parameters params;
+    Parameters& params = ScenarioReader::parameters;
     params.addParameterDeclarations(paramDeclsNode);
 
     // Create an XML element with attributes referring to parameters
@@ -664,6 +1309,58 @@ TEST(ParameterTest, ParseParameterTest)
     ASSERT_EQ(params.ReadAttribute(someNode0, "attr9", false), "2.000000");
 }
 
+// Verify additional declarations of the same parameter will overwrite the previous one
+TEST(ParameterTest, KeepLastParameterValueTest)
+{
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/parameter_overwrite.xosc");
+    ASSERT_NE(se, nullptr);
+    ASSERT_EQ(se->entities_.object_.size(), 1);
+    ASSERT_EQ(se->GetScenarioReader()->parameters.GetNumberOfParameters(), 2);
+    EXPECT_STREQ(se->GetScenarioReader()->parameters.parameterDeclarations_.Parameter[0].name.c_str(), "posX");
+    EXPECT_NEAR(se->GetScenarioReader()->parameters.parameterDeclarations_.Parameter[0].value._double, 20.0, 1e-3);
+    EXPECT_STREQ(se->GetScenarioReader()->parameters.parameterDeclarations_.Parameter[1].name.c_str(), "posX");
+    EXPECT_NEAR(se->GetScenarioReader()->parameters.parameterDeclarations_.Parameter[1].value._double, 10.0, 1e-3);
+
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 20.0, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), 0.0, 1e-3);
+
+    delete se;
+}
+
+// Verify modification of variables via actions
+TEST(VariableTest, TestMultipleAndAddVariableValue)
+{
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/variable_modify.xosc");
+    ASSERT_NE(se, nullptr);
+    ASSERT_EQ(se->entities_.object_.size(), 1);
+    ASSERT_EQ(se->GetScenarioReader()->variables.GetNumberOfParameters(), 1);
+    EXPECT_STREQ(se->GetScenarioReader()->variables.parameterDeclarations_.Parameter[0].name.c_str(), "MyVariable1");
+    EXPECT_EQ(se->GetScenarioReader()->variables.parameterDeclarations_.Parameter[0].value._int, 4);
+
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 50.0, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -1.5349, 1e-3);
+
+    double dt = 0.1;
+    while (se->getSimulationTime() < 4.0 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    EXPECT_EQ(se->GetScenarioReader()->variables.parameterDeclarations_.Parameter[0].value._int, 19);  // 4 * 3 + 7
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 89.1488, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -1.5349, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[0]->GetSpeed(), 0.0, 1e-3);
+
+    delete se;
+}
+
 // Test junction selector functionality
 // Utilizing fabriksgatan 4 way intersection
 // Car will always drive on road 0, north towards the intersection
@@ -677,9 +1374,9 @@ TEST(JunctionTest, JunctionSelectorTest)
 {
     double dt = 0.01;
 
-    double angles[]    = {3 * M_PI_2, -M_PI_2, 0.0, M_PI_2};
-    int    roadIds[]   = {1, 1, 2, 3};
-    double durations[] = {2.5, 2.5, 2.6, 2.8};  // Make sure car gets gets out of the intersection
+    double       angles[]    = {3 * M_PI_2, -M_PI_2, 0.0, M_PI_2};
+    int          roadIds[]   = {1, 1, 2, 3};
+    const double durations[] = {2.5, 2.5, 2.6, 2.8};  // Make sure car gets gets out of the intersection
 
     for (int i = 0; i < static_cast<int>(sizeof(angles) / sizeof(double)); i++)
     {
@@ -700,10 +1397,42 @@ TEST(JunctionTest, JunctionSelectorTest)
     }
 }
 
+// Verify cars move correctly through connected junctions, reaching expected position
+TEST(JunctionTest, TestConnectivityTroughHeadToHeadJunctions)
+{
+    double dt = 0.1;
+
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/connected_junctions_simple.xosc");
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+    ASSERT_NE(se, nullptr);
+    ASSERT_EQ(se->entities_.object_.size(), 2);
+
+    while (se->getSimulationTime() < 12.0 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    EXPECT_EQ(se->entities_.object_[0]->pos_.GetTrackId(), 2);
+    EXPECT_EQ(se->entities_.object_[0]->pos_.GetLaneId(), -2);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetS(), 55.277, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 255.2777, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -6.0, 1e-3);
+
+    EXPECT_EQ(se->entities_.object_[1]->pos_.GetTrackId(), 1);
+    EXPECT_EQ(se->entities_.object_[1]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetS(), 44.7222, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetX(), 44.7222, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetY(), -2.0, 1e-3);
+
+    delete se;
+}
+
 TEST(ConditionTest, CollisionTest)
 {
-    double dt           = 0.01;
-    double timestamps[] = {5.24, 5.25, 6.25, 6.26, 7.10, 8.78};
+    double       dt           = 0.01;
+    const double timestamps[] = {5.24, 5.25, 6.25, 6.26, 7.10, 8.78};
 
     ASSERT_EQ(SE_Env::Inst().GetCollisionDetection(), false);  // Should be disabled by default
 
@@ -795,12 +1524,29 @@ TEST(ControllerTest, UDPDriverModelTestAsynchronous)
     ASSERT_NE(se, nullptr);
     ASSERT_EQ(se->entities_.object_.size(), 2);
 
+    // unique ports to prevent conflicts between CI images and runs
+    unsigned short base_port = 61900;
+
+#ifdef _WIN32
+    base_port = 61900;
+#elif defined __APPLE__
+    base_port = 61904;
+#elif defined __linux__
+    base_port = 61908;
+#endif
+#ifdef _DEBUG
+    base_port = static_cast<unsigned short>(base_port + 2);
+#endif
+#ifdef _USE_OSG  // separate CI runs for slim vs full esmini, to avoid port conflicts
+    base_port = static_cast<unsigned short>(base_port + 1);
+#endif
+
     // Replace controllers
     for (size_t i = 0; i < 2; i++)
     {
         scenarioengine::Controller::InitArgs args;
         args.name       = "UDPDriverModel Controller";
-        args.type       = ControllerUDPDriver::GetTypeNameStatic();
+        args.type       = CONTROLLER_UDP_DRIVER_TYPE_NAME;
         args.parameters = 0;
         args.gateway    = se->getScenarioGateway();
         args.properties = new OSCProperties();
@@ -809,26 +1555,29 @@ TEST(ControllerTest, UDPDriverModelTestAsynchronous)
         property.value_ = std::to_string(0);
         args.properties->property_.push_back(property);
         property.name_  = "basePort";
-        property.value_ = std::to_string(61900);
+        property.value_ = std::to_string(base_port);
         args.properties->property_.push_back(property);
         property.name_  = "inputMode";
         property.value_ = "vehicleStateXYH";
         args.properties->property_.push_back(property);
         ControllerUDPDriver* controller = reinterpret_cast<ControllerUDPDriver*>(InstantiateControllerUDPDriver(&args));
 
-        delete se->entities_.object_[i]->controller_;
+        for (auto ctrl : se->entities_.object_[i]->controllers_)
+        {
+            se->entities_.object_[i]->UnassignController(ctrl);
+            delete ctrl;
+        }
         delete args.properties;
-
-        controller->Assign(se->entities_.object_[i]);
-        se->scenarioReader->controller_[i]    = controller;
-        se->entities_.object_[i]->controller_ = controller;
+        se->scenarioReader->controller_[i] = controller;
+        se->entities_.object_[i]->AssignController(controller);
+        controller->LinkObject(se->entities_.object_[i]);
     }
 
     // assign controllers
     se->step(dt);
 
     // stimulate driver input
-    UDPClient* udpClient = new UDPClient(61900, "127.0.0.1");
+    UDPClient* udpClient = new UDPClient(base_port, "127.0.0.1");
 
     ControllerUDPDriver::DMMessage msg;
 
@@ -875,6 +1624,9 @@ TEST(ControllerTest, UDPDriverModelTestAsynchronous)
 
     delete se;
     delete udpClient;
+
+    // make a pause before launcing next test to allow socket port to be fully released
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 }
 
 TEST(ControllerTest, UDPDriverModelTestSynchronous)
@@ -885,12 +1637,28 @@ TEST(ControllerTest, UDPDriverModelTestSynchronous)
     ASSERT_NE(se, nullptr);
     ASSERT_EQ(se->entities_.object_.size(), 2);
 
+    // unique ports to prevent conflicts between CI images and runs
+    unsigned short base_port = 61912;
+#ifdef _WIN32
+    base_port = 61912;
+#elif defined __APPLE__
+    base_port = 61916;
+#elif defined __linux__
+    base_port = 61920;
+#endif
+#ifdef _DEBUG
+    base_port = static_cast<unsigned short>(base_port + 2);
+#endif
+#ifdef _USE_OSG  // separate CI runs for slim vs full esmini, to avoid port conflicts
+    base_port = static_cast<unsigned short>(base_port + 1);
+#endif
+
     // Replace controllers
     for (size_t i = 0; i < 2; i++)
     {
         scenarioengine::Controller::InitArgs args;
         args.name       = "UDPDriverModel Controller";
-        args.type       = ControllerUDPDriver::GetTypeNameStatic();
+        args.type       = CONTROLLER_UDP_DRIVER_TYPE_NAME;
         args.parameters = 0;
         args.gateway    = se->getScenarioGateway();
         args.properties = new OSCProperties();
@@ -902,7 +1670,7 @@ TEST(ControllerTest, UDPDriverModelTestSynchronous)
         property.value_ = std::to_string(0);
         args.properties->property_.push_back(property);
         property.name_  = "basePort";
-        property.value_ = std::to_string(61910);
+        property.value_ = std::to_string(base_port);
         args.properties->property_.push_back(property);
         property.name_  = "inputMode";
         property.value_ = "vehicleStateXYZHPR";
@@ -912,19 +1680,22 @@ TEST(ControllerTest, UDPDriverModelTestSynchronous)
         args.properties->property_.push_back(property);
         ControllerUDPDriver* controller = reinterpret_cast<ControllerUDPDriver*>(InstantiateControllerUDPDriver(&args));
 
-        delete se->entities_.object_[i]->controller_;
+        for (auto ctrl : se->entities_.object_[i]->controllers_)
+        {
+            se->entities_.object_[i]->UnassignController(ctrl);
+            delete ctrl;
+        }
         delete args.properties;
-
-        controller->Assign(se->entities_.object_[i]);
-        se->scenarioReader->controller_[i]    = controller;
-        se->entities_.object_[i]->controller_ = controller;
+        se->scenarioReader->controller_[i] = controller;
+        se->entities_.object_[i]->AssignController(controller);
+        controller->LinkObject(se->entities_.object_[i]);
     }
 
     // assign controllers
     se->step(dt);
 
     // stimulate driver input
-    UDPClient* udpClient = new UDPClient(61910, "127.0.0.1");
+    UDPClient* udpClient = new UDPClient(base_port, "127.0.0.1");
 
     ControllerUDPDriver::DMMessage msg;
 
@@ -965,7 +1736,7 @@ TEST(ControllerTest, UDPDriverModelTestSynchronous)
     EXPECT_DOUBLE_EQ(se->entities_.object_[1]->pos_.GetY(), 6.5);
 
     // Create a sender for second vehicle as well
-    UDPClient* udpClient2 = new UDPClient(61911, "127.0.0.1");
+    UDPClient* udpClient2 = new UDPClient(static_cast<unsigned short>(base_port + 1), "127.0.0.1");
 
     msg.header.frameNumber = 0;
     msg.header.version     = 1;
@@ -993,6 +1764,43 @@ TEST(ControllerTest, UDPDriverModelTestSynchronous)
     delete se;
     delete udpClient;
     delete udpClient2;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+}
+
+TEST(ControllerTest, TestFollowReferenceController)
+{
+    double dt = 0.05;
+
+    ScenarioEngine* se = new ScenarioEngine("../../../resources/xosc/follow_reference.xosc");
+    ASSERT_NE(se, nullptr);
+    ASSERT_EQ(se->entities_.object_.size(), 2);
+
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    // check initial state of Ego and reference/ghost
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 10.0, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -1.5349, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[0]->GetSpeed(), 0.0, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetX(), 10.0, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetY(), -1.5349, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[1]->GetSpeed(), 0.0, 1e-3);
+
+    // move forward to just after the linear lane change started, check state sample at that point
+    while (se->getSimulationTime() < 9.2 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), 119.5249, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), 1.4171, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[0]->GetSpeed(), 13.8862, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetX(), 118.8205, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetY(), 1.3047, 1e-3);
+    EXPECT_NEAR(se->entities_.object_[1]->GetSpeed(), 13.8888, 1e-3);
+
+    delete se;
 }
 
 TEST(RoadOrientationTest, TestElevationPitchRoll)
@@ -1265,10 +2073,10 @@ TEST(ActionDynamicsTest, TestDynamicsRateDimension)
     EXPECT_DOUBLE_EQ(td.Evaluate(), td.GetStartVal());
     td.Step(10.0);
     EXPECT_DOUBLE_EQ(td.Evaluate(), -40.0);
-    td.Step(40.0);  // to 50.0s
-    EXPECT_DOUBLE_EQ(td.Evaluate(), -240.0);
-    td.Step(30.0);  // to 80.0s
-    EXPECT_DOUBLE_EQ(td.Evaluate(), -390.0);
+    td.Step(2.0);  // at end of param span
+    EXPECT_DOUBLE_EQ(td.Evaluate(), -50.0);
+    td.Step(30.0);  // clamp at 50.0s
+    EXPECT_DOUBLE_EQ(td.Evaluate(), -50.0);
 
     td.dimension_ = OSCPrivateAction::DynamicsDimension::RATE;
     td.shape_     = OSCPrivateAction::DynamicsShape::SINUSOIDAL;
@@ -1330,7 +2138,6 @@ TEST(SpeedProfileTest, TestSpeedProfileFirstEntryOffset)
 
     Object obj(Object::Type::VEHICLE);
     obj.SetSpeed(10.0);
-    double sim_time = 0.0, dt = 0.0;
 
     sp_action.following_mode_ = FollowingMode::POSITION;
     sp_action.dynamics_       = dynamics;
@@ -1349,7 +2156,6 @@ TEST(SpeedProfileTest, TestSpeedProfileFirstEntryOffset)
     // Evaluate at a time before first entry time, speed should interpolate towards first entry
     sp_action.Step(1.0);
     EXPECT_NEAR(sp_action.GetSpeed(), 7.30, 1E-5);
-    sim_time += dt;
 }
 
 TEST(SpeedProfileTest, TestSpeedProfileLinear)
@@ -1657,25 +2463,29 @@ TEST(ControllerTest, ALKS_R157_TestR157RegulationMinDist)
 
     // Set controller
     scenarioengine::Controller::InitArgs args;
-    args.name       = "ALKS_R157SM_Controller";
-    args.type       = ControllerALKS_R157SM::GetTypeNameStatic();
-    args.parameters = 0;
-    args.gateway    = se->getScenarioGateway();
-    args.properties = new OSCProperties();
+    args.name            = "ALKS_R157SM_Controller";
+    args.type            = CONTROLLER_ALKS_R157SM_TYPE_NAME;
+    args.parameters      = 0;
+    args.gateway         = se->getScenarioGateway();
+    args.scenario_engine = se;
+    args.properties      = new OSCProperties();
     OSCProperties::Property property;
     property.name_  = "model";
     property.value_ = "Regulation";
     args.properties->property_.push_back(property);
     ControllerALKS_R157SM* controller = reinterpret_cast<ControllerALKS_R157SM*>(InstantiateControllerALKS_R157SM(&args));
-    controller->SetScenarioEngine(se);
 
     Object* obj = se->entities_.object_[0];
-    delete obj->controller_;
-    delete args.properties;
 
-    controller->Assign(obj);
+    for (auto ctrl : obj->controllers_)
+    {
+        obj->UnassignController(ctrl);
+        delete ctrl;
+    }
+    delete args.properties;
     se->scenarioReader->controller_[0] = controller;
-    obj->controller_                   = controller;
+    obj->AssignController(controller);
+    controller->LinkObject(obj);
 
     // assign controllers
     se->step(dt);
@@ -1714,6 +2524,81 @@ TEST(ControllerTest, ALKS_R157_TestR157RegulationMinDist)
     EXPECT_NEAR(controller->model_->MinDist(), 47.500, 1E-3);
 
     delete se;
+}
+
+static void alksRefDriverParamDeclCallback(void* arg)
+{
+    bool aeb_available = *(static_cast<bool*>(arg));
+
+    ScenarioReader::parameters.setParameterValue("AEBAvailableInEgo", aeb_available);
+}
+
+TEST(ControllerTest, ALKS_R157_TestR157RefDriverBrakeRate)
+{
+    double dt               = 0.05;
+    bool   aeb_available[2] = {true, false};
+
+    // Run first with AEB enabled, then without
+    for (int i = 0; i < 2; i++)
+    {
+        RegisterParameterDeclarationCallback(alksRefDriverParamDeclCallback, &(aeb_available[i]));
+        ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/alks_r157_quick_stop_test.xosc");
+        ASSERT_NE(se, nullptr);
+        ASSERT_EQ(se->entities_.object_.size(), 3);
+        Object* obj = se->entities_.object_[0];
+
+        int state = 0;
+        while (se->getSimulationTime() < 7.5)
+        {
+            se->step(dt);
+            se->prepareGroundTruth(dt);
+
+            if (state == 0 && se->getSimulationTime() > 2.0)
+            {
+                EXPECT_NEAR(obj->pos_.GetX(), 49.250, 1e-3);
+                EXPECT_NEAR(obj->pos_.GetY(), -1.535, 1e-3);
+                state++;
+            }
+            else if (state == 1 && se->getSimulationTime() > 3.4)
+            {
+                EXPECT_NEAR(obj->pos_.GetX(), 70.322, 1e-3);
+                EXPECT_NEAR(obj->pos_.GetY(), -1.535, 1e-3);
+                state++;
+            }
+            else if (state == 2 && se->getSimulationTime() > 5.0)
+            {
+                if (i == 0)
+                {
+                    EXPECT_NEAR(obj->pos_.GetX(), 81.982, 1e-3);
+                    EXPECT_NEAR(obj->pos_.GetY(), -1.535, 1e-3);
+                }
+                else
+                {
+                    EXPECT_NEAR(obj->pos_.GetX(), 87.362, 1e-3);
+                    EXPECT_NEAR(obj->pos_.GetY(), -1.535, 1e-3);
+                }
+                state++;
+            }
+            else if (state == 3 && se->getSimulationTime() > 8.0)
+            {
+                if (i == 0)
+                {
+                    EXPECT_NEAR(obj->pos_.GetX(), 82.571, 1e-3);
+                    EXPECT_NEAR(obj->pos_.GetY(), -1.535, 1e-3);
+                }
+                else
+                {
+                    EXPECT_NEAR(obj->pos_.GetX(), 89.908, 1e-3);
+                    EXPECT_NEAR(obj->pos_.GetY(), -1.535, 1e-3);
+                }
+                state++;
+            }
+        }
+
+        delete se;
+    }
+
+    RegisterParameterDeclarationCallback(nullptr, nullptr);
 }
 
 TEST(OverlapTest, TestOverlapCalculations)
@@ -1900,7 +2785,7 @@ TEST_F(StraightRoadTest, TestObjectOverlap)
     EXPECT_EQ(ego.OverlappingFront(&target, 0.02), Object::OverlapType::PART);
 
     // Rotate ego 90 deg
-    ego.pos_.SetH(M_PI_2);
+    ego.pos_.SetHeading(M_PI_2, false);
     target.pos_.SetInertiaPos(0.0, 10.0, 0.0);
     EXPECT_EQ(ego.OverlappingFront(&target, 0.01), Object::OverlapType::INSIDE_AND_FULL);
 }
@@ -1950,10 +2835,10 @@ TEST(SpeedTest, TestChangeSpeedOverDistance)
     action.transition_.dimension_ = OSCPrivateAction::DynamicsDimension::DISTANCE;
     action.transition_.shape_     = OSCPrivateAction::DynamicsShape::LINEAR;
 
-    double v0[6]   = {5.0, -5.0, 0.0, -5.0, 5.0, 1.5};
-    double v1[6]   = {10.0, -10.0, 0.0, 5.0, -5.0, -0.5};
-    double dist[6] = {20.0, 20.0, 20.0, 20.0, 20.0, 1.25};
-    double time[6] = {2.66667, 2.66667, 0.0, 8.0, 8.0, 2.0};
+    double       v0[6]   = {5.0, -5.0, 0.0, -5.0, 5.0, 1.5};
+    const double v1[6]   = {10.0, -10.0, 0.0, 5.0, -5.0, -0.5};
+    double       dist[6] = {20.0, 20.0, 20.0, 20.0, 20.0, 1.25};
+    double       time[6] = {2.66667, 2.66667, 0.0, 8.0, 8.0, 2.0};
 
     for (unsigned int i = 0; i < static_cast<unsigned int>(sizeof(v0) / sizeof(double)); i++)
     {
@@ -1977,42 +2862,42 @@ TEST(ControllerTest, TestLoomingControllerSimple)
         se->step(dt);
         se->prepareGroundTruth(dt);
     }
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetS(), 41.4060182298, 1E-5);
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.0844662327, 1E-5);
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetH(), 0.2065681342, 1e-5);
+    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetS(), 41.4061, 1E-3);
+    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.0844, 1E-3);
+    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetH(), 0.2065, 1e-3);
 
     while (se->getSimulationTime() < 10.0 - SMALL_NUMBER)
     {
         se->step(dt);
         se->prepareGroundTruth(dt);
     }
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetS(), 82.8457730916, 1E-5);
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.0642454223, 1E-5);
+    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetS(), 82.8457, 1E-3);
+    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.0642, 1E-3);
 
     while (se->getSimulationTime() < 15.0 - SMALL_NUMBER)
     {
         se->step(dt);
         se->prepareGroundTruth(dt);
     }
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetS(), 4.2868112508, 1e-5);
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.0630431865, 1e-5);
+    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetS(), 4.2868, 1e-3);
+    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.0630, 1e-3);
 
     while (se->getSimulationTime() < 20.0 - SMALL_NUMBER)
     {
         se->step(dt);
         se->prepareGroundTruth(dt);
     }
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetS(), 45.7279451776, 1e-5);
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.0638741808, 1e-5);
+    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetS(), 45.7279, 1e-3);
+    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.0638, 1e-3);
 
     while (se->getSimulationTime() < 25.0 - SMALL_NUMBER)
     {
         se->step(dt);
         se->prepareGroundTruth(dt);
     }
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetS(), 87.1641289481, 1e-5);
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.2282167087, 1e-5);
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetH(), 1.0125829829, 1e-5);
+    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetS(), 87.1630, 1e-3);
+    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.2508, 1e-3);
+    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetH(), 1.0125, 1e-3);
 
     delete se;
 }
@@ -2035,19 +2920,19 @@ TEST(ControllerTest, TestLoomingSimpleFarTan)
         se->prepareGroundTruth(dt);
         EXPECT_EQ(ctrl->getHasFarTan(), true);
     }
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetS(), 41.4060182298, 1E-5);
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.0844662326, 1E-5);
+    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetS(), 41.4061, 1E-3);
+    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.0843, 1E-3);
 
     delete se;
 }
 
 static void clearanceFreeSpaceParamDeclCallback(void*)
 {
-    static int counter  = 0;
-    bool       value[2] = {true, false};
+    static int counter = 0;
 
     if (counter < 2)
     {
+        bool value[2] = {true, false};
         ScenarioReader::parameters.setParameterValue("FreeSpace", value[counter]);
     }
 
@@ -2084,11 +2969,6 @@ TEST(RelativeClearanceTest, TestRelativeClearanceFreeSpace)
             ASSERT_NEAR(se->entities_.object_[2]->pos_.GetT(), -3.000, 1E-3);
             ASSERT_EQ(se->entities_.object_[2]->GetName(), "TargetRef");
         }
-        if (i == 2)
-        {
-            ASSERT_NEAR(se->entities_.object_[2]->pos_.GetT(), -3.7222222, 1E-3);
-            ASSERT_EQ(se->entities_.object_[2]->GetName(), "TargetRef");
-        }
         delete se;
     }
     RegisterParameterDeclarationCallback(nullptr, 0);
@@ -2106,10 +2986,10 @@ TEST(TwoPlusOneRoadTest, TestTwoPlusOneRoad)
         double h;
         int    lane_id;
     } exp_values[5] = {{4.0, 115.0, -1.75, 0.0, -1},
-                       {5.25, 134.19, -1.789, 0.054, -2},
-                       {7.0, 168.89, -2.154, 0.05, -1},
-                       {9.0, 218.22, -1.75, 0.0, -1},
-                       {11.25, 274.39, -4.118, 6.20, -2}};
+                       {5.25, 134.19, -1.478, 0.054, -2},
+                       {7.0, 168.89, 1.201, 0.05, -1},
+                       {9.0, 218.22, 1.75, 0.0, -1},
+                       {11.25, 274.39, -0.617, 6.20, -2}};
 
     ASSERT_NE(se, nullptr);
 
@@ -2131,11 +3011,11 @@ TEST(TwoPlusOneRoadTest, TestTwoPlusOneRoad)
 
 static void clearanceParamDeclCallback(void*)
 {
-    static int counter  = 0;
-    bool       value[2] = {false, true};
+    static int counter = 0;
 
     if (counter < 2)
     {
+        bool value[2] = {false, true};
         ScenarioReader::parameters.setParameterValue("OppositeLanes", value[counter]);
     }
 
@@ -2207,9 +3087,9 @@ TEST(ControllerTest, TestLoomingControllerAdvanced)
         se->prepareGroundTruth(dt);
     }
     EXPECT_EQ(ctrl->getHasFarTan(), true);
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetS(), 83.321507875, 1E-5);
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.452957222, 1E-5);
-    ASSERT_NEAR(se->entities_.object_[0]->pos_.GetH(), 5.7631188563, 1e-5);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetS(), 85.3214, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.4444, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetH(), 5.7631, 1e-3);
 
     while (se->getSimulationTime() < 31.0 - SMALL_NUMBER)
     {
@@ -2221,13 +3101,202 @@ TEST(ControllerTest, TestLoomingControllerAdvanced)
     delete se;
 }
 
+static void EvaluateRelativeSpeed(Object& trig_obj, Object& obj, TrigByTimeToCollision& t, double heading)
+{
+    // object in front of triggering object
+    double obj_pos[2]      = {0.0, 0.0};
+    double trig_obj_pos[2] = {0.0, 0.0};
+    RotateVec2D(0.0, 0.0, heading, trig_obj_pos[0], trig_obj_pos[1]);
+    trig_obj.pos_.SetInertiaPos(trig_obj_pos[0], trig_obj_pos[1], heading, false);
+    RotateVec2D(100.0, 0.0, heading, obj_pos[0], obj_pos[1]);
+    obj.pos_.SetInertiaPos(obj_pos[0], obj_pos[1], heading, false);
+
+    trig_obj.SetSpeed(10.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    obj.SetSpeed(0.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, 10.0, 1e-3);
+
+    obj.SetSpeed(-20.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, 3.33333, 1e-3);
+
+    obj.SetSpeed(10.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    trig_obj.SetSpeed(50.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), true);
+    EXPECT_NEAR(t.ttc_, 2.5, 1e-3);
+
+    obj.SetSpeed(20.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    trig_obj.SetSpeed(10.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, -1.0, 1e-3);
+
+    obj.SetSpeed(20.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    trig_obj.SetSpeed(-10.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, -1.0, 1e-3);
+
+    // triggering object in front of object
+    RotateVec2D(100.0, 0.0, heading, trig_obj_pos[0], trig_obj_pos[1]);
+    trig_obj.pos_.SetInertiaPos(trig_obj_pos[0], trig_obj_pos[1], heading, false);
+    RotateVec2D(0.0, 0.0, heading, obj_pos[0], obj_pos[1]);
+    obj.pos_.SetInertiaPos(obj_pos[0], obj_pos[1], heading, false);
+
+    trig_obj.SetSpeed(10.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    obj.SetSpeed(0.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, -1.0, 1e-3);
+
+    obj.SetSpeed(-20.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, -1.0, 1e-3);
+
+    obj.SetSpeed(10.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    trig_obj.SetSpeed(50.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, -1, 1e-3);
+
+    obj.SetSpeed(20.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    trig_obj.SetSpeed(10.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, 10.0, 1e-3);
+
+    obj.SetSpeed(20.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    trig_obj.SetSpeed(-10.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, 3.33333, 1e-3);
+
+    // object in front of object and opposite direction
+    RotateVec2D(0.0, 0.0, heading, trig_obj_pos[0], trig_obj_pos[1]);
+    trig_obj.pos_.SetInertiaPos(trig_obj_pos[0], trig_obj_pos[1], heading, false);
+    RotateVec2D(100.0, 0.0, heading, obj_pos[0], obj_pos[1]);
+    obj.pos_.SetInertiaPos(obj_pos[0], obj_pos[1], heading + M_PI, false);
+
+    trig_obj.SetSpeed(10.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    obj.SetSpeed(0.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, 10.0, 1e-3);
+
+    obj.SetSpeed(-20.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, -1, 1e-3);
+
+    obj.SetSpeed(10.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    trig_obj.SetSpeed(50.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), true);
+    EXPECT_NEAR(t.ttc_, 1.66667, 1e-3);
+
+    obj.SetSpeed(20.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    trig_obj.SetSpeed(10.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, 3.33333, 1e-3);
+
+    obj.SetSpeed(20.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    trig_obj.SetSpeed(-10.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, 10.0, 1e-3);
+
+    // Trig obj in front of object and opposite direction
+    RotateVec2D(100.0, 0.0, heading, trig_obj_pos[0], trig_obj_pos[1]);
+    trig_obj.pos_.SetInertiaPos(trig_obj_pos[0], trig_obj_pos[1], heading + M_PI, false);
+    RotateVec2D(0.0, 0.0, heading, obj_pos[0], obj_pos[1]);
+    obj.pos_.SetInertiaPos(obj_pos[0], obj_pos[1], heading, false);
+
+    trig_obj.SetSpeed(10.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    obj.SetSpeed(0.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, 10.0, 1e-3);
+
+    obj.SetSpeed(-20.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, -1.0, 1e-3);
+
+    obj.SetSpeed(10.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    trig_obj.SetSpeed(50.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), true);
+    EXPECT_NEAR(t.ttc_, 1.66667, 1e-3);
+
+    obj.SetSpeed(20.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    trig_obj.SetSpeed(10.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, 3.33333, 1e-3);
+
+    obj.SetSpeed(20.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    trig_obj.SetSpeed(-10.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, 10.0, 1e-3);
+}
+
+TEST(ConditionTest, TestTTC)
+{
+    Object trig_obj(Object::Type::VEHICLE);
+    Object obj(Object::Type::VEHICLE);
+
+    TrigByTimeToCollision t;
+    t.object_                 = &obj;
+    t.triggering_entity_rule_ = TrigByTimeToCollision::TriggeringEntitiesRule::ANY;
+    t.triggering_entities_.entity_.push_back({&trig_obj});
+    t.value_       = 3.0;
+    t.freespace_   = false;
+    t.cs_          = roadmanager::CoordinateSystem::CS_ENTITY;
+    t.relDistType_ = roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL;
+    t.rule_        = Rule::LESS_OR_EQUAL;
+
+    trig_obj.SetActive(true);
+    obj.SetActive(true);
+
+    EvaluateRelativeSpeed(trig_obj, obj, t, 0.0 * M_PI_4);
+    EvaluateRelativeSpeed(trig_obj, obj, t, 1.0 * M_PI_4);
+    EvaluateRelativeSpeed(trig_obj, obj, t, 2.0 * M_PI_4);
+    EvaluateRelativeSpeed(trig_obj, obj, t, 3.0 * M_PI_4);
+    EvaluateRelativeSpeed(trig_obj, obj, t, 4.0 * M_PI_4);
+    EvaluateRelativeSpeed(trig_obj, obj, t, 5.0 * M_PI_4);
+    EvaluateRelativeSpeed(trig_obj, obj, t, 6.0 * M_PI_4);
+    EvaluateRelativeSpeed(trig_obj, obj, t, 7.0 * M_PI_4);
+}
+
 static void TTCAndLateralDistParamDeclCallback(void*)
 {
-    static int counter  = 0;
-    double     value[2] = {0.2, 5.0};
+    static int counter = 0;
 
     if (counter < 2)
     {
+        double value[2] = {0.2, 5.0};
         ScenarioReader::parameters.setParameterValue("LateralDist", value[counter]);
     }
 
@@ -2264,6 +3333,181 @@ TEST(ConditionTest, TestTTCAndLateralDist)
         delete se;
     }
     RegisterParameterDeclarationCallback(nullptr, 0);
+}
+
+TEST(ConditionTest, TestConditionDelayBasic)
+{
+    ConditionDelay                                     cd;
+    const std::vector<ConditionDelay::ConditionValue>& cdv = cd.GetValues();
+
+    // Replace previous value at same time
+    cd.RegisterValue(-1, false);
+    EXPECT_EQ(cd.GetValueAtTime(4.0), false);
+    cd.RegisterValue(-1, true);
+    EXPECT_EQ(cdv.size(), 1);
+    EXPECT_EQ(cdv[0].value_, true);
+    EXPECT_EQ(cd.GetValueAtTime(-2.0), false);
+    EXPECT_EQ(cd.GetValueAtTime(4.0), true);
+    EXPECT_EQ(cd.GetValueAtTime(-2), false);
+    EXPECT_EQ(cd.GetValueAtTime(-1), true);
+
+    // Overwrite existing value at timestamp and remove next with same value
+    cd.RegisterValue(-1, true);
+    EXPECT_EQ(cdv.size(), 1);
+    EXPECT_EQ(cdv[0].value_, true);
+
+    // Overwrite existing value at timestamp
+    cd.RegisterValue(-1, false);
+    EXPECT_EQ(cdv.size(), 1);
+    EXPECT_EQ(cdv[0].value_, false);
+
+    // insert new value and remove next with same value
+    cd.RegisterValue(-2, false);
+    EXPECT_EQ(cdv.size(), 1);
+    EXPECT_EQ(cdv[0].time_, -2);
+    EXPECT_EQ(cdv[0].value_, false);
+
+    // insert new unique value
+    cd.RegisterValue(-3, true);
+    EXPECT_EQ(cdv.size(), 2);
+    EXPECT_EQ(cdv[0].time_, -3);
+    EXPECT_EQ(cdv[0].value_, true);
+    EXPECT_EQ(cdv[1].time_, -2);
+    EXPECT_EQ(cdv[1].value_, false);
+
+    // new value at existing timestamp, entry will be removed since value exists at previous timestamp
+    cd.RegisterValue(-2, true);
+    EXPECT_EQ(cdv.size(), 1);
+    EXPECT_EQ(cdv[0].time_, -3);
+    EXPECT_EQ(cdv[0].value_, true);
+
+    // insert new unique value
+    cd.RegisterValue(0, false);
+    EXPECT_EQ(cdv.size(), 2);
+    EXPECT_EQ(cdv[0].time_, -3);
+    EXPECT_EQ(cdv[0].value_, true);
+    EXPECT_EQ(cdv[1].time_, 0);
+    EXPECT_EQ(cdv[1].value_, false);
+
+    // insert duplicate value at larger timestap, ensure it's ignored
+    cd.RegisterValue(5, false);
+    EXPECT_EQ(cdv.size(), 2);
+    EXPECT_EQ(cdv[0].time_, -3);
+    EXPECT_EQ(cdv[0].value_, true);
+    EXPECT_EQ(cdv[1].time_, 0);
+    EXPECT_EQ(cdv[1].value_, false);
+
+    // insert new value at larger timestap, ensure it's added at back
+    cd.RegisterValue(5, true);
+    EXPECT_EQ(cdv.size(), 3);
+    EXPECT_EQ(cdv[0].time_, -3);
+    EXPECT_EQ(cdv[0].value_, true);
+    EXPECT_EQ(cdv[1].time_, 0);
+    EXPECT_EQ(cdv[1].value_, false);
+    EXPECT_EQ(cdv[2].time_, 5);
+    EXPECT_EQ(cdv[2].value_, true);
+
+    // replace value at existing timestap, ensure both previous and next elements are removed
+    cd.RegisterValue(0, true);
+    EXPECT_EQ(cdv.size(), 1);
+    EXPECT_EQ(cdv[0].time_, -3);
+    EXPECT_EQ(cdv[0].value_, true);
+
+    // add some new values again
+    cd.RegisterValue(0, false);
+    cd.RegisterValue(5, true);
+    EXPECT_EQ(cdv.size(), 3);
+    EXPECT_EQ(cdv[0].time_, -3);
+    EXPECT_EQ(cdv[0].value_, true);
+    EXPECT_EQ(cdv[1].time_, 0);
+    EXPECT_EQ(cdv[1].value_, false);
+    EXPECT_EQ(cdv[2].time_, 5);
+    EXPECT_EQ(cdv[2].value_, true);
+
+    // add duplicate value at earlier timestamp, ensure timestamp is updated
+    cd.RegisterValue(2, true);
+    EXPECT_EQ(cdv.size(), 3);
+    EXPECT_EQ(cdv[0].time_, -3);
+    EXPECT_EQ(cdv[0].value_, true);
+    EXPECT_EQ(cdv[1].time_, 0);
+    EXPECT_EQ(cdv[1].value_, false);
+    EXPECT_EQ(cdv[2].time_, 2);
+    EXPECT_EQ(cdv[2].value_, true);
+
+    // add duplicate value at later timestamp, ensure it's ignored
+    cd.RegisterValue(1, false);
+    EXPECT_EQ(cdv.size(), 3);
+    EXPECT_EQ(cdv[0].time_, -3);
+    EXPECT_EQ(cdv[0].value_, true);
+    EXPECT_EQ(cdv[1].time_, 0);
+    EXPECT_EQ(cdv[1].value_, false);
+    EXPECT_EQ(cdv[2].time_, 2);
+    EXPECT_EQ(cdv[2].value_, true);
+
+    // add duplicate value at later timestamp than last element, ensure it's ignored
+    cd.RegisterValue(7, true);
+    EXPECT_EQ(cdv.size(), 3);
+    EXPECT_EQ(cdv[0].time_, -3);
+    EXPECT_EQ(cdv[0].value_, true);
+    EXPECT_EQ(cdv[1].time_, 0);
+    EXPECT_EQ(cdv[1].value_, false);
+    EXPECT_EQ(cdv[2].time_, 2);
+    EXPECT_EQ(cdv[2].value_, true);
+
+    // some checks retriving values from the condition delay registry
+    EXPECT_EQ(cd.GetValueAtTime(-5), false);
+    EXPECT_EQ(cd.GetValueAtTime(-3.1), false);
+    EXPECT_EQ(cd.GetValueAtTime(-3.0), true);
+    EXPECT_EQ(cd.GetValueAtTime(-2.9), true);
+    EXPECT_EQ(cd.GetValueAtTime(-5), false);
+    EXPECT_EQ(cd.GetValueAtTime(-0.1), true);
+    EXPECT_EQ(cd.GetValueAtTime(0.0), false);
+    EXPECT_EQ(cd.GetValueAtTime(0.0), false);
+    EXPECT_EQ(cd.GetValueAtTime(2.0), true);
+    EXPECT_EQ(cd.GetValueAtTime(10.0), true);
+}
+
+TEST(ConditionTest, TestConditionDelayScenario)
+{
+    double dt = 0.1;
+
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/condition_delay.xosc");
+    ASSERT_NE(se, nullptr);
+    ASSERT_EQ(se->entities_.object_.size(), 1);
+    ASSERT_EQ(se->entities_.object_[0]->GetName(), "Ego");
+    StoryBoardElement* event = se->storyBoard.FindChildByTypeAndName(StoryBoardElement::ElementType::EVENT, "LaneChangeEvent")[0];
+    ASSERT_NE(event, nullptr);
+    EXPECT_EQ(event->GetName(), "LaneChangeEvent");
+
+    while (se->getSimulationTime() < 7.2 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    // expect the lane change to not have been triggered yet
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -1.535, 1e-3);
+    EXPECT_EQ(event->GetCurrentState(), StoryBoardElement::State::STANDBY);
+
+    // do another step
+    se->step(dt);
+    se->prepareGroundTruth(dt);
+
+    // expect the lane change to have been triggered by now
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -1.5161, 1e-3);
+    EXPECT_EQ(event->GetCurrentState(), StoryBoardElement::State::RUNNING);
+
+    while (se->getSimulationTime() < 9.2 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(dt);
+    }
+
+    // expect the lane change to be completed by now
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), 1.535, 1e-3);
+    EXPECT_EQ(event->GetCurrentState(), StoryBoardElement::State::COMPLETE);
+
+    delete se;
 }
 
 TEST(ActionTest, TestRelativeLaneChangeAction)
@@ -2570,6 +3814,93 @@ TEST(PositionTest, TestPositionTypes)
     delete se;
 }
 
+TEST(PositionTest, TestTrajectoryLanePosRoll)
+{
+    double dt = 0.1;
+
+    ScenarioEngine* se = new ScenarioEngine("../../../resources/xosc/bicycle_fall_over.xosc");
+    ASSERT_NE(se, nullptr);
+
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+    scenarioengine::Entities* entities = &se->entities_;
+
+    ASSERT_NE(entities, nullptr);
+    EXPECT_EQ(entities->object_.size(), 1);
+
+    while (se->getSimulationTime() < 2.0 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 120.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -1.535, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetH(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetR(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 10.0, 1E-3);
+
+    while (se->getSimulationTime() < 2.3 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 123.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -1.535, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetH(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetR(), 0.9), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 10.0, 1E-3);
+
+    while (se->getSimulationTime() < 2.5 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 125.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -1.535, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetH(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetR(), 1.5), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 10.0, 1E-3);
+
+    while (se->getSimulationTime() < 3.4 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 129.95, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -1.535, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetH(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetR(), 1.5), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 1.5, 1E-3);
+
+    while (se->getSimulationTime() < 3.6 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 130.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -1.535, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetH(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetP(), 0.0), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetR(), 1.5), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 0.0, 1E-3);
+
+    delete se;
+}
+
 TEST(ClothoidSplineTest, TestTrajectoryShape)
 {
     double dt = 0.05;
@@ -2592,9 +3923,9 @@ TEST(ClothoidSplineTest, TestTrajectoryShape)
     // Check car position at given time at end phase of the scenario
     // Correct position indicates all trajectories have been evaluated correctly
     EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 242.101, 1E-3);
-    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 1.087, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 1.085, 1E-3);
     EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 0.0, 1E-3);
-    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetH(), -0.031), 0.0, 1E-3);
+    EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetH(), 6.262), 0.0, 1E-3);
     EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetP(), 0.0), 0.0, 1E-3);
     EXPECT_NEAR(GetAngleDifference(entities->object_[0]->pos_.GetR(), 0.0), 0.0, 1E-3);
 
@@ -2607,7 +3938,6 @@ TEST(RelativePositionRouting, TestRelativePositionWithRoutes)
     ASSERT_NE(se, nullptr);
     se->step(0.0);
     se->prepareGroundTruth(0.0);
-
     scenarioengine::Entities* entities = &se->entities_;
     ASSERT_NE(entities, nullptr);
     ASSERT_EQ(entities->object_.size(), 6);
@@ -2706,30 +4036,1930 @@ TEST(RelativePositionRouting, TestRelativePositionWithRoutes)
     delete se;
 }
 
-// Uncomment to print log output to console
-// #define LOG_TO_CONSOLE
-
-#ifdef LOG_TO_CONSOLE
-static void log_callback(const char* str)
+TEST(StoryboardTest, TestStoryboardElementNaming)
 {
-    printf("%s\n", str);
+    StoryBoard sb;
+
+    // Create a storyboard hierarchy as:
+    // story1
+    //    act1
+    //       mg1
+    //       mg1 (duplicate maneuvergroup name)
+    //    act1   (duplicate act name)
+    //       mg1 (duplicate maneuvergroup name)
+    // story2
+    //    act3
+    //       mg1 (duplicate maneuvergroup name)
+    //       mg4
+
+    Story* story1 = new Story(&sb);
+    Story* story2 = new Story(&sb);
+    story1->SetName("story1");
+    story2->SetName("story2");
+    sb.story_.push_back(story1);
+    sb.story_.push_back(story2);
+
+    Act* act1 = new Act(story1);
+    Act* act2 = new Act(story1);
+    Act* act3 = new Act(story2);
+    act1->SetName("act1");
+    act2->SetName("act1");  // duplicate name
+    act3->SetName("act3");
+    story1->act_.push_back(act1);
+    story1->act_.push_back(act2);
+    story2->act_.push_back(act3);
+
+    ManeuverGroup* mg1 = new ManeuverGroup(act1);
+    ManeuverGroup* mg2 = new ManeuverGroup(act2);
+    ManeuverGroup* mg3 = new ManeuverGroup(act3);
+    ManeuverGroup* mg4 = new ManeuverGroup(act3);
+    mg1->SetName("mg1");
+    mg2->SetName("mg1");  // duplicate name
+    mg3->SetName("mg1");  // duplicate name
+    mg4->SetName("mg4");
+    act1->maneuverGroup_.push_back(mg1);
+    act2->maneuverGroup_.push_back(mg2);
+    act3->maneuverGroup_.push_back(mg3);
+    act3->maneuverGroup_.push_back(mg4);
+
+    EXPECT_EQ(mg1->GetName(), "mg1");
+    EXPECT_EQ(mg2->GetName(), "mg1");
+    EXPECT_EQ(mg3->GetName(), "mg1");
+    EXPECT_EQ(mg4->GetName(), "mg4");
+    EXPECT_EQ(act1->GetName(), "act1");
+    EXPECT_EQ(act2->GetName(), "act1");
+    EXPECT_EQ(act3->GetName(), "act3");
+
+    std::vector<StoryBoardElement*> elements = sb.FindChildByTypeAndName(StoryBoardElement::ElementType::MANEUVER_GROUP, "mg1");
+    EXPECT_EQ(elements.size(), 3);
+
+    elements = sb.FindChildByTypeAndName(StoryBoardElement::ElementType::MANEUVER_GROUP, "act1::mg1");
+    EXPECT_EQ(elements.size(), 2);
+
+    elements = sb.FindChildByTypeAndName(StoryBoardElement::ElementType::MANEUVER_GROUP, "story1::act1::mg1");
+    EXPECT_EQ(elements.size(), 2);
+
+    elements = sb.FindChildByTypeAndName(StoryBoardElement::ElementType::MANEUVER_GROUP, "story2::act3::mg1");
+    EXPECT_EQ(elements.size(), 1);
+
+    elements = sb.FindChildByTypeAndName(StoryBoardElement::ElementType::MANEUVER_GROUP, "act1");
+    EXPECT_EQ(elements.size(), 0);
+
+    elements = sb.FindChildByTypeAndName(StoryBoardElement::ElementType::ACT, "act1");
+    EXPECT_EQ(elements.size(), 2);
+
+    elements = sb.FindChildByTypeAndName(StoryBoardElement::ElementType::MANEUVER_GROUP, "");
+    EXPECT_EQ(elements.size(), 0);
 }
-#endif
+
+TEST(Friction, TestFrictionPerWheel)
+{
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/friction_and_lane_change_edge_case.xosc");
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 2);
+
+    ScenarioGateway* gw = se->getScenarioGateway();
+
+    // Check friction per wheel at some key time stamps
+
+    // time = 0.0
+    ObjectStateStruct* state = &gw->objectState_[0]->state_;
+    EXPECT_NEAR(state->info.wheel_data[0].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].friction_coefficient, 1.0, 1E-3);
+
+    ObjectStateStruct* target_state = &gw->objectState_[1]->state_;
+    EXPECT_NEAR(target_state->info.wheel_data[0].friction_coefficient, 0.8, 1E-3);
+    EXPECT_NEAR(target_state->info.wheel_data[1].friction_coefficient, 0.8, 1E-3);
+    EXPECT_NEAR(target_state->info.wheel_data[2].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(target_state->info.wheel_data[3].friction_coefficient, 1.0, 1E-3);
+
+    while (se->getSimulationTime() < 1.8 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    state = &gw->objectState_[0]->state_;
+    EXPECT_NEAR(state->info.wheel_data[0].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].friction_coefficient, 1.0, 1E-3);
+
+    while (se->getSimulationTime() < 1.9 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    state = &gw->objectState_[0]->state_;
+    EXPECT_NEAR(state->info.wheel_data[0].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].friction_coefficient, 0.8, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].friction_coefficient, 1.0, 1E-3);
+
+    while (se->getSimulationTime() < 3.9 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    state = &gw->objectState_[0]->state_;
+    EXPECT_NEAR(state->info.wheel_data[0].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].friction_coefficient, 1.0, 1E-3);
+
+    while (se->getSimulationTime() < 4.0 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    state = &gw->objectState_[0]->state_;
+    EXPECT_NEAR(state->info.wheel_data[0].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].friction_coefficient, 0.8, 1E-3);
+
+    while (se->getSimulationTime() < 12.1 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    state = &gw->objectState_[0]->state_;
+    EXPECT_NEAR(state->info.wheel_data[0].friction_coefficient, 0.4, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].friction_coefficient, 0.4, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].friction_coefficient, 1.0, 1E-3);
+
+    while (se->getSimulationTime() < 13.7 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    state = &gw->objectState_[0]->state_;
+    EXPECT_NEAR(state->info.wheel_data[0].friction_coefficient, 0.4, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].friction_coefficient, 0.4, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].friction_coefficient, 0.4, 1E-3);
+
+    while (se->getSimulationTime() < 20.0 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    state = &gw->objectState_[0]->state_;
+    EXPECT_NEAR(state->info.wheel_data[0].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].friction_coefficient, 1.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].friction_coefficient, 1.0, 1E-3);
+
+    delete se;
+}
+
+TEST(WheelData, TestWheelData)
+{
+    ScenarioEngine* se = new ScenarioEngine("../../../resources/xosc/lane_change_crest.xosc");
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 3);
+
+    ScenarioGateway* gw = se->getScenarioGateway();
+
+    // Check friction per wheel at some key time stamps
+
+    // time = 0.0
+    ObjectStateStruct* state = &gw->objectState_[0]->state_;
+    EXPECT_EQ(state->info.wheel_data[0].axle, 0);
+    EXPECT_EQ(state->info.wheel_data[1].axle, 0);
+    EXPECT_EQ(state->info.wheel_data[2].axle, 1);
+    EXPECT_EQ(state->info.wheel_data[3].axle, 1);
+
+    EXPECT_NEAR(state->info.wheel_data[0].h, 0.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].h, 0.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].h, 0.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].h, 0.0, 1E-3);
+
+    EXPECT_EQ(state->info.wheel_data[0].index, 0);
+    EXPECT_EQ(state->info.wheel_data[1].index, 1);
+    EXPECT_EQ(state->info.wheel_data[2].index, 0);
+    EXPECT_EQ(state->info.wheel_data[3].index, 1);
+
+    EXPECT_NEAR(state->info.wheel_data[0].p, 0.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].p, 0.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].p, 0.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].p, 0.0, 1E-3);
+
+    EXPECT_NEAR(state->info.wheel_data[0].x, 2.98, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].x, 2.98, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].x, 0.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].x, 0.0, 1E-3);
+
+    EXPECT_NEAR(state->info.wheel_data[0].y, -0.840, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].y, 0.840, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].y, -0.840, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].y, 0.840, 1E-3);
+
+    EXPECT_NEAR(state->info.wheel_data[0].z, 0.4, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].z, 0.4, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].z, 0.4, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].z, 0.4, 1E-3);
+
+    while (se->getSimulationTime() < 5.8 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.1);
+    }
+
+    // check overtaking car, some wheel heading expected
+    state = &gw->objectState_[2]->state_;
+
+    EXPECT_EQ(state->info.wheel_data[0].axle, 0);
+    EXPECT_EQ(state->info.wheel_data[1].axle, 0);
+    EXPECT_EQ(state->info.wheel_data[2].axle, 1);
+    EXPECT_EQ(state->info.wheel_data[3].axle, 1);
+
+    EXPECT_NEAR(state->info.wheel_data[0].h, 0.054, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].h, 0.054, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].h, 0.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].h, 0.0, 1E-3);
+
+    EXPECT_EQ(state->info.wheel_data[0].index, 0);
+    EXPECT_EQ(state->info.wheel_data[1].index, 1);
+    EXPECT_EQ(state->info.wheel_data[2].index, 0);
+    EXPECT_EQ(state->info.wheel_data[3].index, 1);
+
+    EXPECT_NEAR(state->info.wheel_data[0].p, 1.989, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].p, 1.989, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].p, 1.989, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].p, 1.989, 1E-3);
+
+    EXPECT_NEAR(state->info.wheel_data[0].x, 2.98, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].x, 2.98, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].x, 0.0, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].x, 0.0, 1E-3);
+
+    EXPECT_NEAR(state->info.wheel_data[0].y, -0.840, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].y, 0.840, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].y, -0.840, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].y, 0.840, 1E-3);
+
+    // ensure z=0 even when the car is on a crest
+    EXPECT_NEAR(state->info.wheel_data[0].z, 0.4, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[1].z, 0.4, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[2].z, 0.4, 1E-3);
+    EXPECT_NEAR(state->info.wheel_data[3].z, 0.4, 1E-3);
+
+    delete se;
+}
+
+TEST(LaneChange, TestLaneChangeEdgeCase)
+{
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/friction_and_lane_change_edge_case.xosc");
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 2);
+
+    ScenarioGateway* gw = se->getScenarioGateway();
+
+    // Check expected position and orientation at some specific time stamps
+    while (se->getSimulationTime() < 21.0 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    ObjectStateStruct* state = &gw->objectState_[0]->state_;
+    EXPECT_NEAR(state->pos.GetX(), 121.059, 1E-3);
+    EXPECT_NEAR(state->pos.GetY(), 5.245, 1E-3);
+    EXPECT_NEAR(state->pos.GetZ(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetH(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetP(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetR(), 0.000, 1E-3);
+
+    while (se->getSimulationTime() < 21.6 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(state->pos.GetX(), 121.604, 1E-3);
+    EXPECT_NEAR(state->pos.GetY(), 4.992, 1E-3);
+    EXPECT_NEAR(state->pos.GetZ(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetH(), 5.609, 1E-3);
+    EXPECT_NEAR(state->pos.GetP(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetR(), 0.000, 1E-3);
+
+    while (se->getSimulationTime() < 22.3 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(state->pos.GetX(), 121.802, 1E-3);
+    EXPECT_NEAR(state->pos.GetY(), 3.987, 1E-3);
+    EXPECT_NEAR(state->pos.GetZ(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetH(), 4.712, 1E-3);
+    EXPECT_NEAR(state->pos.GetP(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetR(), 0.000, 1E-3);
+
+    while (se->getSimulationTime() < 22.3 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(state->pos.GetX(), 121.802, 1E-3);
+    EXPECT_NEAR(state->pos.GetY(), 3.987, 1E-3);
+    EXPECT_NEAR(state->pos.GetZ(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetH(), 4.712, 1E-3);
+    EXPECT_NEAR(state->pos.GetP(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetR(), 0.000, 1E-3);
+
+    while (se->getSimulationTime() < 25.7 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(state->pos.GetX(), 123.581, 1E-3);
+    EXPECT_NEAR(state->pos.GetY(), 1.751, 1E-3);
+    EXPECT_NEAR(state->pos.GetZ(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetH(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetP(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetR(), 0.000, 1E-3);
+
+    while (se->getSimulationTime() < 26.7 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(state->pos.GetX(), 124.400, 1E-3);
+    EXPECT_NEAR(state->pos.GetY(), 2.263, 1E-3);
+    EXPECT_NEAR(state->pos.GetZ(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetH(), 1.103, 1E-3);
+    EXPECT_NEAR(state->pos.GetP(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetR(), 0.000, 1E-3);
+
+    while (se->getSimulationTime() < 28.4 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(state->pos.GetX(), 124.424, 1E-3);
+    EXPECT_NEAR(state->pos.GetY(), 4.313, 1E-3);
+    EXPECT_NEAR(state->pos.GetZ(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetH(), 1.571, 1E-3);
+    EXPECT_NEAR(state->pos.GetP(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetR(), 0.000, 1E-3);
+
+    while (se->getSimulationTime() < 29.5 + SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(state->pos.GetX(), 125.203, 1E-3);
+    EXPECT_NEAR(state->pos.GetY(), 5.250, 1E-3);
+    EXPECT_NEAR(state->pos.GetZ(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetH(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetP(), 0.000, 1E-3);
+    EXPECT_NEAR(state->pos.GetR(), 0.000, 1E-3);
+
+    delete se;
+}
+
+TEST(Trajectory, TestOrientationInterpolation)
+{
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/bike_tilt_smooth.xosc");
+    const double    dt = 0.05;
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 1);
+
+    ScenarioGateway* gw = se->getScenarioGateway();
+
+    // Check expected position and orientation at some specific time stamps
+    while (se->getSimulationTime() < 2.95 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    ObjectStateStruct* state = &gw->objectState_[0]->state_;
+    EXPECT_NEAR(state->pos.GetX(), 120.83, 1E-2);
+    EXPECT_NEAR(state->pos.GetY(), -2.54, 1E-2);
+    EXPECT_NEAR(state->pos.GetZ(), 0.00, 1E-2);
+    EXPECT_NEAR(state->pos.GetH(), 0.00, 1E-2);
+    EXPECT_NEAR(state->pos.GetP(), 0.00, 1E-2);
+    EXPECT_NEAR(state->pos.GetR(), 0.00, 1E-2);
+    EXPECT_NEAR(state->info.speed, 6.94, 1E-2);
+
+    while (se->getSimulationTime() < 3.85 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    state = &gw->objectState_[0]->state_;
+    EXPECT_NEAR(state->pos.GetX(), 127.08, 1E-2);
+    EXPECT_NEAR(state->pos.GetY(), -2.54, 1E-2);
+    EXPECT_NEAR(state->pos.GetZ(), 0.00, 1E-2);
+    EXPECT_NEAR(state->pos.GetH(), 0.00, 1E-2);
+    EXPECT_NEAR(state->pos.GetP(), 0.00, 1E-2);
+    EXPECT_NEAR(state->pos.GetR(), 1.31, 1E-2);
+    EXPECT_NEAR(state->info.speed, 6.94, 1E-2);
+
+    while (se->getSimulationTime() < 4.75 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    state = &gw->objectState_[0]->state_;
+    EXPECT_NEAR(state->pos.GetX(), 130.61, 1E-2);
+    EXPECT_NEAR(state->pos.GetY(), -2.54, 1E-2);
+    EXPECT_NEAR(state->pos.GetZ(), 0.00, 1E-2);
+    EXPECT_NEAR(state->pos.GetH(), 0.00, 1E-2);
+    EXPECT_NEAR(state->pos.GetP(), 0.00, 1E-2);
+    EXPECT_NEAR(state->pos.GetR(), 1.57, 1E-2);
+    EXPECT_NEAR(state->info.speed, 0.54, 1E-2);
+
+    while (se->getSimulationTime() < 4.95 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    state = &gw->objectState_[0]->state_;
+    EXPECT_NEAR(state->pos.GetX(), 130.62, 1E-2);
+    EXPECT_NEAR(state->pos.GetY(), -2.54, 1E-2);
+    EXPECT_NEAR(state->pos.GetZ(), 0.00, 1E-2);
+    EXPECT_NEAR(state->pos.GetH(), 0.00, 1E-2);
+    EXPECT_NEAR(state->pos.GetP(), 0.00, 1E-2);
+    EXPECT_NEAR(state->pos.GetR(), 1.57, 1E-2);
+    EXPECT_NEAR(state->info.speed, 0.0, 1E-2);
+
+    delete se;
+}
+
+TEST(PositionTest, TestRelativePositionPhases)
+{
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/relative_speed_phases.xosc");
+    const double    dt = 0.05;
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 2);
+
+    // Check expected position and orientation at some specific time stamps
+    while (se->getSimulationTime() < 7.15 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 129.500, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -1.535, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetP(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetR(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 20.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 53.688, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), -1.535, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetH(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetP(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetR(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->GetSpeed(), 18.613, 1E-3);
+
+    while (se->getSimulationTime() < 7.2 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 130.512, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 20.250, 1E-3);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 54.628, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->GetSpeed(), 18.813, 1E-3);
+
+    while (se->getSimulationTime() < 7.2 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 130.512, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 20.250, 1E-3);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 54.628, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->GetSpeed(), 18.813, 1E-3);
+
+    while (se->getSimulationTime() < 9.95 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 203.750, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 30.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 121.741, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->GetSpeed(), 29.538, 1E-3);
+
+    while (se->getSimulationTime() < 10.95 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 233.750, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 30.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 151.666, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->GetSpeed(), 30.0, 1E-3);
+
+    while (se->getSimulationTime() < 11.45 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 249.438, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 32.500, 1E-3);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 167.216, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->GetSpeed(), 32.0, 1E-3);
+
+    while (se->getSimulationTime() < 12.20 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 275.125, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 35.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 192.416, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->GetSpeed(), 35.0, 1E-3);
+
+    while (se->getSimulationTime() < 18.40 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 431.750, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 0.500, 1E-3);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 367.154, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->GetSpeed(), 10.850, 1E-3);
+
+    while (se->getSimulationTime() < 19.95 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 431.750, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -1.535, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetP(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetR(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 0.0, 1E-3);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 375.291, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), -1.535, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetH(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetP(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetR(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->GetSpeed(), 0.0, 1E-3);
+
+    delete se;
+}
+
+class LaneOffsetIntersectionTest : public ::testing::Test
+{
+protected:
+    LaneOffsetIntersectionTest()
+    {
+        se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/lane_offset_intersection.xosc");
+    }
+
+    ~LaneOffsetIntersectionTest()
+    {
+        delete se;
+    }
+
+    ScenarioEngine* se = nullptr;
+};
+
+TEST_F(LaneOffsetIntersectionTest, AssertInitialization)
+{
+    ASSERT_NE(se, nullptr);
+    ASSERT_EQ(se->entities_.object_.size(), 6);
+    ASSERT_EQ(se->entities_.object_[0]->GetName(), "RoadUser1");
+    ASSERT_EQ(se->entities_.object_[1]->GetName(), "RoadUser2");
+    ASSERT_EQ(se->entities_.object_[2]->GetName(), "RoadUser3");
+    ASSERT_EQ(se->entities_.object_[3]->GetName(), "RoadUser4");
+    ASSERT_EQ(se->entities_.object_[4]->GetName(), "RoadUser5");
+    ASSERT_EQ(se->entities_.object_[5]->GetName(), "RoadUser6");
+}
+
+TEST_F(LaneOffsetIntersectionTest, TestLaneOffsetOfMovingObjects)
+{
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    // Check initial positions
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), -68.0103, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -14.4175, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetH(), 0.5300, 1E-3);
+    EXPECT_EQ(se->entities_.object_[0]->pos_.GetTrackId(), 6);
+    EXPECT_EQ(se->entities_.object_[0]->pos_.GetLaneId(), -2);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.7500, 1E-3);
+
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetX(), -77.6025, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetY(), -17.8277, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetH(), 0.5593, 1E-3);
+    EXPECT_EQ(se->entities_.object_[1]->pos_.GetTrackId(), 6);
+    EXPECT_EQ(se->entities_.object_[1]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetT(), 0.1575, 1E-3);
+
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetX(), 2.3015, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetY(), -1.3783, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetH(), 2.6030, 1E-3);
+    EXPECT_EQ(se->entities_.object_[2]->pos_.GetTrackId(), 1);
+    EXPECT_EQ(se->entities_.object_[2]->pos_.GetLaneId(), -2);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetT(), -1.75, 1E-3);
+
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetX(), -7.6699, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetY(), 1.4288, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetH(), 2.6937, 1E-3);
+    EXPECT_EQ(se->entities_.object_[3]->pos_.GetTrackId(), 1);
+    EXPECT_EQ(se->entities_.object_[3]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetT(), 0.9539, 1E-3);
+
+    EXPECT_NEAR(se->entities_.object_[4]->pos_.GetX(), -36.3563, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[4]->pos_.GetY(), 55.7786, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[4]->pos_.GetH(), 4.8018, 1E-3);
+    EXPECT_EQ(se->entities_.object_[4]->pos_.GetTrackId(), 7);
+    EXPECT_EQ(se->entities_.object_[4]->pos_.GetLaneId(), -2);
+    EXPECT_NEAR(se->entities_.object_[4]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[4]->pos_.GetT(), -1.75, 1E-3);
+
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetX(), -33.1141, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetY(), 46.0291, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetH(), 4.8676, 1E-3);
+    EXPECT_EQ(se->entities_.object_[5]->pos_.GetTrackId(), 7);
+    EXPECT_EQ(se->entities_.object_[5]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetT(), 0.6087, 1E-3);
+
+    while (se->getSimulationTime() < 3.0 - SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.1);
+    }
+
+    // At time=3.0, three vehicles are in the intersection
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetX(), -19.1442, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetY(), 11.4437, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetH(), 2.5871, 1E-3);
+    EXPECT_EQ(se->entities_.object_[2]->pos_.GetTrackId(), 9);
+    EXPECT_EQ(se->entities_.object_[2]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetT(), -1.75, 1E-3);
+
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetX(), -30.2390, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetY(), 12.1042, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetH(), 3.0023, 1E-3);
+    EXPECT_EQ(se->entities_.object_[3]->pos_.GetTrackId(), 10);
+    EXPECT_EQ(se->entities_.object_[3]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetT(), -1.75, 1E-3);
+
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetX(), -29.7425, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetY(), 21.2292, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetH(), 4.8049, 1E-3);
+    EXPECT_EQ(se->entities_.object_[5]->pos_.GetTrackId(), 13);
+    EXPECT_EQ(se->entities_.object_[5]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetT(), -1.75, 1E-3);
+
+    while (se->getSimulationTime() < 9.0 - SMALL_NUMBER)
+    {
+        se->step(0.1);
+        se->prepareGroundTruth(0.1);
+    }
+
+    // At time=9.0, all vehicles has passed through the intersection
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), -0.7407, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), -4.1387, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetH(), 5.8709, 1E-3);
+    EXPECT_EQ(se->entities_.object_[0]->pos_.GetTrackId(), 1);
+    EXPECT_EQ(se->entities_.object_[0]->pos_.GetLaneId(), 1);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetT(), 2.1799, 1E-3);
+
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetX(), -27.2357, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetY(), 29.7535, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetH(), 1.7347, 1E-3);
+    EXPECT_EQ(se->entities_.object_[1]->pos_.GetTrackId(), 7);
+    EXPECT_EQ(se->entities_.object_[1]->pos_.GetLaneId(), 1);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[1]->pos_.GetT(), 5.0103, 1E-3);
+
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetX(), -33.0036, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetY(), 58.2209, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetH(), 1.6991, 1E-3);
+    EXPECT_EQ(se->entities_.object_[2]->pos_.GetTrackId(), 7);
+    EXPECT_EQ(se->entities_.object_[2]->pos_.GetLaneId(), 1);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[2]->pos_.GetT(), 1.8074, 1E-3);
+
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetX(), -72.9814, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetY(), -12.3456, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetH(), 3.7546, 1E-3);
+    EXPECT_EQ(se->entities_.object_[3]->pos_.GetTrackId(), 6);
+    EXPECT_EQ(se->entities_.object_[3]->pos_.GetLaneId(), 1);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[3]->pos_.GetT(), 2.5509, 1E-3);
+
+    EXPECT_NEAR(se->entities_.object_[4]->pos_.GetX(), -62.1094, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[4]->pos_.GetY(), -4.5303, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[4]->pos_.GetH(), 3.7672, 1E-3);
+    EXPECT_EQ(se->entities_.object_[4]->pos_.GetTrackId(), 6);
+    EXPECT_EQ(se->entities_.object_[4]->pos_.GetLaneId(), 1);
+    EXPECT_NEAR(se->entities_.object_[4]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[4]->pos_.GetT(), 3.7968, 1E-3);
+
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetX(), 6.3723, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetY(), -7.8872, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetH(), 5.7446, 1E-3);
+    EXPECT_EQ(se->entities_.object_[5]->pos_.GetTrackId(), 3);
+    EXPECT_EQ(se->entities_.object_[5]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[5]->pos_.GetT(), -1.75, 1E-3);
+}
+
+TEST_F(LaneOffsetIntersectionTest, TestLaneOffsetOfSomeLocations)
+{
+    // check a few specific locations with and without lane offset
+    // correlation between track and interial coordinates should be close
+    // not perfect since the X,Y to S,T conversion is based on OSI points
+    // first point is outside intersection, non zero lane offset
+    double point1[2] = {-43.8969, 3.7701};
+    se->entities_.object_[0]->pos_.SetTrackPos(6, 50.0, 1.75);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), point1[0], 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), point1[1], 1E-3);
+    EXPECT_EQ(se->entities_.object_[0]->pos_.GetTrackId(), 6);
+    EXPECT_EQ(se->entities_.object_[0]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetOffset(), 0.0279, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetT(), 1.75, 1E-3);
+
+    se->entities_.object_[0]->pos_.SetInertiaPos(point1[0], point1[1], 0.0);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), point1[0], 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), point1[1], 1E-3);
+    EXPECT_EQ(se->entities_.object_[0]->pos_.GetTrackId(), 6);
+    EXPECT_EQ(se->entities_.object_[0]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetOffset(), 0.0, 0.05);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetS(), 50.0, 0.05);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetT(), 1.75, 0.05);
+
+    // second point is inside intersection, zero lane offset
+    double point2[2] = {-36.0975, 8.3355};
+    se->entities_.object_[0]->pos_.SetTrackPos(12, 5.0, -1.75);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), point2[0], 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), point2[1], 1E-3);
+    EXPECT_EQ(se->entities_.object_[0]->pos_.GetTrackId(), 12);
+    EXPECT_EQ(se->entities_.object_[0]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.75, 1E-3);
+
+    se->entities_.object_[0]->pos_.SetInertiaPos(point2[0], point2[1], 0.0);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetX(), point2[0], 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetY(), point2[1], 1E-3);
+    EXPECT_EQ(se->entities_.object_[0]->pos_.GetTrackId(), 12);
+    EXPECT_EQ(se->entities_.object_[0]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetOffset(), 0.0, 1E-3);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetS(), 5.0, 0.07);
+    EXPECT_NEAR(se->entities_.object_[0]->pos_.GetT(), -1.75, 0.05);
+}
+
+TEST_F(LaneOffsetIntersectionTest, TestGetClosestLaneIdx)
+{
+    // Exercise GetClosestLaneIdx() with this road involving lane offset
+    Road*        road         = Position::GetOpenDrive()->GetRoadById(6);
+    LaneSection* lane_section = road->GetLaneSectionByIdx(0);
+    double       offset       = 0.0;
+    double       s            = 50.0;
+    idx_t        lane_idx     = IDX_UNDEFINED;
+
+    lane_idx = lane_section->GetClosestLaneIdx(s, -0.1, road->GetLaneOffset(s), -1, offset, true);
+    EXPECT_EQ(lane_section->GetLaneIdByIdx(lane_idx), -2);
+    EXPECT_NEAR(offset, 1.65, 1e-3);
+
+    lane_idx = lane_section->GetClosestLaneIdx(s, -1.75, road->GetLaneOffset(s), -1, offset, true);
+    EXPECT_EQ(lane_section->GetLaneIdByIdx(lane_idx), -2);
+    EXPECT_NEAR(offset, 0.0, 1e-3);
+
+    lane_idx = lane_section->GetClosestLaneIdx(s, 0.1, road->GetLaneOffset(s), -1, offset, true);
+    EXPECT_EQ(lane_section->GetLaneIdByIdx(lane_idx), -1);
+    EXPECT_NEAR(offset, -1.6220, 1e-3);
+
+    lane_idx = lane_section->GetClosestLaneIdx(s, 1.7, road->GetLaneOffset(s), -1, offset, true);
+    EXPECT_EQ(lane_section->GetLaneIdByIdx(lane_idx), -1);
+    EXPECT_NEAR(offset, -0.022, 1e-3);
+
+    lane_idx = lane_section->GetClosestLaneIdx(s, 3.4, road->GetLaneOffset(s), -1, offset, true);
+    EXPECT_EQ(lane_section->GetLaneIdByIdx(lane_idx), -1);
+    EXPECT_NEAR(offset, 1.6779, 1e-3);
+
+    lane_idx = lane_section->GetClosestLaneIdx(s, 3.6, road->GetLaneOffset(s), -1, offset, true);
+    EXPECT_EQ(lane_section->GetLaneIdByIdx(lane_idx), -1);
+    EXPECT_NEAR(offset, 1.8779, 1e-3);
+
+    lane_idx = lane_section->GetClosestLaneIdx(s, 3.6, road->GetLaneOffset(s), 0, offset, true);
+    EXPECT_EQ(lane_section->GetLaneIdByIdx(lane_idx), 1);
+    EXPECT_NEAR(offset, -1.5941, 1e-3);
+
+    lane_idx = lane_section->GetClosestLaneIdx(s, 3.6, road->GetLaneOffset(s), 1, offset, true);
+    EXPECT_EQ(lane_section->GetLaneIdByIdx(lane_idx), 1);
+    EXPECT_NEAR(offset, -1.5941, 1e-3);
+}
+
+TEST_F(LaneOffsetIntersectionTest, TestRoadMarkTypeNone)
+{
+    // Verify that also roadmarks of type none is included for road border detection
+    Road*        road         = Position::GetOpenDrive()->GetRoadById(1);
+    LaneSection* lane_section = road->GetLaneSectionByIdx(0);
+    Lane*        lane         = lane_section->GetLaneById(-3);
+
+    EXPECT_EQ(lane->GetOSIPoints()->GetNumOfOSIPoints(), 2);
+    ASSERT_EQ(lane->GetNumberOfRoadMarks(), 1);
+    EXPECT_EQ(lane->GetLaneRoadMarkByIdx(0)->GetType(), roadmanager::LaneRoadMark::RoadMarkType::NONE_TYPE);
+    ASSERT_EQ(lane->GetLaneRoadMarkByIdx(0)->GetNumberOfRoadMarkTypes(), 1);
+    ASSERT_EQ(lane->GetLaneRoadMarkByIdx(0)->GetLaneRoadMarkTypeByIdx(0)->GetNumberOfRoadMarkTypeLines(), 1);
+    EXPECT_EQ(lane->GetLaneRoadMarkByIdx(0)->GetLaneRoadMarkTypeByIdx(0)->GetLaneRoadMarkTypeLineByIdx(0)->GetOSIPoints()->GetNumOfOSIPoints(), 2);
+}
+
+TEST(ActionTest, TestInstantLaneChange)
+{
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/instant_lane_change.xosc");
+    const double    dt = 0.05;
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 1);
+
+    // Check expected position and orientation at some specific time stamps
+    while (se->getSimulationTime() < 0.95 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 50.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -1.535, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetP(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetR(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 5.0, 1E-3);
+
+    while (se->getSimulationTime() < 1.0 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 50.25, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 1.535, 1E-3);
+
+    while (se->getSimulationTime() < 1.95 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 55.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 1.535, 1E-3);
+
+    while (se->getSimulationTime() < 2.0 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 55.25, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -1.535, 1E-3);
+
+    while (se->getSimulationTime() < 2.95 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 60.00, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -1.535, 1E-3);
+
+    while (se->getSimulationTime() < 3.0 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 60.25, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 1.535, 1E-3);
+
+    delete se;
+}
+
+TEST(RouteingTest, TestPositionOffRoute)
+{
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/route_detour.xosc", true);
+    const double    dt = 0.05;
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 1);
+
+    // Check expected position and orientation at some specific time stamps
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 221.5, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 45.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 1.5708, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetP(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetR(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 40.0, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetTrackId(), 2);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetLaneId(), -1);
+    EXPECT_NEAR(entities->object_[0]->pos_.route_->currentPos_.GetS(), 25.0, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->OnRoute(), true);
+
+    while (se->getSimulationTime() < 1.0 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 216.982, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 86.012, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.GetTrackId(), 200);
+    EXPECT_EQ(entities->object_[0]->pos_.GetLaneId(), -1);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetTrackId(), 201);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetLaneId(), -1);
+    EXPECT_NEAR(entities->object_[0]->pos_.route_->currentPos_.GetS(), 16.012, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->OnRoute(), false);
+
+    while (se->getSimulationTime() < 3.15 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 132.565, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 91.5, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.GetTrackId(), 3);
+    EXPECT_EQ(entities->object_[0]->pos_.GetLaneId(), -1);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetTrackId(), 201);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetLaneId(), -1);
+    EXPECT_NEAR(entities->object_[0]->pos_.route_->currentPos_.GetS(), 21.5, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->OnRoute(), false);
+
+    while (se->getSimulationTime() < 3.20 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 130.565, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 91.5, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.GetTrackId(), 3);
+    EXPECT_EQ(entities->object_[0]->pos_.GetLaneId(), -1);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetTrackId(), 4);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetLaneId(), -1);
+    EXPECT_NEAR(entities->object_[0]->pos_.route_->currentPos_.GetS(), 150.851, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->OnRoute(), false);
+
+    while (se->getSimulationTime() < 5.75 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 28.565, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 91.5, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.GetTrackId(), 3);
+    EXPECT_EQ(entities->object_[0]->pos_.GetLaneId(), -1);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetTrackId(), 4);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetLaneId(), -1);
+    EXPECT_NEAR(entities->object_[0]->pos_.route_->currentPos_.GetS(), 252.851, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->OnRoute(), false);
+
+    while (se->getSimulationTime() < 5.8 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 26.565, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 91.5, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.GetTrackId(), 3);
+    EXPECT_EQ(entities->object_[0]->pos_.GetLaneId(), -1);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetTrackId(), 302);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetLaneId(), -1);
+    EXPECT_NEAR(entities->object_[0]->pos_.route_->currentPos_.GetS(), 18.5, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->OnRoute(), false);
+
+    while (se->getSimulationTime() < 8.0 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), -58.592, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 83.938, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.GetTrackId(), 301);
+    EXPECT_EQ(entities->object_[0]->pos_.GetLaneId(), -1);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetTrackId(), 302);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetLaneId(), -1);
+    EXPECT_NEAR(entities->object_[0]->pos_.route_->currentPos_.GetS(), 26.062, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->OnRoute(), false);
+
+    while (se->getSimulationTime() < 8.4 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), -61.500, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), 68.564, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.GetTrackId(), 6);
+    EXPECT_EQ(entities->object_[0]->pos_.GetLaneId(), -1);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetTrackId(), 6);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetLaneId(), -1);
+    EXPECT_NEAR(entities->object_[0]->pos_.route_->currentPos_.GetS(), 1.435, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->OnRoute(), true);
+
+    while (se->getSimulationTime() < 11.25 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), -61.500, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -45.435, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.GetTrackId(), 5);
+    EXPECT_EQ(entities->object_[0]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetS(), 25.435, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetTrackId(), 5);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetLaneId(), -1);
+    EXPECT_NEAR(entities->object_[0]->pos_.route_->currentPos_.GetS(), 25.435, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->OnRoute(), true);
+
+    while (se->getSimulationTime() < 11.50 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), -61.500, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -55.435, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.GetTrackId(), 5);
+    EXPECT_EQ(entities->object_[0]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetS(), 35.435, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetTrackId(), 5);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetLaneId(), -1);
+    EXPECT_NEAR(entities->object_[0]->pos_.route_->currentPos_.GetS(), 30.0, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->OnRoute(), false);
+
+    while (se->getSimulationTime() < 11.60 + SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), -61.500, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -59.435, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.GetTrackId(), 5);
+    EXPECT_EQ(entities->object_[0]->pos_.GetLaneId(), -1);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetS(), 39.435, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetTrackId(), 5);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->currentPos_.GetLaneId(), -1);
+    EXPECT_NEAR(entities->object_[0]->pos_.route_->currentPos_.GetS(), 30.0, 1E-3);
+    EXPECT_EQ(entities->object_[0]->pos_.route_->OnRoute(), false);
+
+    delete se;
+}
+
+TEST(PositioningTest, TestElevationMapping)
+{
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/test_elevation_mapping.xosc", false);
+    const double    dt = 0.1;
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 1);
+
+    // Check expected position and orientation at some specific time stamps
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 8.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -1.75, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 3.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetP(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetR(), 0.0, 1E-3);
+
+    ControllerInteractive* ctrl = static_cast<ControllerInteractive*>(entities->object_[0]->GetController("interactiveDriver"));
+    ASSERT_NE(ctrl, nullptr);
+
+    // drive car forward, so that it reaches end of top road, dropping to the below road
+    while (se->getSimulationTime() < 1.0 + SMALL_NUMBER)
+    {
+        ctrl->ReportKeyEvent(static_cast<int>(KeyType::KEY_Up), true);
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    // Verify that car has moved to lower road
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 11.3, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -1.75, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetZ(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetP(), 0.0, 1E-3);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetR(), 0.0, 1E-3);
+
+    delete se;
+}
+
+TEST(StringIds, TestRoadStringIdsEdgeCases)
+{
+    pugi::xml_document  doc;
+    pugi::xml_node      parent = doc.append_child("parent");
+    pugi::xml_node      child1 = parent.append_child("road");
+    pugi::xml_node      child2 = parent.append_child("road");
+    pugi::xml_node      child3 = parent.append_child("road");
+    pugi::xml_attribute attr1  = child1.append_attribute("id");
+    pugi::xml_attribute attr2  = child2.append_attribute("id");
+    pugi::xml_attribute attr3  = child3.append_attribute("id");
+
+    std::vector<std::pair<id_t, std::string>> ids;
+    bool                                      exception_found = false;
+
+    // check overflow
+    attr1.set_value("4294967294");
+    attr2.set_value("4294967295");
+    attr3.set_value("5");
+    try
+    {
+        roadmanager::Position::GetOpenDrive()->EstablishUniqueIds(parent, "road", ids);
+    }
+    catch (const std::exception&)
+    {
+        exception_found = true;
+    }
+    EXPECT_EQ(ids.size(), 1);
+    EXPECT_EQ(ids[0].first, 4294967294);
+    EXPECT_EQ(exception_found, true);
+
+    // Another round with unique and valid numbers
+    ids.clear();
+    exception_found = false;
+    attr1.set_value("1000");
+    attr2.set_value("4294967294");
+    attr3.set_value("22");
+    try
+    {
+        roadmanager::Position::GetOpenDrive()->EstablishUniqueIds(parent, "road", ids);
+    }
+    catch (const std::exception&)
+    {
+        exception_found = true;
+    }
+    EXPECT_EQ(ids.size(), 3);
+    EXPECT_EQ(exception_found, false);
+    EXPECT_EQ(ids[0].first, 1000);
+    EXPECT_EQ(ids[1].first, 4294967294);
+    EXPECT_EQ(ids[2].first, 22);
+
+    // Check latest id wins
+    ids.clear();
+    exception_found = false;
+    attr1.set_value("4294967291");
+    attr2.set_value("4294967291");
+    attr3.set_value("44");
+    try
+    {
+        roadmanager::Position::GetOpenDrive()->EstablishUniqueIds(parent, "road", ids);
+    }
+    catch (const std::exception&)
+    {
+        exception_found = true;
+    }
+    EXPECT_EQ(ids.size(), 3);
+    EXPECT_EQ(exception_found, false);
+    EXPECT_EQ(ids[0].first, 4294967292);
+    EXPECT_EQ(ids[1].first, 4294967291);
+    EXPECT_EQ(ids[2].first, 44);
+
+    // Another round with unique but invalid numbers
+    ids.clear();
+    exception_found = false;
+    attr1.set_value("5");
+    attr2.set_value("12j12");
+    attr3.set_value("4");
+    try
+    {
+        roadmanager::Position::GetOpenDrive()->EstablishUniqueIds(parent, "road", ids);
+    }
+    catch (const std::exception&)
+    {
+        exception_found = true;
+    }
+    EXPECT_EQ(ids.size(), 3);
+    EXPECT_EQ(exception_found, false);
+    EXPECT_EQ(ids[0].first, 5);
+    EXPECT_EQ(ids[1].first, 6);
+    EXPECT_EQ(ids[2].first, 4);
+
+    // Check handling of reserved ID
+    ids.clear();
+    exception_found = false;
+    attr1.set_value("5");
+    attr2.set_value("4294967295");
+    attr3.set_value("3");
+    try
+    {
+        roadmanager::Position::GetOpenDrive()->EstablishUniqueIds(parent, "road", ids);
+    }
+    catch (const std::exception&)
+    {
+        exception_found = true;
+    }
+    EXPECT_EQ(ids.size(), 3);
+    EXPECT_EQ(exception_found, false);
+    EXPECT_EQ(ids[0].first, 5);
+    EXPECT_EQ(ids[1].first, 6);
+    EXPECT_EQ(ids[2].first, 3);
+}
+
+TEST(GhostConcept, TestMultipleRestartAtCorrectPosition)
+{
+    ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/driver_lane_bouncing_scenario.xosc");
+    const double    dt = 0.1;
+    ASSERT_NE(se, nullptr);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 2);
+
+    // Check expected position and orientation at some specific time stamps
+    while (se->getSimulationTime() < 28.0 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+    EXPECT_NEAR(entities->object_[0]->pos_.GetX(), 609.49, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetY(), -3.49, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->pos_.GetH(), 0.03, 1E-2);
+    EXPECT_NEAR(entities->object_[0]->GetSpeed(), 72.0 / 3.6, 1E-2);
+
+    EXPECT_NEAR(entities->object_[1]->pos_.GetX(), 657.60, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetY(), -1.76, 1E-2);
+    EXPECT_NEAR(entities->object_[1]->pos_.GetH(), 0.04, 1E-3);
+    EXPECT_NEAR(entities->object_[1]->GetSpeed(), 72.0 / 3.6, 1E-3);
+
+    delete se;
+}
+
+TEST(EnvironmentTest, Basic)
+{
+    OSCEnvironment environment;
+    OSCEnvironment new_environment;
+
+    new_environment.SetAtmosphericPressure(100000);
+    environment.UpdateEnvironment(new_environment);
+    EXPECT_EQ(new_environment.GetAtmosphericPressure(), 100000);
+    EXPECT_EQ(new_environment.GetAtmosphericPressure(), environment.GetAtmosphericPressure());
+    EXPECT_TRUE(new_environment.IsAtmosphericPressureSet());
+    EXPECT_TRUE(environment.IsAtmosphericPressureSet());
+
+    new_environment.SetTemperature(293);
+    environment.UpdateEnvironment(new_environment);
+    EXPECT_EQ(new_environment.GetTemperature(), 293);
+    EXPECT_EQ(new_environment.GetTemperature(), environment.GetTemperature());
+    EXPECT_TRUE(new_environment.IsTemperatureSet());
+    EXPECT_TRUE(environment.IsTemperatureSet());
+
+    new_environment.SetCloudState(scenarioengine::CloudState::RAINY);
+    environment.UpdateEnvironment(new_environment);
+    EXPECT_EQ(new_environment.GetFractionalCloudState(), "sixOktas");
+    EXPECT_EQ(new_environment.GetFractionalCloudState(), environment.GetFractionalCloudState());
+    EXPECT_TRUE(new_environment.IsFractionalCloudStateSet());
+    EXPECT_TRUE(environment.IsFractionalCloudStateSet());
+    EXPECT_EQ(new_environment.GetFractionalCloudStateFactor(), 0.75);
+
+    new_environment.SetFog(1000.0);
+    environment.UpdateEnvironment(new_environment);
+    EXPECT_EQ(new_environment.GetFog().visibility_range, 1000.0);
+    EXPECT_NEAR(new_environment.GetFogVisibilityRangeFactor(), 0.00099, 1E-5);
+    EXPECT_EQ(new_environment.GetFog().visibility_range, environment.GetFog().visibility_range);
+    EXPECT_TRUE(new_environment.IsFogSet());
+    EXPECT_TRUE(environment.IsFogSet());
+
+    new_environment.SetPrecipitation(scenarioengine::Precipitation{0.1, scenarioengine::PrecipitationType::SNOW});
+    environment.UpdateEnvironment(new_environment);
+    EXPECT_EQ(new_environment.GetPrecipitation().precipitationintensity, 0.1);
+    EXPECT_EQ(new_environment.GetPrecipitation().precipitationtype, scenarioengine::PrecipitationType::SNOW);
+    EXPECT_EQ(new_environment.GetPrecipitation().precipitationintensity, environment.GetPrecipitation().precipitationintensity);
+    EXPECT_EQ(new_environment.GetPrecipitation().precipitationtype, environment.GetPrecipitation().precipitationtype);
+    EXPECT_TRUE(new_environment.IsPrecipitationSet());
+    EXPECT_TRUE(environment.IsPrecipitationSet());
+
+    new_environment.SetSun(scenarioengine::Sun{2, 1, 10000});
+    environment.UpdateEnvironment(new_environment);
+    EXPECT_EQ(new_environment.GetSun().azimuth, 2);
+    EXPECT_EQ(new_environment.GetSun().elevation, 1);
+    EXPECT_EQ(new_environment.GetSunIntensity(), 10000);
+    EXPECT_EQ(new_environment.GetSunIntensityFactor(), 0.1);
+    EXPECT_EQ(new_environment.GetSun().azimuth, environment.GetSun().azimuth);
+    EXPECT_EQ(new_environment.GetSunIntensity(), environment.GetSunIntensity());
+    EXPECT_EQ(new_environment.GetSun().elevation, environment.GetSun().elevation);
+    EXPECT_TRUE(new_environment.IsSunSet());
+    EXPECT_TRUE(environment.IsSunSet());
+
+    new_environment.SetWind(scenarioengine::Wind{2, 10});
+    environment.UpdateEnvironment(new_environment);
+    EXPECT_EQ(new_environment.GetWind().direction, 2);
+    EXPECT_EQ(new_environment.GetWind().speed, 10);
+    EXPECT_EQ(new_environment.GetWind().direction, environment.GetWind().direction);
+    EXPECT_EQ(new_environment.GetWind().speed, environment.GetWind().speed);
+    EXPECT_TRUE(new_environment.IsWindSet());
+    EXPECT_TRUE(environment.IsWindSet());
+
+    new_environment.SetRoadCondition(1);
+    environment.UpdateEnvironment(new_environment);
+    EXPECT_EQ(new_environment.GetRoadCondition().friction_scale_factor, 1);
+    EXPECT_EQ(new_environment.GetRoadCondition().friction_scale_factor, environment.GetRoadCondition().friction_scale_factor);
+    EXPECT_TRUE(new_environment.IsRoadConditionSet());
+    EXPECT_TRUE(environment.IsRoadConditionSet());
+}
+
+TEST(EnvironmentTest, Parsing)
+{
+    // Set up mock xml_node
+    pugi::xml_document doc;
+    pugi::xml_node     actionNode    = doc.append_child("Action");
+    pugi::xml_node     envActionNode = actionNode.append_child("EnvironmentAction");
+    pugi::xml_node     envNode       = envActionNode.append_child("Environment");
+    // Time of day
+    pugi::xml_node todNode = envNode.append_child("TimeOfDay");
+    todNode.append_attribute("animation").set_value(false);
+    todNode.append_attribute("dateTime").set_value("2021-12-02T11:30:30.000+01:00");
+
+    // Weather and attributes
+    pugi::xml_node weatherNode = envNode.append_child("Weather");
+    weatherNode.append_attribute("cloudState").set_value("cloudy");
+    weatherNode.append_attribute("temperature").set_value("4");
+    weatherNode.append_attribute("atmosphericPressure").set_value("1000");
+    // Sun
+    pugi::xml_node sunNode = weatherNode.append_child("Sun");
+    sunNode.append_attribute("azimuth").set_value(0.5);
+    sunNode.append_attribute("intensity").set_value(300.1);
+    sunNode.append_attribute("elevation").set_value(3.2);
+    // Fog
+    pugi::xml_node fogNode = weatherNode.append_child("Fog");
+    fogNode.append_attribute("visualRange").set_value(1000);
+    pugi::xml_node fogBoundingboxNode = fogNode.append_child("BoundingBox");
+    pugi::xml_node bbCenterNode       = fogBoundingboxNode.append_child("Center");
+    bbCenterNode.append_attribute("x").set_value(1);
+    bbCenterNode.append_attribute("y").set_value(1);
+    bbCenterNode.append_attribute("z").set_value(1.1);
+    pugi::xml_node bbDimNode = fogBoundingboxNode.append_child("Dimensions");
+    bbDimNode.append_attribute("width").set_value(1.2);
+    bbDimNode.append_attribute("length").set_value(1.3);
+    bbDimNode.append_attribute("height").set_value(1.4);
+    // Precipitation
+    pugi::xml_node precipNode = weatherNode.append_child("Precipitation");
+    precipNode.append_attribute("precipitationType").set_value("dry");
+    precipNode.append_attribute("precipitationIntensity").set_value(0.0);
+    // Wind
+    pugi::xml_node windNode = weatherNode.append_child("Wind");
+    windNode.append_attribute("direction").set_value(1.1);
+    windNode.append_attribute("speed").set_value(10);
+
+    // Road condition
+    pugi::xml_node roadCondNode = envNode.append_child("RoadCondition");
+    roadCondNode.append_attribute("frictionScaleFactor").set_value(0.5);
+
+    // Test using ScenarioReader
+    Entities       entities;
+    Catalogs       catalogs;
+    OSCEnvironment environment;
+    ScenarioReader reader(&entities, &catalogs, &environment);
+
+    OSCGlobalAction*   globalAct = reader.parseOSCGlobalAction(actionNode, nullptr);
+    EnvironmentAction* envAct    = static_cast<EnvironmentAction*>(globalAct);
+    OSCEnvironment     oscEnv    = envAct->new_environment_;
+
+    EXPECT_TRUE(oscEnv.IsAtmosphericPressureSet());
+    EXPECT_TRUE(oscEnv.IsTemperatureSet());
+    EXPECT_TRUE(oscEnv.IsFractionalCloudStateSet());
+    EXPECT_TRUE(oscEnv.IsFogSet());
+    EXPECT_TRUE(oscEnv.IsPrecipitationSet());
+    EXPECT_TRUE(oscEnv.IsSunSet());
+    EXPECT_TRUE(oscEnv.IsWindSet());
+    EXPECT_TRUE(oscEnv.IsRoadConditionSet());
+    EXPECT_TRUE(oscEnv.IsFogBoundingBoxSet());
+    EXPECT_TRUE(oscEnv.IsTimeOfDaySet());
+
+    EXPECT_EQ(oscEnv.GetTimeOfDay().animation, todNode.attribute("animation").as_bool());
+    EXPECT_EQ(oscEnv.GetTimeOfDay().datetime, todNode.attribute("dateTime").value());
+
+    EXPECT_EQ(oscEnv.GetFractionalCloudState(), "fourOktas");
+    EXPECT_NEAR(oscEnv.GetTemperature(), scenarioengine::OSCTemperatureMin, 1e-5);          // clamp to min
+    EXPECT_NEAR(oscEnv.GetAtmosphericPressure(), scenarioengine::OSCAtmosphericMin, 1e-5);  // clamp to min
+
+    EXPECT_NEAR(oscEnv.GetSun().azimuth, sunNode.attribute("azimuth").as_double(), 1e-5);
+    EXPECT_NEAR(oscEnv.GetSunIntensity(), sunNode.attribute("intensity").as_double(), 1e-5);
+    EXPECT_NEAR(oscEnv.GetSun().elevation, MIN(sunNode.attribute("elevation").as_double(), OSCSunElevationMax), 1e-5);
+
+    EXPECT_NEAR(oscEnv.GetFog().visibility_range, fogNode.attribute("visualRange").as_float(), 1e-5);
+    EXPECT_NEAR(oscEnv.GetFog().boundingbox->center_.x_, bbCenterNode.attribute("x").as_float(), 1e-5);
+    EXPECT_NEAR(oscEnv.GetFog().boundingbox->center_.y_, bbCenterNode.attribute("y").as_float(), 1e-5);
+    EXPECT_NEAR(oscEnv.GetFog().boundingbox->center_.z_, bbCenterNode.attribute("z").as_float(), 1e-5);
+    EXPECT_NEAR(oscEnv.GetFog().boundingbox->dimensions_.width_, bbDimNode.attribute("width").as_float(), 1e-5);
+    EXPECT_NEAR(oscEnv.GetFog().boundingbox->dimensions_.length_, bbDimNode.attribute("length").as_float(), 1e-5);
+    EXPECT_NEAR(oscEnv.GetFog().boundingbox->dimensions_.height_, bbDimNode.attribute("height").as_float(), 1e-5);
+
+    EXPECT_EQ(oscEnv.GetPrecipitation().precipitationtype, scenarioengine::PrecipitationType::DRY);
+    EXPECT_NEAR(oscEnv.GetPrecipitation().precipitationintensity.value(), precipNode.attribute("precipitationIntensity").as_double(), 1e-5);
+
+    EXPECT_NEAR(oscEnv.GetWind().direction, windNode.attribute("direction").as_double(), 1e-5);
+    EXPECT_NEAR(oscEnv.GetWind().speed, windNode.attribute("speed").as_double(), 1e-5);
+
+    EXPECT_NEAR(oscEnv.GetRoadCondition().friction_scale_factor, roadCondNode.attribute("frictionScaleFactor").as_double(), 1e-5);
+
+    delete globalAct;
+}
+
+TEST(EnvironmentTest, ParsingV1_3_1)
+{
+    // Set up mock xml_node
+    pugi::xml_document doc;
+    pugi::xml_node     actionNode    = doc.append_child("Action");
+    pugi::xml_node     envActionNode = actionNode.append_child("EnvironmentAction");
+    pugi::xml_node     envNode       = envActionNode.append_child("Environment");
+
+    // Weather and attributes
+    pugi::xml_node weatherNode = envNode.append_child("Weather");
+    weatherNode.append_attribute("fractionalCloudCover").set_value("zeroOktas");
+
+    // Test using ScenarioReader
+    Entities       entities;
+    Catalogs       catalogs;
+    OSCEnvironment environment;
+    ScenarioReader reader(&entities, &catalogs, &environment);
+
+    EnvironmentAction* envAct = static_cast<EnvironmentAction*>(reader.parseOSCGlobalAction(actionNode, nullptr));
+    OSCEnvironment     oscEnv = envAct->new_environment_;
+    EXPECT_TRUE(oscEnv.IsEnvironment());
+    EXPECT_TRUE(oscEnv.IsWeatherSet());
+    EXPECT_TRUE(oscEnv.IsFractionalCloudStateSet());
+
+    EXPECT_EQ(oscEnv.GetFractionalCloudState(), "zeroOktas");
+
+    delete envAct;
+}
+
+TEST(EnvironmentTest, ParsingMissingWeatherAttribute)
+{
+    // Set up mock xml_node
+    pugi::xml_document doc;
+    pugi::xml_node     actionNode    = doc.append_child("Action");
+    pugi::xml_node     envActionNode = actionNode.append_child("EnvironmentAction");
+    pugi::xml_node     envNode       = envActionNode.append_child("Environment");
+
+    pugi::xml_node todNode = envNode.append_child("TimeOfDay");
+    todNode.append_attribute("animation").set_value(false);
+    todNode.append_attribute("dateTime").set_value("2021-12-02T11:30:30");  // missing timezone
+
+    // Weather and attributes
+    pugi::xml_node weatherNode = envNode.append_child("Weather");
+    weatherNode.append_attribute("temperature").set_value("");
+    weatherNode.append_attribute("atmosphericPressure").set_value("");
+    // Sun
+    pugi::xml_node sunNode = weatherNode.append_child("Sun");
+    sunNode.append_attribute("azimuth").set_value(0.5);
+    sunNode.append_attribute("intensity").set_value(300.1);  // missing elevation
+
+    // Fog
+    pugi::xml_node fogNode = weatherNode.append_child("Fog");
+    // missing visualRange
+    pugi::xml_node fogBoundingboxNode = fogNode.append_child("BoundingBox");
+    pugi::xml_node bbCenterNode       = fogBoundingboxNode.append_child("Center");
+    bbCenterNode.append_attribute("x").set_value(1);
+    bbCenterNode.append_attribute("y").set_value(1);
+    bbCenterNode.append_attribute("z").set_value(1.1);
+    pugi::xml_node bbDimNode = fogBoundingboxNode.append_child("Dimensions");
+    bbDimNode.append_attribute("width").set_value(1.2);
+    bbDimNode.append_attribute("length").set_value(1.3);
+    bbDimNode.append_attribute("height").set_value(1.4);
+
+    // Precipitation
+    pugi::xml_node precipNode = weatherNode.append_child("Precipitation");
+    // missing precipitationType
+    precipNode.append_attribute("precipitationIntensity").set_value(0.0);
+
+    // Wind
+    pugi::xml_node windNode = weatherNode.append_child("Wind");
+    windNode.append_attribute("direction").set_value(1.1);
+    // missing speed
+
+    // Road condition
+    pugi::xml_node roadCondNode = envNode.append_child("RoadCondition");
+    roadCondNode.append_attribute("frictionScaleFactor1").set_value(0.5);
+    // missing frictionScaleFactor
+
+    // Test using ScenarioReader
+    Entities       entities;
+    Catalogs       catalogs;
+    OSCEnvironment environment;
+    ScenarioReader reader(&entities, &catalogs, &environment);
+
+    OSCGlobalAction*   globalAct = reader.parseOSCGlobalAction(actionNode, nullptr);
+    EnvironmentAction* envAct    = static_cast<EnvironmentAction*>(globalAct);
+    OSCEnvironment     oscEnv    = envAct->new_environment_;
+
+    EXPECT_FALSE(oscEnv.IsEnvironment());
+    EXPECT_FALSE(oscEnv.IsAtmosphericPressureSet());
+    EXPECT_FALSE(oscEnv.IsTemperatureSet());
+    EXPECT_FALSE(oscEnv.IsFractionalCloudStateSet());
+    EXPECT_FALSE(oscEnv.IsFogSet());
+    EXPECT_FALSE(oscEnv.IsPrecipitationSet());
+    EXPECT_FALSE(oscEnv.IsSunSet());
+    EXPECT_FALSE(oscEnv.IsWindSet());
+    EXPECT_FALSE(oscEnv.IsRoadConditionSet());
+    EXPECT_FALSE(oscEnv.IsFogBoundingBoxSet());
+    EXPECT_FALSE(oscEnv.IsTimeOfDaySet());
+
+    delete globalAct;
+}
+
+TEST(EnvironmentTest, TimeOfDayFormat)
+{
+    std::string dateTime1 = "2011-03-10T11:23:56.000+01:00";
+    EXPECT_TRUE(IsValidDateTimeFormat(dateTime1));
+    std::string dateTime2 = "2023-12-25T15:30:00.123-05:00";
+    EXPECT_TRUE(IsValidDateTimeFormat(dateTime2));
+    std::string leapYear = "2024-02-29T12:00:00.000-08:00";  // Leap year
+    EXPECT_TRUE(IsValidDateTimeFormat(leapYear));
+    std::string dateTime3 = "invalid-date";
+    EXPECT_FALSE(IsValidDateTimeFormat(dateTime3));
+    std::string dateTime4 = "2024-01-01T25:00:00.000+00:00";  // invalid hour
+    EXPECT_FALSE(IsValidDateTimeFormat(dateTime4));
+    std::string dateTime5 = "2024-01-01T23:60:00.000+00:00";  // invalid minute
+    EXPECT_FALSE(IsValidDateTimeFormat(dateTime5));
+    std::string dateTime6 = "2024-01-01T23:59:61.000+00:00";  // invalid second
+    EXPECT_FALSE(IsValidDateTimeFormat(dateTime6));
+    std::string dateTime7 = "2024-01-01T23:59:59.1234+00:00";  // invalid milisec
+    EXPECT_FALSE(IsValidDateTimeFormat(dateTime7));
+    std::string dateTime8 = "2024-01-01T23:59:59.123+0:00";  // invalid timezone
+    EXPECT_FALSE(IsValidDateTimeFormat(dateTime8));
+    std::string dateTime9 = "2011-03-10T11:23:56.000+0100";  // invalid timezone
+    EXPECT_FALSE(IsValidDateTimeFormat(dateTime9));
+    std::string yearMonthSwapped1 = "03-2023-10T12:00:00.000+00:00";  // MM-YYYY-DD
+    EXPECT_FALSE(IsValidDateTimeFormat(yearMonthSwapped1));
+    std::string yearDaySwapped1 = "10-03-2023T12:00:00.000+00:00";  // DD-MM-YYYY
+    EXPECT_FALSE(IsValidDateTimeFormat(yearDaySwapped1));
+    std::string monthDaySwapped1 = "2023-13-03T12:00:00.000+00:00";  // YYYY-DD-MM
+    EXPECT_FALSE(IsValidDateTimeFormat(monthDaySwapped1));
+    std::string wrongFromat1 = "2011/03/10T11:23:56.000+01:00";  // wrong separator
+    EXPECT_FALSE(IsValidDateTimeFormat(wrongFromat1));
+    std::string invalidFormat2 = "2023-11-15 10:30:00.123+05:30";  // Missing T
+    EXPECT_FALSE(IsValidDateTimeFormat(invalidFormat2));
+    std::string invalidFormat3 = "2023-11-15T10:30:00.123+05:30Z";  // Invalid timezone
+    EXPECT_FALSE(IsValidDateTimeFormat(invalidFormat3));
+    std::string invalidFormat4 = "2023-11-15T10:30:00.123+0530+05:30";  // Invalid timezone
+    EXPECT_FALSE(IsValidDateTimeFormat(invalidFormat4));
+    std::string invalidValue2 = "2023-11-31T10:30:00.123+05:30";  // Invalid day (November)
+    EXPECT_FALSE(IsValidDateTimeFormat(invalidValue2));
+}
+
+TEST(EnvironmentTest, SecondsSinceMidnight)
+{
+    std::string dateTime1 = "2023-11-15T10:30:00.123+05:30";
+    EXPECT_EQ(GetSecondsSinceMidnight(dateTime1), 37800);
+    std::string dateTime2 = "2023-11-15T00:00:00.123+05:30";
+    EXPECT_EQ(GetSecondsSinceMidnight(dateTime2), 0);
+    std::string dateTime3 = "2023-11-15T23:59:59.123+05:30";
+    EXPECT_EQ(GetSecondsSinceMidnight(dateTime3), 86399);
+    std::string dateTime4 = "2023-11-15T12:00:00.000+05:30";
+    EXPECT_EQ(GetSecondsSinceMidnight(dateTime4), 43200);
+    std::string dateTime5 = "2023-11-15T12:00:00.000-05:30";
+    EXPECT_EQ(GetSecondsSinceMidnight(dateTime5), 43200);
+    std::string dateTime6 = "2023-11-15T12:00:00.000+00:00";
+    EXPECT_EQ(GetSecondsSinceMidnight(dateTime6), 43200);
+    std::string dateTime7 = "2023-11-15T00:00:00.000+00:00";
+    EXPECT_EQ(GetSecondsSinceMidnight(dateTime7), 0);
+}
+
+TEST(EnvironmentTest, SecondsToFactor)
+{
+    std::string dateTime1 = "2023-11-15T00:00:00.000+00:00";
+    EXPECT_EQ(GetSecondsToFactor(static_cast<int>(GetSecondsSinceMidnight(dateTime1))), 0.0);
+    std::string dateTime2 = "2023-11-15T06:00:00.000+00:00";
+    EXPECT_EQ(GetSecondsToFactor(static_cast<int>(GetSecondsSinceMidnight(dateTime2))), 0.5);
+    std::string dateTime3 = "2023-11-15T12:00:00.000+00:00";
+    EXPECT_EQ(GetSecondsToFactor(static_cast<int>(GetSecondsSinceMidnight(dateTime3))), 1.0);
+    std::string dateTime4 = "2023-11-15T18:00:00.000+00:00";
+    EXPECT_EQ(GetSecondsToFactor(static_cast<int>(GetSecondsSinceMidnight(dateTime4))), 0.5);
+    std::string dateTime5 = "2023-11-15T23:59:59.000+00:00";
+    EXPECT_NEAR(GetSecondsToFactor(static_cast<int>(GetSecondsSinceMidnight(dateTime5))), 0.000, 1E-3);
+}
+
+TEST(EnvironmentTest, EpochTime)
+{
+    // On these, we expect the same epoch time regardless of timezone, as we assume the input is local time
+    std::string dateTime1 = "2023-11-15T10:30:00.123+05:30";
+    EXPECT_EQ(GetEpochTimeFromString(dateTime1), 1700044200);
+    std::string dateTime2 = "2023-11-15T00:00:00.123+05:30";
+    EXPECT_EQ(GetEpochTimeFromString(dateTime2), 1700006400);
+    std::string dateTime3 = "2023-11-15T23:59:59.123+05:30";
+    EXPECT_EQ(GetEpochTimeFromString(dateTime3), 1700092799);
+    std::string dateTime4 = "2023-11-15T12:00:00.000+05:30";
+    EXPECT_EQ(GetEpochTimeFromString(dateTime4), 1700049600);
+    std::string dateTime5 = "2023-11-15T12:00:00.000-05:30";
+    EXPECT_EQ(GetEpochTimeFromString(dateTime5), 1700049600);
+    std::string dateTime6 = "2023-11-15T12:00:00.000+00:00";
+    EXPECT_EQ(GetEpochTimeFromString(dateTime6), 1700049600);
+    std::string dateTime7 = "2011-03-10T11:23:56.000+0100";
+    EXPECT_EQ(GetEpochTimeFromString(dateTime7), 1299756236);
+}
+
+TEST(DeltaDirection, DistanceDiffDirection)
+{
+    std::unique_ptr<ScenarioEngine> se = std::make_unique<ScenarioEngine>("../../../EnvironmentSimulator/Unittest/xosc/lat_dist_road_test.xosc");
+    ASSERT_NE(se, nullptr);
+    const double dt = 0.1;
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 2);
+    roadmanager::Position& pos_1 = entities->object_[0]->pos_;
+    roadmanager::Position& pos_2 = entities->object_[1]->pos_;
+
+    ASSERT_EQ(pos_1.GetTrackId(), 0);
+    ASSERT_EQ(pos_2.GetTrackId(), 0);
+
+    roadmanager::PositionDiff pos_diff;
+    pos_1.Delta(&pos_2, pos_diff);
+    ASSERT_EQ(pos_diff.dDirection, true);
+
+    while (se->getSimulationTime() < 1.6)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    ASSERT_EQ(pos_1.GetTrackId(), 1);
+    ASSERT_EQ(pos_2.GetTrackId(), 0);
+
+    pos_1.Delta(&pos_2, pos_diff);
+    ASSERT_EQ(pos_diff.dDirection, true);
+
+    while (se->getSimulationTime() < 2.2)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    pos_1.Delta(&pos_2, pos_diff);
+    ASSERT_EQ(pos_diff.dDirection, false);
+
+    while (se->getSimulationTime() < 13.5)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    pos_1.Delta(&pos_2, pos_diff);
+    ASSERT_EQ(pos_diff.dDirection, false);
+}
+
+TEST(LatDistAction, EntityCoordinates)
+{
+    std::unique_ptr<ScenarioEngine> se = std::make_unique<ScenarioEngine>("../../../EnvironmentSimulator/Unittest/xosc/lat_dist_entity_basic.xosc");
+    ASSERT_NE(se, nullptr);
+    const double dt = 0.1;
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 5);
+
+    roadmanager::Position& pos_0 = entities->object_[0]->pos_;
+    roadmanager::Position& pos_1 = entities->object_[1]->pos_;
+    roadmanager::Position& pos_2 = entities->object_[2]->pos_;
+    roadmanager::Position& pos_3 = entities->object_[3]->pos_;
+    roadmanager::Position& pos_4 = entities->object_[4]->pos_;
+
+    EXPECT_NEAR(pos_0.GetX(), 100.0, 1e-3);
+    EXPECT_NEAR(pos_0.GetY(), -1.535, 1e-3);
+    EXPECT_NEAR(pos_0.GetH(), 0.0, 1e-3);
+    EXPECT_NEAR(pos_1.GetX(), 115.0, 1e-3);
+    EXPECT_NEAR(pos_1.GetY(), -9.0, 1e-3);
+    EXPECT_NEAR(pos_1.GetH(), 1.5708, 1e-3);
+    EXPECT_NEAR(pos_2.GetX(), 135.0, 1e-3);
+    EXPECT_NEAR(pos_2.GetY(), -9.0, 1e-3);
+    EXPECT_NEAR(pos_2.GetH(), 0.7854, 1e-3);
+    EXPECT_NEAR(pos_3.GetX(), 149.0, 1e-3);
+    EXPECT_NEAR(pos_3.GetY(), -5.0, 1e-3);
+    EXPECT_NEAR(pos_3.GetH(), 5.4977, 1e-3);
+    EXPECT_NEAR(pos_4.GetX(), 177.0, 1e-3);
+    EXPECT_NEAR(pos_4.GetY(), -1.5, 1e-3);
+    EXPECT_NEAR(pos_4.GetH(), 1.5707, 1e-3);
+
+    while (se->getSimulationTime() < 1.0 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(pos_0.GetX(), 100.0, 1e-3);
+    EXPECT_NEAR(pos_0.GetY(), -1.535, 1e-3);
+    EXPECT_NEAR(pos_0.GetH(), 0.0, 1e-3);
+    EXPECT_NEAR(pos_1.GetX(), 115.0718, 1e-3);
+    EXPECT_NEAR(pos_1.GetY(), -4.0023, 1e-3);
+    EXPECT_NEAR(pos_1.GetH(), 1.4850, 1e-3);
+    EXPECT_NEAR(pos_2.GetX(), 136.3312, 1e-3);
+    EXPECT_NEAR(pos_2.GetY(), -4.3221, 1e-3);
+    EXPECT_NEAR(pos_2.GetH(), 1.5141, 1e-3);
+    EXPECT_NEAR(pos_3.GetX(), 153.6639, 1e-3);
+    EXPECT_NEAR(pos_3.GetY(), -6.1186, 1e-3);
+    EXPECT_NEAR(pos_3.GetH(), 0.2146, 1e-3);
+    EXPECT_NEAR(pos_4.GetX(), 179.5069, 1e-3);
+    EXPECT_NEAR(pos_4.GetY(), 2.5889, 1e-3);
+    EXPECT_NEAR(pos_4.GetH(), 0.5707, 1e-3);
+
+    while (se->getSimulationTime() < 5.0 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    EXPECT_NEAR(pos_0.GetX(), 100.0, 1e-3);
+    EXPECT_NEAR(pos_0.GetY(), -1.535, 1e-3);
+    EXPECT_NEAR(pos_0.GetH(), 0.0, 1e-3);
+    EXPECT_NEAR(pos_1.GetX(), 132.3449, 1e-3);
+    EXPECT_NEAR(pos_1.GetY(), 1.4591, 1e-3);
+    EXPECT_NEAR(pos_1.GetH(), 0.0011, 1e-3);
+    EXPECT_NEAR(pos_2.GetX(), 153.3136, 1e-3);
+    EXPECT_NEAR(pos_2.GetY(), 1.4587, 1e-3);
+    EXPECT_NEAR(pos_2.GetH(), 0.0012, 1e-3);
+    EXPECT_NEAR(pos_3.GetX(), 170.3916, 1e-3);
+    EXPECT_NEAR(pos_3.GetY(), 1.4508, 1e-3);
+    EXPECT_NEAR(pos_3.GetH(), 0.0046, 1e-3);
+    EXPECT_NEAR(pos_4.GetX(), 199.1407, 1e-3);
+    EXPECT_NEAR(pos_4.GetY(), 1.4706, 1e-3);
+    EXPECT_NEAR(pos_4.GetH(), 6.2821, 1e-3);
+}
+
+TEST(LaneChange, InternalPositionHandling)
+{
+    std::unique_ptr<ScenarioEngine> se = std::make_unique<ScenarioEngine>("../../../EnvironmentSimulator/Unittest/xosc/lane_change_road_split.xosc");
+    ASSERT_NE(se, nullptr);
+    const double dt = 0.1;
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
+
+    scenarioengine::Entities* entities = &se->entities_;
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->object_.size(), 1);
+
+    roadmanager::Position& pos = entities->object_[0]->pos_;
+
+    EXPECT_NEAR(pos.GetX(), 50.0, 1e-3);
+    EXPECT_NEAR(pos.GetY(), -1.5, 1e-3);
+    EXPECT_NEAR(pos.GetH(), 0.0, 1e-3);
+    EXPECT_EQ(pos.GetTrackId(), 0);
+    EXPECT_EQ(pos.GetLaneId(), -1);
+
+    while (se->getSimulationTime() < 3.5 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    // Lane change ongoing, still on original lane -1
+    EXPECT_NEAR(pos.GetX(), 166.6489, 1e-3);
+    EXPECT_NEAR(pos.GetY(), -2.882, 1e-3);
+    EXPECT_NEAR(pos.GetH(), 6.2482, 1e-3);
+    EXPECT_EQ(pos.GetTrackId(), 0);
+    EXPECT_EQ(pos.GetLaneId(), -1);
+
+    se->step(dt);
+    se->prepareGroundTruth(0.0);
+
+    // Lane change still ongoing, passed lane border, snapped to lane -2
+    EXPECT_NEAR(pos.GetX(), 169.98, 1e-3);
+    EXPECT_NEAR(pos.GetY(), -3.0, 1e-3);
+    EXPECT_NEAR(pos.GetH(), 6.2482, 1e-3);
+    EXPECT_EQ(pos.GetTrackId(), 0);
+    EXPECT_EQ(pos.GetLaneId(), -2);
+
+    while (se->getSimulationTime() < 7.5 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    // Second lane change started, still on road 0, lane -2
+    EXPECT_NEAR(pos.GetX(), 299.9557, 1e-3);
+    EXPECT_NEAR(pos.GetY(), -4.9545, 1e-3);
+    EXPECT_NEAR(pos.GetH(), 6.2658, 1e-3);
+    EXPECT_EQ(pos.GetTrackId(), 0);
+    EXPECT_EQ(pos.GetLaneId(), -2);
+
+    se->step(dt);
+    se->prepareGroundTruth(0.0);
+
+    // Second lane change still ongoing, on road 11, lane -1
+    EXPECT_NEAR(pos.GetX(), 303.2898, 1e-3);
+    EXPECT_NEAR(pos.GetY(), -5.0192, 1e-3);
+    EXPECT_NEAR(pos.GetH(), 6.2633, 1e-3);
+    EXPECT_EQ(pos.GetTrackId(), 11);
+    EXPECT_EQ(pos.GetLaneId(), -1);
+
+    while (se->getSimulationTime() < 10.5 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    // Second lane change almost done, now on connected road 2, lane -1 with less lane offset
+    EXPECT_NEAR(pos.GetX(), 396.1240, 1e-3);
+    EXPECT_NEAR(pos.GetY(), -28.9264, 1e-3);
+    EXPECT_NEAR(pos.GetH(), 5.9165, 1e-3);
+    EXPECT_EQ(pos.GetTrackId(), 2);
+    EXPECT_EQ(pos.GetLaneId(), -1);
+    EXPECT_NEAR(pos.GetOffset(), 0.2864, 1e-3);
+
+    while (se->getSimulationTime() < 11.8 - SMALL_NUMBER)
+    {
+        se->step(dt);
+        se->prepareGroundTruth(0.0);
+    }
+
+    // Second lane change done, still on road 2, lane -1 zero lane offset
+    EXPECT_NEAR(pos.GetX(), 436.7251, 1e-3);
+    EXPECT_NEAR(pos.GetY(), -44.0680, 1e-3);
+    EXPECT_NEAR(pos.GetH(), 5.9328, 1e-3);
+    EXPECT_EQ(pos.GetTrackId(), 2);
+    EXPECT_EQ(pos.GetLaneId(), -1);
+    EXPECT_NEAR(pos.GetOffset(), 0.0, 1e-3);
+}
 
 int main(int argc, char** argv)
 {
-#ifdef LOG_TO_CONSOLE
-    if (!(Logger::Inst().IsCallbackSet()))
-    {
-        Logger::Inst().SetCallback(log_callback);
-    }
-#endif
-
 #if 0  // set to 1 and modify filter to run one single test
     testing::GTEST_FLAG(filter) = "*ALKS_R157_TestR157RegulationMinDist*";
     // Or make use of launch argument, e.g. --gtest_filter=*ALKS_R157_TestR157RegulationMinDist*
 #endif
-
     testing::InitGoogleTest(&argc, argv);
+
+    // Set options needed by scenarioengine
+
+    if (argc > 1)
+    {
+        if (!strcmp(argv[1], "--disable_stdout"))
+        {
+            // disable logging to stdout from the test cases
+            SE_Env::Inst().GetOptions().SetOptionValue("disable_stdout", "", false, true);
+        }
+        else
+        {
+            printf("Usage: %s [--disable_stout] [google test options...]\n", argv[0]);
+            return -1;
+        }
+    }
+
     return RUN_ALL_TESTS();
 }

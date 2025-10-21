@@ -44,6 +44,7 @@ target_link_libraries(
     ${TARGET}
     PRIVATE RoadManager
     PRIVATE CommonMini
+    # PRIVATE ${FMT_LIBRARIES}
     PRIVATE ${TIME_LIB})
 
 disable_static_analysis(${TARGET})
@@ -54,12 +55,15 @@ disable_iwyu(${TARGET})
 install(
     TARGETS ${TARGET}
     DESTINATION "${INSTALL_PATH}")
-if(WIN32)
-    install(
-        TARGETS ${TARGET}
-        RUNTIME DESTINATION "${CODE_EXAMPLES_BIN_PATH}")
-else()
-    install(
-        TARGETS ${TARGET}
-        LIBRARY DESTINATION "${CODE_EXAMPLES_BIN_PATH}")
-endif()
+
+if(BUILD_EXAMPLES)
+    if(WIN32)
+        install(
+            TARGETS ${TARGET}
+            RUNTIME DESTINATION "${CODE_EXAMPLES_BIN_PATH}")
+    else()
+        install(
+            TARGETS ${TARGET}
+            LIBRARY DESTINATION "${CODE_EXAMPLES_BIN_PATH}")
+    endif()
+endif(BUILD_EXAMPLES)

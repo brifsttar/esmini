@@ -16,6 +16,8 @@
 #include "ControllerExternal.hpp"
 #include "ControllerRel2Abs.hpp"
 #include "ControllerFollowRoute.hpp"
+#include "ControllerFollowReference.hpp"
+#include "Entities.hpp"
 #include "OSCParameterDistribution.hpp"
 
 #define WHEEL_RADIUS          0.35
@@ -37,11 +39,13 @@ namespace scenarioengine
 ScenarioEngine::ScenarioEngine(std::string oscFilename, bool disable_controllers)
 {
     init_status_ = InitScenario(oscFilename, disable_controllers);
+    txtLogger.SetLoggerTime(GetSimulationTimePtr());
 }
 
 ScenarioEngine::ScenarioEngine(const pugi::xml_document& xml_doc, bool disable_controllers)
 {
     init_status_ = InitScenario(xml_doc, disable_controllers);
+    txtLogger.SetLoggerTime(GetSimulationTimePtr());
 }
 
 void ScenarioEngine::InitScenarioCommon(bool disable_controllers)
@@ -51,9 +55,12 @@ void ScenarioEngine::InitScenarioCommon(bool disable_controllers)
     simulationTime_      = 0;
     trueTime_            = 0;
     frame_nr_            = 0;
-    scenarioReader       = new ScenarioReader(&entities_, &catalogs, disable_controllers);
+    scenarioReader       = new ScenarioReader(&entities_, &catalogs, &environment, disable_controllers);
     injected_actions_    = nullptr;
     ghost_               = nullptr;
+    ghost_trail_dt_      = SE_Env::Inst().GetOptions().GetOptionSet("ghost_trail_dt")
+                               ? strtod(SE_Env::Inst().GetOptions().GetOptionValue("ghost_trail_dt"))
+                               : GHOST_TRAIL_SAMPLE_TIME;
     SE_Env::Inst().SetGhostMode(GhostMode::NORMAL);
     SE_Env::Inst().SetGhostHeadstart(0.0);
 }
@@ -62,15 +69,17 @@ int ScenarioEngine::InitScenario(std::string oscFilename, bool disable_controlle
 {
     InitScenarioCommon(disable_controllers);
 
+    std::string oscFilename_no_path = FileNameOf(oscFilename);
+
     std::vector<std::string> file_name_candidates;
 
-    // Filename as is - look in current directory
+    // Filename as is - look in current directory or absolute path if provided
     file_name_candidates.push_back(oscFilename);
 
-    // Finally check registered paths
+    // Also check registered paths
     for (size_t i = 0; i < SE_Env::Inst().GetPaths().size(); i++)
     {
-        file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], oscFilename));
+        file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], oscFilename_no_path));
     }
     size_t i;
     for (i = 0; i < file_name_candidates.size(); i++)
@@ -79,7 +88,7 @@ int ScenarioEngine::InitScenario(std::string oscFilename, bool disable_controlle
         {
             if (scenarioReader->loadOSCFile(file_name_candidates[i].c_str()) != 0)
             {
-                LOG(("Failed to load OpenSCENARIO file " + oscFilename).c_str());
+                LOG_ERROR("Failed to load OpenSCENARIO file {}", oscFilename_no_path);
                 return -3;
             }
             else
@@ -91,13 +100,13 @@ int ScenarioEngine::InitScenario(std::string oscFilename, bool disable_controlle
 
     if (i == file_name_candidates.size())
     {
-        LOG(("Couldn't locate OpenSCENARIO file " + oscFilename).c_str());
+        LOG_ERROR("Couldn't locate OpenSCENARIO file {}", oscFilename_no_path);
         return -1;
     }
 
     if (!scenarioReader->IsLoaded())
     {
-        LOG(("Couldn't load OpenSCENARIO file " + oscFilename).c_str());
+        LOG_ERROR("Couldn't load OpenSCENARIO file {}", oscFilename_no_path);
         return -2;
     }
 
@@ -121,7 +130,8 @@ ScenarioEngine::~ScenarioEngine()
     scenarioReader->UnloadControllers();
     delete scenarioReader;
     scenarioReader = 0;
-    LOG("Closing");
+    LOG_INFO("Closing");
+    txtLogger.SetLoggerTime(nullptr);
 }
 
 void ScenarioEngine::UpdateGhostMode()
@@ -172,14 +182,15 @@ int ScenarioEngine::step(double deltaSimTime)
             Object* obj = entities_.object_[i];
 
             obj->ClearDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL | Object::DirtyBit::SPEED | Object::DirtyBit::WHEEL_ANGLE |
-                                Object::DirtyBit::WHEEL_ROTATION);
+                                Object::DirtyBit::WHEEL_ROTATION | Object::DirtyBit::ACCELERATION | Object::DirtyBit::CONTROLLER |
+                                Object::DirtyBit::BOUNDING_BOX);
             obj->reset_ = false;
 
             // Fetch dirty bits from gateway, indicating what has been reported externally and needs to be protected
             ObjectState* o = scenarioGateway.getObjectStatePtrById(obj->id_);
             if (o == nullptr)
             {
-                LOG("Gateway did not provide state for external car %d", obj->id_);
+                LOG_WARN("Gateway did not provide state for external car {}", obj->id_);
             }
             else
             {
@@ -190,6 +201,10 @@ int ScenarioEngine::step(double deltaSimTime)
                 if (o->dirty_ & Object::DirtyBit::SPEED)
                 {
                     obj->SetDirtyBits(Object::DirtyBit::SPEED);
+                }
+                if (o->dirty_ & Object::DirtyBit::ACCELERATION)
+                {
+                    obj->SetDirtyBits(Object::DirtyBit::ACCELERATION);
                 }
                 if (o->dirty_ & Object::DirtyBit::WHEEL_ANGLE)
                 {
@@ -239,6 +254,14 @@ int ScenarioEngine::step(double deltaSimTime)
                     obj->pos_.SetMode(roadmanager::Position::PosModeType::UPDATE,
                                       roadmanager::Position::PosMode::Z_MASK & o->state_.pos.GetMode(roadmanager::Position::PosModeType::UPDATE));
                 }
+                if (o->dirty_ & Object::DirtyBit::BOUNDING_BOX)
+                {
+                    obj->boundingbox_ = o->state_.info.boundingbox;
+                }
+                if (o->dirty_ & Object::DirtyBit::LANE_TYPE_SNAP_MASK)
+                {
+                    obj->pos_.SetSnapLaneTypes(o->state_.pos.GetSnapLaneTypes());
+                }
             }
         }
     }
@@ -264,7 +287,7 @@ int ScenarioEngine::step(double deltaSimTime)
     {
         for (OSCAction* action : *injected_actions_)
         {
-            if (action->GetCurrentState() != StoryBoardElement::State::RUNNING)
+            if (action->GetCurrentState() == StoryBoardElement::State::INIT || action->GetCurrentState() == StoryBoardElement::State::STANDBY)
             {
                 action->Start(simulationTime_);
             }
@@ -303,26 +326,40 @@ int ScenarioEngine::step(double deltaSimTime)
         {
             if (o->dirty_ & (Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL))
             {
-                obj->pos_ = o->state_.pos;
+                obj->pos_.Duplicate(o->state_.pos);
+                if (obj->pos_.route_ != nullptr)
+                {
+                    // update assigned route info
+                    obj->pos_.CalcRoutePosition();
+                }
             }
             if (o->dirty_ & Object::DirtyBit::SPEED)
             {
                 obj->speed_ = o->state_.info.speed;
             }
+
+            // Update wheel info, assuming first wheel is steering wheel on front axle
             if (o->dirty_ & Object::DirtyBit::WHEEL_ANGLE)
             {
-                obj->wheel_angle_ = o->state_.info.wheel_angle;
+                if (o->state_.info.wheel_data.size() > 0)
+                {
+                    obj->wheel_angle_ = o->state_.info.wheel_data[0].h;
+                }
             }
             if (o->dirty_ & Object::DirtyBit::WHEEL_ROTATION)
             {
-                obj->wheel_rot_ = o->state_.info.wheel_rot;
+                if (o->state_.info.wheel_data.size() > 0)
+                {
+                    obj->wheel_rot_ = o->state_.info.wheel_data[0].p;
+                }
             }
             o->clearDirtyBits();
         }
 
         // Do not move objects when speed is zero,
-        // and only ghosts allowed to execute during ghost (restart
-        if (!(obj->IsControllerActiveOnDomains(ControlDomains::DOMAIN_BOTH) && obj->GetControllerMode() == Controller::Mode::MODE_OVERRIDE) &&
+        // and only ghosts allowed to execute during ghost restart
+        if (!(obj->IsControllerModeOnDomains(ControlOperationMode::MODE_OVERRIDE,
+                                             static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LAT_AND_LONG))) &&
             fabs(obj->speed_) > SMALL_NUMBER &&
             // Skip update for non ghost objects during ghost restart
             !(!obj->IsGhost() && SE_Env::Inst().GetGhostMode() == GhostMode::RESTARTING) && !obj->TowVehicle())  // update trailers later
@@ -346,12 +383,16 @@ int ScenarioEngine::step(double deltaSimTime)
             }
         }
 
-        if (obj->pos_.GetStatusBitMask() & static_cast<int>(roadmanager::Position::PositionStatusMode::POS_STATUS_END_OF_ROAD) ||
-            obj->pos_.GetStatusBitMask() & static_cast<int>(roadmanager::Position::PositionStatusMode::POS_STATUS_END_OF_ROUTE))
+        if (obj->pos_.GetStatusBitMask() & static_cast<int>(roadmanager::Position::PositionStatusMode::POS_STATUS_END_OF_ROAD))
         {
             if (!obj->IsEndOfRoad())
             {
                 obj->SetEndOfRoad(true, simulationTime_);
+            }
+            else if (NEAR_ZERO(obj->pos_.GetVelX()) && NEAR_ZERO(obj->pos_.GetVelY()) && NEAR_ZERO(obj->pos_.GetVelZ()))
+            {
+                // object at end of road and not moving, enforce zero speed
+                obj->SetSpeed(0.0);
             }
         }
         else
@@ -386,6 +427,18 @@ int ScenarioEngine::step(double deltaSimTime)
             {
                 scenarioGateway.updateObjectVisibilityMask(obj->id_, obj->visibilityMask_);
             }
+
+            if (obj->CheckDirtyBits(Object::DirtyBit::CONTROLLER))
+            {
+                scenarioGateway.updateObjectControllerType(obj->id_, obj->GetControllerTypeActiveOnDomain(ControlDomains::DOMAIN_LONG));
+            }
+
+            if (obj->CheckDirtyBits(Object::DirtyBit::BOUNDING_BOX))
+            {
+                scenarioGateway.updateObjectBoundingBox(obj->id_, obj->boundingbox_);
+            }
+
+            // Friction is not considered
         }
         else
         {
@@ -396,8 +449,8 @@ int ScenarioEngine::step(double deltaSimTime)
                                          obj->category_,
                                          obj->role_,
                                          obj->model_id_,
-                                         obj->model3d_,
-                                         obj->GetActivatedControllerType(),
+                                         obj->GetModel3DFullPath(),
+                                         obj->GetControllerTypeActiveOnDomain(ControlDomains::DOMAIN_LONG),
                                          obj->boundingbox_,
                                          static_cast<int>(obj->scaleMode_),
                                          obj->visibilityMask_,
@@ -408,7 +461,13 @@ int ScenarioEngine::step(double deltaSimTime)
                                          obj->rear_axle_.positionZ,
                                          obj->front_axle_.positionX,
                                          obj->front_axle_.positionZ,
-                                         &obj->pos_);
+                                         &obj->pos_,
+                                         obj->GetSourceReference());
+
+            if (obj->type_ == Object::Type::VEHICLE)
+            {
+                scenarioGateway.updateObjectWheelData(obj->id_, static_cast<Vehicle*>(obj)->GetWheelData());
+            }
         }
     }
 
@@ -437,22 +496,30 @@ int ScenarioEngine::step(double deltaSimTime)
             {
                 // Calculate new trailer position and orientation
                 ObjectState* o = scenarioGateway.getObjectStatePtrById(tow_vehicle->id_);
-                SE_Vector    v0(tow_vehicle->trailer_hitch_->dx_, 0.0);
+                if (o != nullptr)
+                {
+                    SE_Vector v0(tow_vehicle->trailer_hitch_->dx_, 0.0);
 
-                // Fetch updated state of tow vehicle from gateway
-                roadmanager::Position* tow_pos = &o->state_.pos;
-                v0                             = v0.Rotate(tow_pos->GetH()) + SE_Vector(tow_pos->GetX(), tow_pos->GetY());
-                SE_Vector v1                   = SE_Vector(trailer->pos_.GetX(), trailer->pos_.GetY()) - v0;
-                v1.SetLength(trailer->trailer_coupler_->dx_);
-                scenarioGateway.updateObjectWorldPosXYH(trailer->GetId(),
-                                                        getSimulationTime(),
-                                                        v0.x() + v1.x(),
-                                                        v0.y() + v1.y(),
-                                                        GetAngleInInterval2PI(atan2(v1.y(), v1.x()) + M_PI));
-                trailer->SetSpeed(tow_vehicle->GetSpeed());
+                    // Fetch updated state of tow vehicle from gateway
+                    roadmanager::Position* tow_pos = &o->state_.pos;
+                    v0                             = v0.Rotate(tow_pos->GetH()) + SE_Vector(tow_pos->GetX(), tow_pos->GetY());
+                    SE_Vector v1                   = SE_Vector(trailer->pos_.GetX(), trailer->pos_.GetY()) - v0;
+                    v1.SetLength(trailer->trailer_coupler_->dx_);
+                    scenarioGateway.updateObjectWorldPosXYH(trailer->GetId(),
+                                                            getSimulationTime(),
+                                                            v0.x() + v1.x(),
+                                                            v0.y() + v1.y(),
+                                                            GetAngleInInterval2PI(atan2(v1.y(), v1.x()) + M_PI));
+                    trailer->SetSpeed(tow_vehicle->GetSpeed());
 
-                tow_vehicle = trailer;
-                trailer     = static_cast<Vehicle*>(trailer->TrailerVehicle());
+                    tow_vehicle = trailer;
+                    trailer     = static_cast<Vehicle*>(trailer->TrailerVehicle());
+                }
+                else
+                {
+                    LOG_ERROR("Unexpected missing tow vehicle of vehicle {} with id {}", obj->GetName(), obj->GetId());
+                    break;
+                }
             }
         }
     }
@@ -502,12 +569,46 @@ int ScenarioEngine::step(double deltaSimTime)
 
 void ScenarioEngine::printSimulationTime()
 {
-    LOG("simulationTime = %.2f", simulationTime_);
+    LOG_INFO("simulationTime = {:.2f}", simulationTime_);
 }
 
 ScenarioGateway* ScenarioEngine::getScenarioGateway()
 {
     return &scenarioGateway;
+}
+
+void ScenarioEngine::ParseGlobalDeclarations()
+{
+    scenarioReader->parseGlobalParameterDeclarations();
+    scenarioReader->parseGlobalVariableDeclarations();
+}
+
+void ScenarioEngine::EraseCleanVariables()
+{
+    auto iter = scenarioReader->variables.parameterDeclarations_.Parameter.begin();
+    while (iter != scenarioReader->variables.parameterDeclarations_.Parameter.end())
+    {
+        if (!iter->dirty)
+        {
+            iter = scenarioReader->variables.parameterDeclarations_.Parameter.erase(iter);
+            continue;
+        }
+        iter++;
+    }
+}
+
+void ScenarioEngine::EraseCleanParams()
+{
+    auto iter = scenarioReader->parameters.parameterDeclarations_.Parameter.begin();
+    while (iter != scenarioReader->parameters.parameterDeclarations_.Parameter.end())
+    {
+        if (!iter->dirty)
+        {
+            iter = scenarioReader->parameters.parameterDeclarations_.Parameter.erase(iter);
+            continue;
+        }
+        iter++;
+    }
 }
 
 int ScenarioEngine::parseScenario()
@@ -518,31 +619,38 @@ int ScenarioEngine::parseScenario()
     scenarioReader->LoadControllers();
 
     scenarioReader->SetGateway(&scenarioGateway);
+    scenarioReader->SetScenarioEngine(this);
 
     scenarioReader->parseOSCHeader();
     if (scenarioReader->GetVersionMajor() < 1)
     {
-        LOG_AND_QUIT("OpenSCENARIO v%d.%d not supported. Please migrate scenario to v1.0 or v1.1 and try again.",
-                     scenarioReader->GetVersionMajor(),
-                     scenarioReader->GetVersionMinor());
+        LOG_ERROR_AND_QUIT("OpenSCENARIO v{}.{} not supported. Please migrate scenario to v1.0 or higher and try again.",
+                           scenarioReader->GetVersionMajor(),
+                           scenarioReader->GetVersionMinor());
     }
-    LOG("Loading %s (v%d.%d)", scenarioReader->getScenarioFilename().c_str(), scenarioReader->GetVersionMajor(), scenarioReader->GetVersionMinor());
+    LOG_INFO("Loading {} (v{}.{})", scenarioReader->getScenarioFilename(), scenarioReader->GetVersionMajor(), scenarioReader->GetVersionMinor());
 
-    scenarioReader->parseGlobalParameterDeclarations();
-    scenarioReader->variables.Print("variables");  // All variables parsed at this point (not the case with parameters)
+    ParseGlobalDeclarations();
 
-    // Now that parameter declaration has been parsed, call any registered callbacks before applying the parameters
+    // Now that parameter and variable declarations has been parsed, call any registered callbacks
     if (paramDeclCallback.func != nullptr)
     {
         paramDeclCallback.func(paramDeclCallback.data);
+        // Remove all parameters and variables not modified by callback, then re-evaluate all parameters and variables in case any values has been
+        // modified
+        EraseCleanParams();
+        EraseCleanVariables();
+        ParseGlobalDeclarations();
     }
+
+    scenarioReader->variables.Print("variables");  // All variables parsed at this point (not the case with parameters)
 
     // Init road manager
     scenarioReader->parseRoadNetwork(roadNetwork);
 
     if (getOdrFilename().empty())
     {
-        LOG("No OpenDRIVE file specified, continue without");
+        LOG_WARN("No OpenDRIVE file specified, continue without");
     }
     else
     {
@@ -568,15 +676,15 @@ int ScenarioEngine::parseScenario()
                 located = true;
                 if (roadmanager::Position::LoadOpenDrive(file_name_candidates[i].c_str()) == true)
                 {
-                    LOG("Loaded OpenDRIVE: %s", file_name_candidates[i].c_str());
+                    LOG_INFO("Loaded OpenDRIVE: {}", file_name_candidates[i]);
                     break;
                 }
                 else
                 {
-                    LOG("Failed to load OpenDRIVE file: %s", file_name_candidates[i].c_str());
+                    LOG_ERROR("Failed to load OpenDRIVE file: {}", file_name_candidates[i]);
                     if (i < file_name_candidates.size() - 1)
                     {
-                        LOG("  -> trying: %s", file_name_candidates[i + 1].c_str());
+                        LOG_INFO("  -> trying: {}", file_name_candidates[i + 1]);
                     }
                 }
             }
@@ -584,7 +692,7 @@ int ScenarioEngine::parseScenario()
 
         if (i == file_name_candidates.size())
         {
-            LOG((std::string("Failed to ") + (located ? "load" : "find") + " OpenDRIVE file " + getOdrFilename().c_str()).c_str());
+            LOG_ERROR("Failed to {} OpenDRIVE file {}", located ? "load" : "find", getOdrFilename());
             return -1;
         }
     }
@@ -597,15 +705,16 @@ int ScenarioEngine::parseScenario()
     scenarioReader->parseInit(storyBoard.init_);
     scenarioReader->parseStoryBoard(storyBoard);
     storyBoard.entities_ = &entities_;
+#ifdef _USE_OSI
     storyBoard.SetOSIReporter(nullptr);
+#endif  // _USE_OSI
 
     // Now when all entities have been loaded, initialize the controllers
-    if (!disable_controllers_)
+    if (GetDisableControllersFlag() == false)
     {
         for (size_t i = 0; i < scenarioReader->controller_.size(); i++)
         {
             scenarioReader->controller_[i]->Init();
-            scenarioReader->controller_[i]->SetScenarioEngine(this);
         }
 
         // find out maximum headstart time for ghosts
@@ -613,16 +722,20 @@ int ScenarioEngine::parseScenario()
         {
             Object* obj = entities_.object_[i];
 
-            if (obj->GetAssignedControllerType() == Controller::Type::CONTROLLER_TYPE_FOLLOW_GHOST ||
-                (obj->GetAssignedControllerType() == Controller::Type::CONTROLLER_TYPE_EXTERNAL &&
-                 (static_cast<ControllerExternal*>((obj->controller_))->UseGhost())))
+            if (obj->IsAnyAssignedControllerOfType(Controller::Type::CONTROLLER_TYPE_FOLLOW_GHOST) ||
+                (obj->IsAnyAssignedControllerOfType(Controller::Type::CONTROLLER_TYPE_FOLLOW_REFERENCE) &&
+                 static_cast<ControllerFollowReference*>(obj->GetAssignedControllerOftype(Controller::Type::CONTROLLER_TYPE_FOLLOW_REFERENCE))
+                     ->GetReferenceName()
+                     .empty()) ||
+                (obj->IsAnyAssignedControllerOfType(Controller::Type::CONTROLLER_TYPE_EXTERNAL) &&
+                 (static_cast<ControllerExternal*>(obj->GetAssignedControllerOftype(Controller::Type::CONTROLLER_TYPE_EXTERNAL))->UseGhost())))
             {
                 SetupGhost(obj);
 
                 if (obj->ghost_)
                 {
-                    LOG_ONCE("NOTE: Ghost feature activated. Consider headstart time offset (-%.2f s) when reading log.",
-                             obj->ghost_->GetHeadstartTime());
+                    LOG_INFO("NOTE: Ghost feature activated. Consider headstart time offset ({:.2f} s) when reading log.",
+                             obj->ghost_->GetHeadstartTime() > 0 ? -obj->ghost_->GetHeadstartTime() : 0.0);
 
                     if (obj->ghost_->GetHeadstartTime() > SE_Env::Inst().GetGhostHeadstart())
                     {
@@ -653,28 +766,30 @@ int ScenarioEngine::parseScenario()
 
 int ScenarioEngine::defaultController(Object* obj, double dt)
 {
-    int    retval  = 0;
-    double steplen = obj->speed_ * dt;
+    int retval = 0;
 
     if (!obj->CheckDirtyBits(Object::DirtyBit::LONGITUDINAL))  // No action has updated longitudinal dimension
     {
-        if (obj->GetControllerMode() == Controller::Mode::MODE_ADDITIVE || !obj->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LONG))
+        if (!obj->IsControllerModeOnDomains(ControlOperationMode::MODE_OVERRIDE, static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LONG)))
         {
             Vehicle* tow_vehicle = static_cast<Vehicle*>(obj->TowVehicle());
             if (tow_vehicle == nullptr)
             {
-                retval = static_cast<int>(obj->MoveAlongS(steplen, true));
-                if (retval == -1)
+                double steplen = obj->speed_ * dt;
+                retval         = static_cast<int>(obj->MoveAlongS(steplen, true));
+                if (retval == static_cast<int>(roadmanager::Position::ReturnCode::ERROR_GENERIC))
                 {
                     // Something went wrong, couldn't move vehicle forward. Stop.
                     obj->SetSpeed(0.0);
                 }
-                obj->SetDirtyBits(Object::DirtyBit::LONGITUDINAL | Object::DirtyBit::SPEED);
+                obj->SetDirtyBits(Object::DirtyBit::LONGITUDINAL |
+                                  Object::DirtyBit::SPEED  // indicate that speed has been applied, prevent automatically set from velocity
+                );
             }
         }
     }
 
-    return retval == -1 ? -1 : 0;
+    return retval < 0 ? -1 : 0;
 }
 
 void ScenarioEngine::prepareGroundTruth(double dt)
@@ -687,14 +802,24 @@ void ScenarioEngine::prepareGroundTruth(double dt)
 
         if (o == nullptr)
         {
-            LOG("Gateway did not provide state for external car %d", obj->id_);
+            LOG_WARN("Gateway did not provide state for external car {}", obj->id_);
         }
         else
         {
             if (o->dirty_ & (Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL))
             {
-                obj->pos_ = o->state_.pos;
+                obj->pos_.Duplicate(o->state_.pos);
+                if (obj->pos_.route_ != nullptr)
+                {
+                    // update assigned route info
+                    obj->pos_.CalcRoutePosition();
+                }
                 obj->SetDirtyBits(o->dirty_ & (Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL));
+            }
+            if (o->dirty_ & Object::DirtyBit::ACCELERATION)
+            {
+                obj->pos_.SetAcc(o->state_.pos.GetAccX(), o->state_.pos.GetAccY(), o->state_.pos.GetAccZ());
+                obj->SetDirtyBits(Object::DirtyBit::ACCELERATION);
             }
             if (o->dirty_ & Object::DirtyBit::SPEED)
             {
@@ -703,13 +828,18 @@ void ScenarioEngine::prepareGroundTruth(double dt)
             }
             if (o->dirty_ & Object::DirtyBit::WHEEL_ANGLE)
             {
-                obj->wheel_angle_ = o->state_.info.wheel_angle;
+                obj->wheel_angle_ = o->state_.info.wheel_data.size() > 0 ? o->state_.info.wheel_data[0].h : 0.0;
                 obj->SetDirtyBits(Object::DirtyBit::WHEEL_ANGLE);
             }
             if (o->dirty_ & Object::DirtyBit::WHEEL_ROTATION)
             {
-                obj->wheel_rot_ = o->state_.info.wheel_rot;
+                obj->wheel_rot_ = o->state_.info.wheel_data.size() > 0 ? o->state_.info.wheel_data[0].p : 0.0;
                 obj->SetDirtyBits(Object::DirtyBit::WHEEL_ROTATION);
+            }
+            if (o->dirty_ & Object::DirtyBit::BOUNDING_BOX)
+            {
+                obj->boundingbox_ = o->state_.info.boundingbox;
+                obj->SetDirtyBits(Object::DirtyBit::BOUNDING_BOX);
             }
         }
 
@@ -796,16 +926,6 @@ void ScenarioEngine::prepareGroundTruth(double dt)
                 }
             }
 
-            if (obj->CheckDirtyBits(Object::DirtyBit::WHEEL_ANGLE))
-            {
-                scenarioGateway.updateObjectWheelAngle(obj->id_, simulationTime_, obj->wheel_angle_);
-            }
-
-            if (obj->CheckDirtyBits(Object::DirtyBit::WHEEL_ROTATION))
-            {
-                scenarioGateway.updateObjectWheelRotation(obj->id_, simulationTime_, obj->wheel_rot_);
-            }
-
             // store current values for next loop
             obj->state_old.pos_x  = obj->pos_.GetX();
             obj->state_old.pos_y  = obj->pos_.GetY();
@@ -823,12 +943,19 @@ void ScenarioEngine::prepareGroundTruth(double dt)
 
             if (!(obj->IsGhost() && SE_Env::Inst().GetGhostMode() == GhostMode::RESTART))  // skip ghost sample during restart
             {
-                if (obj->trail_.GetNumberOfVertices() == 0 || simulationTime_ - obj->trail_.GetVertex(-1)->time > GHOST_TRAIL_SAMPLE_TIME)
+                if (obj->trail_.GetNumberOfVertices() == 0 || simulationTime_ - obj->trail_.GetVertices().back().time > ghost_trail_dt_)
                 {
                     // Only add trail vertex when speed is not stable at 0
-                    if (obj->trail_.GetNumberOfVertices() == 0 || fabs(obj->trail_.GetVertex(-1)->speed) > SMALL_NUMBER ||
+                    if (obj->trail_.GetNumberOfVertices() == 0 || fabs(obj->trail_.GetVertices().back().speed) > SMALL_NUMBER ||
                         fabs(obj->GetSpeed()) > SMALL_NUMBER)
                     {
+                        // If considerable time has passed, copy previous steady-state sample
+                        if (obj->trail_.vertex_.size() > 0 && simulationTime_ - obj->trail_.GetVertices().back().time > 2 * ghost_trail_dt_)
+                        {
+                            obj->trail_.AddVertex(obj->trail_.vertex_.back());
+                            // with modified timestamp
+                            obj->trail_.vertex_.back().time = simulationTime_ - ghost_trail_dt_;
+                        }
                         obj->trail_.AddVertex({std::nan(""),
                                                obj->pos_.GetX(),
                                                obj->pos_.GetY(),
@@ -842,7 +969,8 @@ void ScenarioEngine::prepareGroundTruth(double dt)
                                                obj->pos_.GetAcc(),
                                                0.0,
                                                roadmanager::Position::PosMode::H_REL,
-                                               0});
+                                               0.0,
+                                               obj->GetWheelAngle()});
                     }
                 }
             }
@@ -850,6 +978,74 @@ void ScenarioEngine::prepareGroundTruth(double dt)
 
         // Report updated pos values to the gateway
         scenarioGateway.updateObjectPos(obj->id_, simulationTime_, &obj->pos_);
+
+        // Wheels (including friction) only needs updates for vehicles
+        if (obj->type_ == Object::Type::VEHICLE)
+        {
+            auto*                   vehicle    = dynamic_cast<Vehicle*>(obj);
+            std::vector<WheelData>& wheel_data = vehicle->GetWheelData();
+
+            roadmanager::Position wp;
+            wp.Duplicate(obj->pos_);
+            double friction_global = roadmanager::Position::GetOpenDrive()->GetFriction();
+
+            // Update wheel positions
+            for (auto& wheel : wheel_data)
+            {
+                if (wheel.axle == 0 && obj->CheckDirtyBits(Object::DirtyBit::WHEEL_ANGLE))
+                {
+                    wheel.h = static_cast<float>(obj->wheel_angle_);  // I assume always 0 due to fixed rear axis. Better to have = 0?
+                }
+
+                Object::Axle* axle = wheel.axle == 0 ? &obj->front_axle_ : &obj->rear_axle_;
+
+                if (obj->CheckDirtyBits(Object::DirtyBit::WHEEL_ROTATION))
+                {
+                    wheel.p             = static_cast<float>(obj->wheel_rot_);
+                    wheel.wheel_radius  = axle->wheelDiameter / 2;
+                    wheel.rotation_rate = obj->speed_ / wheel.wheel_radius;
+                }
+
+                // Update wheel frictions
+                if (std::isnan(friction_global))
+                {
+                    int side = wheel.index == 0 ? -1 : 1;
+                    // Calculate global position of the wheel
+                    double w_pos[2];
+                    double w_rel_pos[2];
+
+                    w_rel_pos[0] = axle->positionX;
+                    w_rel_pos[1] = side * axle->trackWidth / 2.0;
+                    RotateVec2D(w_rel_pos[0], w_rel_pos[1], obj->pos_.GetH(), w_pos[0], w_pos[1]);
+
+                    w_pos[0] += obj->pos_.GetX();
+                    w_pos[1] += obj->pos_.GetY();
+
+                    wp.SetInertiaPosMode(w_pos[0],
+                                         w_pos[1],
+                                         0.0,
+                                         0.0,
+                                         0.0,
+                                         0.0,
+                                         roadmanager::Position::PosMode::Z_REL | roadmanager::Position::PosMode::H_REL |
+                                             roadmanager::Position::PosMode::P_REL | roadmanager::Position::PosMode::R_REL);
+
+                    roadmanager::RoadLaneInfo info;
+                    wp.GetRoadLaneInfo(&info);
+                    wheel.friction_coefficient = environment.IsRoadConditionSet() && !std::isnan(info.friction)
+                                                     ? environment.GetRoadCondition().friction_scale_factor * info.friction
+                                                     : info.friction;
+                }
+                else
+                {
+                    // same friction everywhere
+                    wheel.friction_coefficient = environment.IsRoadConditionSet() && !std::isnan(friction_global)
+                                                     ? environment.GetRoadCondition().friction_scale_factor * friction_global
+                                                     : friction_global;
+                }
+            }
+            scenarioGateway.updateObjectWheelData(obj->id_, wheel_data);
+        }
 
         // Now that frame is complete, reset dirty bits to avoid circulation
         if (o)
@@ -881,7 +1077,7 @@ void ScenarioEngine::ReplaceObjectInTrigger(Trigger* trigger, Object* obj1, Obje
                     trig->type_ == TrigByEntity::EntityConditionType::ACCELERATION || trig->type_ == TrigByEntity::EntityConditionType::END_OF_ROAD ||
                     trig->type_ == TrigByEntity::EntityConditionType::OFF_ROAD || trig->type_ == TrigByEntity::EntityConditionType::STAND_STILL)
                 {
-                    LOG("Handing over trigger %s to ghost", cond->name_.c_str());
+                    LOG_INFO("Handing over trigger {} to ghost", cond->name_);
 
                     for (size_t k = 0; k < trig->triggering_entities_.entity_.size(); k++)
                     {
@@ -892,16 +1088,16 @@ void ScenarioEngine::ReplaceObjectInTrigger(Trigger* trigger, Object* obj1, Obje
                         else
                         {
                             CreateGhostTeleport(obj1, obj2, event);
-                            LOG("Created new teleport action for ghost and %s trigger (entity %s)",
-                                cond->name_.c_str(),
-                                trig->triggering_entities_.entity_[k].object_->GetName().c_str());
+                            LOG_INFO("Created new teleport action for ghost and {} trigger (entity {})",
+                                     cond->name_,
+                                     trig->triggering_entities_.entity_[k].object_->GetName());
                         }
                     }
                 }
                 else if (event != nullptr)
                 {
                     CreateGhostTeleport(obj1, obj2, event);
-                    LOG("Created new teleport action for ghost and %s trigger", cond->name_.c_str());
+                    LOG_INFO("Created new teleport action for ghost and {} trigger", cond->name_);
                 }
             }
             else if (cond->base_type_ == OSCCondition::ConditionType::BY_VALUE)
@@ -914,7 +1110,7 @@ void ScenarioEngine::ReplaceObjectInTrigger(Trigger* trigger, Object* obj1, Obje
                 else if (event != nullptr)
                 {
                     CreateGhostTeleport(obj1, obj2, event);
-                    LOG("Created new teleport action for ghost and %s trigger", cond->name_.c_str());
+                    LOG_INFO("Created new teleport action for ghost and {} trigger", cond->name_);
                 }
             }
         }
@@ -924,7 +1120,7 @@ void ScenarioEngine::ReplaceObjectInTrigger(Trigger* trigger, Object* obj1, Obje
 void ScenarioEngine::CreateGhostTeleport(Object* obj1, Object* obj2, Event* event)
 {
     TeleportAction*        myNewAction = new TeleportAction(nullptr);
-    roadmanager::Position* pos         = new roadmanager::Position();
+    roadmanager::Position* pos         = &myNewAction->position_;
     pos->SetMode(roadmanager::Position::PosModeType::INIT,
                  roadmanager::Position::PosMode::Z_REL | roadmanager::Position::PosMode::H_REL | roadmanager::Position::PosMode::P_REL |
                      roadmanager::Position::PosMode::R_REL);
@@ -936,8 +1132,7 @@ void ScenarioEngine::CreateGhostTeleport(Object* obj1, Object* obj2, Event* even
     pos->relative_.dr = 0.0;
     pos->SetRelativePosition(&obj1->pos_, roadmanager::Position::PositionType::RELATIVE_OBJECT);
 
-    myNewAction->position_       = pos;
-    myNewAction->type_           = OSCPrivateAction::ActionType::TELEPORT;
+    myNewAction->action_type_    = OSCPrivateAction::ActionType::TELEPORT;
     myNewAction->object_         = obj2;
     myNewAction->scenarioEngine_ = this;
     myNewAction->SetName("AddedGhostTeleport");
@@ -952,32 +1147,49 @@ void ScenarioEngine::SetupGhost(Object* object)
     // Create a new (ghost) vehicle and copy all actions from base object
 
     Vehicle* ghost = new Vehicle(*(static_cast<Vehicle*>(object)));
+
+    // Clear out all ghost trailers' names (if any), so that they get reassigned a correct name and not duplicate name with non-ghost trailers.
+    // Name setting is done in Entities.cpp, in addObject()
+    // https://github.com/esmini/esmini/blob/3d07b60934cb0824a58cfe2bbafca3b36b0171a2/EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/Entities.cpp#L1456C9-L1456C44.
+    Vehicle* trailerVehicle = static_cast<Vehicle*>(ghost->TrailerVehicle());
+    while (trailerVehicle && trailerVehicle != ghost)
+    {
+        trailerVehicle->name_ = "";
+        trailerVehicle        = static_cast<Vehicle*>(trailerVehicle->TrailerVehicle());
+    }
+
     object->SetGhost(ghost);
     ghost->name_ += "_ghost";
-    ghost->ghost_      = 0;
-    ghost->ghost_Ego_  = object;
-    ghost->controller_ = 0;
-    ghost->isGhost_    = true;
+    ghost->ghost_     = 0;
+    ghost->ghost_Ego_ = object;
+
+    ghost->isGhost_ = true;
     ghost->SetHeadstartTime(object->headstart_time_);
     entities_.addObject(ghost, true);
     object->SetHeadstartTime(0);
 
-    int numberOfInitActions = static_cast<int>(storyBoard.init_.private_action_.size());
-    for (int i = 0; i < numberOfInitActions; i++)
+    // remove all init actions from ghost, then create unique copies from object
+    ghost->initActions_.clear();
+
+    // move all controllers from object to ghost, except the first one (which is assumed to be a ghost controller)
+    object->controllers_.erase(object->controllers_.begin() + 1, object->controllers_.end());
+    ghost->controllers_.erase(ghost->controllers_.begin());
+    for (auto& ctrl : ghost->controllers_)
     {
-        OSCPrivateAction* action = storyBoard.init_.private_action_[static_cast<unsigned int>(i)];
+        ctrl->LinkObject(ghost);
+    }
+
+    // Copy all init actions
+    for (auto& action : object->initActions_)
+    {
         if (action->object_ == object)
         {
-            // Copy all actions except ActivateController
-            if (action->type_ != OSCPrivateAction::ActionType::ACTIVATE_CONTROLLER)
-            {
-                OSCPrivateAction* newAction = action->Copy();
-                action->SetName(action->GetName() + "_ghost-copy");
-                newAction->object_         = ghost;
-                newAction->scenarioEngine_ = this;
-                storyBoard.init_.private_action_.push_back(newAction);
-                ghost->initActions_.push_back(newAction);
-            }
+            OSCPrivateAction* newAction = action->Copy();
+            newAction->SetName(action->GetName() + "_ghost-copy");
+            newAction->object_ = ghost;
+            newAction->SetScenarioEngine(this);
+            storyBoard.init_.private_action_.push_back(newAction);
+            ghost->initActions_.push_back(newAction);
         }
     }
 
@@ -987,8 +1199,8 @@ void ScenarioEngine::SetupGhost(Object* object)
 
         for (size_t j = 0; j < story->act_.size(); j++)
         {
-            Act* act = story->act_[j];
-            ReplaceObjectInTrigger(act->start_trigger_, object, ghost, -ghost->GetHeadstartTime());
+            Act* act               = story->act_[j];
+            bool ghostIsActorInAct = false;
             for (size_t k = 0; k < act->maneuverGroup_.size(); k++)
             {
                 ManeuverGroup* mg = act->maneuverGroup_[k];
@@ -998,6 +1210,7 @@ void ScenarioEngine::SetupGhost(Object* object)
                     {
                         // Replace actor
                         mg->actor_[l]->object_ = ghost;
+                        ghostIsActorInAct      = true;
                     }
                 }
                 for (size_t l = 0; l < act->maneuverGroup_[k]->maneuver_.size(); l++)
@@ -1005,12 +1218,12 @@ void ScenarioEngine::SetupGhost(Object* object)
                     Maneuver* maneuver = act->maneuverGroup_[k]->maneuver_[l];
                     for (size_t m = 0; m < maneuver->event_.size(); m++)
                     {
-                        Event* event        = maneuver->event_[m];
-                        bool   ghostIsActor = false;
+                        Event* event               = maneuver->event_[m];
+                        bool   ghostIsActorInEvent = false;
                         for (size_t n = 0; n < event->action_.size(); n++)
                         {
                             OSCAction* action = event->action_[n];
-                            if (action->base_type_ == OSCAction::BaseType::PRIVATE)
+                            if (action->GetBaseType() == OSCAction::BaseType::PRIVATE)
                             {
                                 OSCPrivateAction* pa = static_cast<OSCPrivateAction*>(action);
                                 pa->scenarioEngine_  = this;
@@ -1018,24 +1231,27 @@ void ScenarioEngine::SetupGhost(Object* object)
                                 {
                                     // If at least one of the event actions is of relevant subset of action types
                                     // then move the action to the ghost object instance, and also make needed
-                                    // changes to the event trigger
-                                    if (pa->type_ == OSCPrivateAction::ActionType::LONG_SPEED ||
-                                        pa->type_ == OSCPrivateAction::ActionType::LONG_SPEED_PROFILE ||
-                                        pa->type_ == OSCPrivateAction::ActionType::LAT_LANE_CHANGE ||
-                                        pa->type_ == OSCPrivateAction::ActionType::LAT_LANE_OFFSET ||
-                                        pa->type_ == OSCPrivateAction::ActionType::SYNCHRONIZE_ACTION ||
-                                        pa->type_ == OSCPrivateAction::ActionType::FOLLOW_TRAJECTORY ||
-                                        pa->type_ == OSCPrivateAction::ActionType::ASSIGN_ROUTE ||
-                                        pa->type_ == OSCPrivateAction::ActionType::TELEPORT)
+                                    // changes to the event trigger (such as offsetting the start time).
+                                    // Similarly, we also make sure that the Act containing a ghost object also
+                                    // transfers its triggers to the ghost object.
+                                    if (pa->action_type_ == OSCPrivateAction::ActionType::LONG_SPEED ||
+                                        pa->action_type_ == OSCPrivateAction::ActionType::LONG_SPEED_PROFILE ||
+                                        pa->action_type_ == OSCPrivateAction::ActionType::LAT_LANE_CHANGE ||
+                                        pa->action_type_ == OSCPrivateAction::ActionType::LAT_LANE_OFFSET ||
+                                        pa->action_type_ == OSCPrivateAction::ActionType::SYNCHRONIZE_ACTION ||
+                                        pa->action_type_ == OSCPrivateAction::ActionType::FOLLOW_TRAJECTORY ||
+                                        pa->action_type_ == OSCPrivateAction::ActionType::ASSIGN_ROUTE ||
+                                        pa->action_type_ == OSCPrivateAction::ActionType::TELEPORT ||
+                                        pa->action_type_ == OSCPrivateAction::ActionType::ACQUIRE_POSITION)
                                     {
                                         // Replace object
                                         pa->ReplaceObjectRefs(object, ghost);
-                                        ghostIsActor = true;
+                                        ghostIsActorInEvent = true;
                                     }
                                 }
                             }
                         }
-                        if (ghostIsActor)
+                        if (ghostIsActorInEvent)
                         {
                             ReplaceObjectInTrigger(event->start_trigger_, object, ghost, -ghost->GetHeadstartTime(), event);
                         }
@@ -1043,11 +1259,15 @@ void ScenarioEngine::SetupGhost(Object* object)
                     }
                 }
             }
+            if (ghostIsActorInAct)
+            {
+                ReplaceObjectInTrigger(act->start_trigger_, object, ghost, -ghost->GetHeadstartTime());
+            }
         }
     }
 }
 // Reset events ongoing or finished by ghost
-void ScenarioEngine::ResetEvents()
+void ScenarioEngine::ResetEvents() const
 {
     for (size_t i = 0; i < storyBoard.story_.size(); i++)
     {
@@ -1075,10 +1295,10 @@ void ScenarioEngine::ResetEvents()
                             for (size_t n = 0; n < event->action_.size(); n++)
                             {
                                 OSCAction* action = event->action_[n];
-                                if (action->base_type_ == OSCAction::BaseType::PRIVATE)
+                                if (action->GetBaseType() == OSCAction::BaseType::PRIVATE)
                                 {
                                     OSCPrivateAction* pa = static_cast<OSCPrivateAction*>(action);
-                                    if (pa->type_ == OSCPrivateAction::ActionType::TELEPORT)
+                                    if (pa->action_type_ == OSCPrivateAction::ActionType::TELEPORT)
                                     {
                                         HasTele = true;
                                         break;
@@ -1090,7 +1310,7 @@ void ScenarioEngine::ResetEvents()
                                 for (size_t n = 0; n < event->action_.size(); n++)
                                 {
                                     OSCAction* action = event->action_[n];
-                                    if (action->base_type_ == OSCAction::BaseType::PRIVATE)
+                                    if (action->GetBaseType() == OSCAction::BaseType::PRIVATE)
                                     {
                                         OSCPrivateAction* pa = static_cast<OSCPrivateAction*>(action);
 
@@ -1098,7 +1318,7 @@ void ScenarioEngine::ResetEvents()
                                         // able to tigger again
                                         if (pa->object_->IsGhost() && event->GetCurrentState() == StoryBoardElement::State::COMPLETE)
                                         {
-                                            LOG("Reset event %s: ", event->GetName().c_str());
+                                            LOG_INFO("Reset event {}: ", event->GetName());
                                             event->Reset(StoryBoardElement::State::STANDBY);
                                             event->num_executions_ = 0;
                                         }
@@ -1132,7 +1352,7 @@ int ScenarioEngine::DetectCollisions()
                 if (std::find(obj0->collisions_.begin(), obj0->collisions_.end(), obj1) == obj0->collisions_.end())
                 {
                     // was not overlapping last timestep, but are now
-                    LOG("Collision between %s and %s", obj0->GetName().c_str(), obj1->GetName().c_str());
+                    LOG_WARN("Collision between {} and {}", obj0->GetName(), obj1->GetName());
                     obj0->collisions_.push_back(obj1);
                     obj1->collisions_.push_back(obj0);
                 }
@@ -1142,7 +1362,7 @@ int ScenarioEngine::DetectCollisions()
                 if (std::find(obj0->collisions_.begin(), obj0->collisions_.end(), obj1) != obj0->collisions_.end())
                 {
                     // was overlapping last frame, but not anymore
-                    LOG("Collision between %s and %s dissolved", obj0->GetName().c_str(), obj1->GetName().c_str());
+                    LOG_WARN("Collision between {} and {} dissolved", obj0->GetName(), obj1->GetName());
                     obj0->collisions_.erase(std::remove(obj0->collisions_.begin(), obj0->collisions_.end(), obj1), obj0->collisions_.end());
                     obj1->collisions_.erase(std::remove(obj1->collisions_.begin(), obj1->collisions_.end(), obj0), obj1->collisions_.end());
                 }
@@ -1159,7 +1379,7 @@ int ScenarioEngine::DetectCollisions()
             if (std::find(entities_.object_.begin(), entities_.object_.end(), obj->collisions_[j]) == entities_.object_.end())
             {
                 // object previously collided with pivot object has vanished from the set of entities, remove it from collision list
-                LOG("Unregister collision between %s and vanished entity", obj->GetName().c_str());
+                LOG_ERROR("Unregister collision between {} and vanished entity", obj->GetName());
                 obj->collisions_.erase(obj->collisions_.begin() + static_cast<int>(j));
                 j--;
             }
@@ -1167,4 +1387,119 @@ int ScenarioEngine::DetectCollisions()
     }
 
     return 0;
+}
+
+void ScenarioEngine::GetIdxsFromIds(const int id_1, const int id_2, int& idx_1, int& idx_2)
+{
+    // Add new first id with new target
+    idx_1 = -1;
+    idx_2 = -1;
+    for (size_t i = 0; i < entities_.object_.size(); i++)
+    {
+        if (idx_1 == -1 && entities_.object_[i]->GetId() == id_1)
+        {
+            idx_1 = static_cast<int>(i);
+        }
+        else if (idx_2 == -1 && entities_.object_[i]->GetId() == id_2)
+        {
+            idx_2 = static_cast<int>(i);
+        }
+
+        if (idx_1 != -1 && idx_2 != -1)
+        {
+            break;
+        }
+    }
+
+    return;
+}
+
+int ScenarioEngine::UpdateDistance(Object*                            obj_1,
+                                   Object*                            obj_2,
+                                   roadmanager::RelativeDistanceType& dist_type,
+                                   const uint64_t&                    key,
+                                   const uint64_t&                    rev_key,
+                                   const double                       tracking_limit)
+{
+    auto [it, inserted] = object_distance_map_.try_emplace(key, DistanceEntry{});
+    (void)inserted;
+    auto& distance_entry = it->second;
+
+    auto [rev_it, rev_inserted] = object_distance_map_.try_emplace(rev_key, DistanceEntry{});
+    (void)rev_inserted;
+
+    size_t idx_euclidian_abs = static_cast<size_t>(roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN_ABS);
+    auto&  euclidian_entry   = distance_entry.measurement_[idx_euclidian_abs];
+    if (euclidian_entry.distance_ > 10000.0 - SMALL_NUMBER)  // DistanceEntry init value
+    {
+        double squared_distance = (obj_1->pos_.GetX() - obj_2->pos_.GetX()) * (obj_1->pos_.GetX() - obj_2->pos_.GetX()) +
+                                  (obj_1->pos_.GetY() - obj_2->pos_.GetY()) * (obj_1->pos_.GetY() - obj_2->pos_.GetY());
+        if (squared_distance > 2.5e5)  // 500 * 500m
+        {
+            euclidian_entry.distance_       = squared_distance;
+            euclidian_entry.timestamp_      = simulationTime_;
+            distance_entry.next_update_     = simulationTime_ + 3.0;
+            auto& rev_distance_entry        = rev_it->second;
+            auto& rev_measurement           = rev_distance_entry.measurement_[idx_euclidian_abs];
+            rev_measurement.distance_       = squared_distance;
+            rev_measurement.timestamp_      = simulationTime_;
+            rev_distance_entry.next_update_ = simulationTime_ + 3.0;
+
+            return -2;
+        }
+    }
+
+    auto& measurement = distance_entry.measurement_[static_cast<size_t>(dist_type)];
+
+    double dist = 0.0;
+    obj_1->pos_.Distance(&obj_2->pos_, roadmanager::CoordinateSystem::CS_ENTITY, dist_type, dist);
+    double next_update = simulationTime_;
+    if (dist > tracking_limit)
+    {
+        next_update = simulationTime_ + 3.0;
+    }
+
+    measurement.distance_       = dist;
+    measurement.timestamp_      = simulationTime_;
+    distance_entry.next_update_ = next_update;
+
+    return 0;
+}
+
+int ScenarioEngine::GetDistance(Object*                           object_1,
+                                Object*                           object_2,
+                                roadmanager::RelativeDistanceType dist_type,
+                                const double                      tracking_limit,
+                                double*                           distance,
+                                double*                           timestamp)
+{
+    uint64_t key     = GenerateKey(object_1->GetId(), object_2->GetId());
+    uint64_t rev_key = GenerateKey(object_2->GetId(), object_1->GetId());
+
+    if (!object_1->IsActive() || !object_2->IsActive())
+    {
+        object_distance_map_.erase(key);
+        object_distance_map_.erase(rev_key);
+        return -1;
+    }
+
+    int  dist_updated = -2;
+    auto it           = object_distance_map_.find(key);
+    bool needs_update = (it == object_distance_map_.end() || simulationTime_ > it->second.next_update_ || object_1->reset_ || object_2->reset_);
+    if (needs_update)
+    {
+        dist_updated = UpdateDistance(object_1, object_2, dist_type, key, rev_key, tracking_limit);
+        it           = object_distance_map_.find(key);
+    }
+
+    if (it == object_distance_map_.end())
+    {
+        return -1;
+    }
+
+    auto& measurement = it->second.measurement_[static_cast<size_t>(dist_type)];
+    *distance         = measurement.distance_;
+    *timestamp        = measurement.timestamp_;
+
+    return dist_updated;
 }

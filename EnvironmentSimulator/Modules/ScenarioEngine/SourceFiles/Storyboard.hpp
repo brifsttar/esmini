@@ -47,10 +47,16 @@ namespace scenarioengine
             {
                 delete entry;
             }
+
+            for (auto* entry : user_defined_action_)
+            {
+                delete entry;
+            }
         }
 
-        std::vector<OSCPrivateAction*> private_action_;
-        std::vector<OSCGlobalAction*>  global_action_;
+        std::vector<OSCPrivateAction*>     private_action_;
+        std::vector<OSCGlobalAction*>      global_action_;
+        std::vector<OSCUserDefinedAction*> user_defined_action_;
     };
 
     class Event : public StoryBoardElement
@@ -114,9 +120,9 @@ namespace scenarioengine
             return reinterpret_cast<std::vector<StoryBoardElement*>*>(&event_);
         }
 
-        void Print()
+        void Print() const
         {
-            LOG("\tname = %s", GetName().c_str());
+            LOG_INFO("\tname = {}", GetName());
         };
     };
 
@@ -155,7 +161,7 @@ namespace scenarioengine
             return 0;
         }
 
-        bool IsObjectActor(Object* object)
+        bool IsObjectActor(const Object* object) const
         {
             for (size_t i = 0; i < actor_.size(); i++)
             {
@@ -217,12 +223,7 @@ namespace scenarioengine
         }
 
         OSCParameterDeclarations parameter_declarations_;
-        Act*                     FindActByName(std::string name);
-        ManeuverGroup*           FindManeuverGroupByName(std::string name);
-        Maneuver*                FindManeuverByName(std::string name);
-        Event*                   FindEventByName(std::string name);
-        OSCAction*               FindActionByName(std::string name);
-        void                     Print();
+        void                     Print() const;
 
         std::vector<StoryBoardElement*>* GetChildren() override
         {
@@ -246,17 +247,12 @@ namespace scenarioengine
                 delete entry;
             }
         }
-        Story*         FindStoryByName(std::string name);
-        Act*           FindActByName(std::string name);
-        ManeuverGroup* FindManeuverGroupByName(std::string name);
-        Maneuver*      FindManeuverByName(std::string name);
-        Event*         FindEventByName(std::string name);
-        OSCAction*     FindActionByName(std::string name);
-        Init           init_;
-        Entities*      entities_;
-        void           Print();
-        void           Start(double simTime) override;
-        void           Step(double simTime, double dt) override;
+
+        Init      init_;
+        Entities* entities_;
+        void      Print();
+        void      Start(double simTime) override;
+        void      Step(double simTime, double dt) override;
 
         std::vector<StoryBoardElement*>* GetChildren() override
         {

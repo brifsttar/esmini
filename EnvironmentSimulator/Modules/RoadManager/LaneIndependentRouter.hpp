@@ -6,6 +6,7 @@
 #include "CommonMini.hpp"
 #include "RoadManager.hpp"
 #include <unordered_map>
+#include "logger.hpp"
 
 namespace roadmanager
 {
@@ -23,9 +24,9 @@ namespace roadmanager
         Node     *previous;
         void      Print()
         {
-            LOG("road=%d, cl=%d, fl=%d, w=%f", road->GetId(), currentLaneId, fromLaneId, weight);
+            LOG_INFO("road={}, cl={}, fl={}, w={}", road->GetId(), currentLaneId, fromLaneId, weight);
         }
-        bool operator==(const Node &rhs)
+        bool operator==(const Node &rhs) const
         {
             bool sameRoadId     = rhs.road->GetId() == road->GetId();
             bool sameLaneId     = rhs.currentLaneId == currentLaneId;
@@ -42,7 +43,7 @@ namespace roadmanager
     struct WeightCompare
     {
     public:
-        bool operator()(Node *a, Node *b)  // overloading both operators
+        bool operator()(Node *a, Node *b) const  // overloading both operators
         {
             if (a->weight == b->weight)  // sort after lanes if weight is same.
             {
@@ -95,21 +96,6 @@ namespace roadmanager
          * @return double ((m) or (s) or (nr of intersection) depending on routestrategy)
          */
         double CalcWeightWithPos(Node *previousNode, Position pos, Road *road, Position::RouteStrategy routeStrategy);
-
-    private:
-        /**
-         * @brief roadTypeToSpeed gives speed in (m/s) for a specific road type.
-         *        roadtype_unknown is assumed to be rural
-         */
-        std::unordered_map<Road::RoadType, double> roadTypeToSpeed = {
-            {Road::RoadType::ROADTYPE_BICYCLE, 1.389},
-            {Road::RoadType::ROADTYPE_PEDESTRIAN, 1.389},
-            {Road::RoadType::ROADTYPE_LOWSPEED, 8.333},
-            {Road::RoadType::ROADTYPE_TOWN, 13.888},
-            {Road::RoadType::ROADTYPE_RURAL, 19.444},
-            {Road::RoadType::ROADTYPE_MOTORWAY, 25},
-            {Road::RoadType::ROADTYPE_UNKNOWN, 19.444},
-        };
     };
     /**
      * @brief The lane independent pathfinder
@@ -212,7 +198,7 @@ namespace roadmanager
          * @return true
          * @return false
          */
-        bool IsPositionValid(Position pos);
+        bool IsPositionValid(Position pos) const;
         template <class Q>
         void clearQueue(Q &q)
         {

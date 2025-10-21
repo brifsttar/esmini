@@ -64,11 +64,9 @@ typedef struct
 
 void objectCallback(SE_ScenarioObjectState* state, void* my_data)
 {
-    const double  startTrigTime = 7.0;
-    const double  latDist       = 3.5;
-    const double  duration      = 4.0;
-    static bool   firstTime     = true;
-    static double latOffset0;
+    const double startTrigTime = 7.0;
+    const double latDist       = 3.5;
+    const double duration      = 4.0;
 
     Stuff* stuff = static_cast<Stuff*>(my_data);
 
@@ -76,6 +74,8 @@ void objectCallback(SE_ScenarioObjectState* state, void* my_data)
 
     if (static_cast<double>(SE_GetSimulationTime()) > startTrigTime && static_cast<double>(SE_GetSimulationTime()) < startTrigTime + duration)
     {
+        static bool   firstTime = true;
+        static double latOffset0;
         if (firstTime)
         {
             latOffset0 = state->laneOffset;
@@ -95,7 +95,7 @@ int main(int argc, const char* argv[])
     SimpleVehicle vehicle  = {0, {0, 0, 0, 0, 0, 0, 0, 0}};
     const char*   filename = 0;
 
-    if (!filename == 0 && argc < 2)
+    if (argc < 2)
     {
         printf("Usage variant 1: %s <osc filename>\n", FileNameOf(argv[0]).c_str());
         printf("Usage variant 2: %s --osc <filename> [additional arguments - see esmini documentation]\n", FileNameOf(argv[0]).c_str());
@@ -217,7 +217,7 @@ int main(int argc, const char* argv[])
             double value;
             if (SE_GetParameterDouble("DummyParameter", &value) != 0)
             {
-                LOG("Failed to receive parameter");
+                LOG_ERROR("Failed to receive parameter");
             }
             static bool triggered = false;
 
@@ -390,12 +390,12 @@ int main(int argc, const char* argv[])
                     // when running viewer in a separate thread
                     // Only Linux and Win supported (due to OSG and MacOS issue)
                     printf("Taking a 4 sec nap - if running with threads (Win/Linux) you can move camera around meanwhile\n");
-                    SE_sleep(4000);
+                    SE_sleepMilliseconds(4000);
                 }
                 else
                 {
                     // Normal case, sleep until its time for next simulation step
-                    SE_sleep(static_cast<unsigned int>(TIME_STEP * 1000));
+                    SE_sleepMilliseconds(static_cast<unsigned int>(TIME_STEP * 1000));
                 }
             }
         }

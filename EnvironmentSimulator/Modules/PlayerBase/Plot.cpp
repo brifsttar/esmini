@@ -42,13 +42,15 @@ Plot::Plot(ScenarioEngine* scenarioengine, bool synchronous)
     // Decide GL+GLSL versions
 #if defined(IMGUI_IMPL_OPENGL_ES2)
     // GL ES 2.0 + GLSL 100
-    const char* glsl_version = "#version 100";
+    // const char* glsl_version = "#version 100";
+    glsl_version = "#version 100";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
     glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
 #elif defined(__APPLE__)
     // GL 3.2 + GLSL 150
-    const char* glsl_version = "#version 150";
+    // const char* glsl_version = "#version 150";
+    glsl_version = "#version 150";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
@@ -101,7 +103,7 @@ void Plot::CleanUp()
     window = nullptr;
 }
 
-void Plot::updateData(std::vector<Object*>& objects, double time)
+void Plot::updateData(const std::vector<Object*>& objects, double time)
 {
     if (plot_objects_.size() < scenarioengine_->entities_.object_.size())
     {
@@ -125,30 +127,19 @@ void Plot::updateData(std::vector<Object*>& objects, double time)
     }
 }
 
-void Plot::plotLine(std::string plot_name, std::string unit, PlotCategories x, PlotCategories y, size_t lineplot_objects)
+void Plot::adjustSelectedObjectsPlotDataAxis(const PlotCategories& y_category)
 {
-    if (ImPlot::BeginPlot(
-            plot_name.c_str(),
-            ImVec2(static_cast<float>(window_w) - 200.0f, (static_cast<float>(window_h) - checkbox_padding) / static_cast<float>(lineplot_objects)),
-            ImPlotFlags_NoLegend))
+    for (size_t item = 0; item < selected_object_.size(); ++item)
     {
-        ImPlot::SetupAxes(get_category_name_[x].c_str(), unit.c_str(), x_scaling, y_scaling);
-        // For every lineplot, we want to plot x,y data for the selected objects
-        for (size_t i = 0; i < selected_object_.size(); i++)
-        {
-            if (!selected_object_[i])
-            {
-                continue;
-            }
-            if (!plot_objects_[i]->plotData.at(x).empty() && !plot_objects_[i]->plotData.at(y).empty())
-            {
-                ImPlot::PlotLine(std::to_string(i).c_str(),
-                                 plot_objects_[i]->plotData.at(x).data(),
-                                 plot_objects_[i]->plotData.at(y).data(),
-                                 static_cast<int>(plot_objects_[i]->plotData.at(x).size()));
-            }
-        }
-        ImPlot::EndPlot();
+        if (!selected_object_[item])
+            continue;
+
+        const auto& data_map = plot_objects_[item]->plotData;
+
+        if (data_map.count(y_category) == 0 || data_map.at(y_category).empty())
+            continue;
+
+        adjustPlotDataAxis({y_category, data_map.at(y_category)}, item);
     }
 }
 
@@ -216,14 +207,11 @@ void Plot::adjustPlotDataAxis(const std::pair<const PlotCategories, std::vector<
 void Plot::renderPlot(const char* name)  //, float window_w, float window_h)
 {
     // See how many boxes that has been checked (excl. time), used to scale lineplots
-    size_t lineplot_objects = 0;
-    for (const auto& selection : lineplot_selection_)
-    {
-        if (selection.first != PlotCategories::Time && selection.second)
-        {
-            lineplot_objects += 1;
-        }
-    }
+    size_t lineplot_objects =
+        static_cast<size_t>(std::count_if(lineplot_selection_.begin(),
+                                          lineplot_selection_.end(),
+                                          [](const auto& selection) { return selection.first != PlotCategories::Time && selection.second; }));
+
     ImGui::SetNextWindowSize(ImVec2(static_cast<float>(window_w), static_cast<float>(window_h)), ImGuiCond_Once);
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Once);
     ImGui::Begin(name, nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoTitleBar);
@@ -256,29 +244,48 @@ void Plot::renderPlot(const char* name)  //, float window_w, float window_h)
     }
     ImGui::SetCursorPos(store_pos);  // Set the cursor back to where we start drawing the lineplots
 
-    // Adjust axes and plotting data for all selected objects in loop below
-    for (size_t item = 0; item < selected_object_.size(); item++)
+    for (const auto& category_pair : get_category_name_)
     {
-        if (!selected_object_[item])
-        {
-            continue;
-        }
-        for (const auto& data : plot_objects_[item]->plotData)
-        {
-            // Adjust axes
-            adjustPlotDataAxis(data, item);
+        PlotCategories y_category = category_pair.first;
 
-            // Plot (but not time over time or X over X)
-            if (data.first == PlotCategories::Time)
+        // Skip to plot time v time and if the checkbox is not selected
+        if (y_category == PlotCategories::Time || !lineplot_selection_[y_category])
+            continue;
+
+        // Adjust axes for all selected objects before plotting
+        adjustSelectedObjectsPlotDataAxis(y_category);
+        // Now begin plot
+        std::string plot_name = get_category_name_[y_category];
+        std::string unit      = get_category_unit_[y_category];
+
+        if (ImPlot::BeginPlot(plot_name.c_str(),
+                              ImVec2(static_cast<float>(window_w) - 200.0f,
+                                     (static_cast<float>(window_h) - checkbox_padding) / static_cast<float>(lineplot_objects)),
+                              ImPlotFlags_NoLegend))
+        {
+            ImPlot::SetupAxes(get_category_name_[PlotCategories::Time].c_str(), unit.c_str(), x_scaling, y_scaling);
+
+            for (size_t item = 0; item < selected_object_.size(); ++item)
             {
-                continue;
+                if (!selected_object_[item])
+                    continue;
+
+                const auto& data_map = plot_objects_[item]->plotData;
+
+                if (data_map.count(PlotCategories::Time) == 0 || data_map.count(y_category) == 0)
+                    continue;
+
+                const auto& x_data = data_map.at(PlotCategories::Time);
+                const auto& y_data = data_map.at(y_category);
+
+                if (x_data.empty() || y_data.empty())
+                    continue;
+
+                ImPlot::PlotLine(std::to_string(item).c_str(), x_data.data(), y_data.data(), static_cast<int>(x_data.size()));
             }
-            else if (lineplot_selection_[data.first])  // Checkbox has to be checked
-            {
-                plotLine(get_category_name_[data.first], get_category_unit_[data.first], PlotCategories::Time, data.first, lineplot_objects);
-            }
-            y_scaling = ImPlotAxisFlags_None;
+            ImPlot::EndPlot();
         }
+        y_scaling = ImPlotAxisFlags_None;  // Optional reset
     }
     ImGui::End();
 }
@@ -429,23 +436,23 @@ void Plot::PlotObject::updateData(Object* object, double time)
     plotData[PlotCategories::LaneID].push_back(static_cast<float>(object->pos_.GetLaneId()));
 }
 
-float Plot::PlotObject::getTimeMax()
+float Plot::PlotObject::getTimeMax() const
 {
     return time_max_;
 }
-float Plot::PlotObject::getMaxAcc()
+float Plot::PlotObject::getMaxAcc() const
 {
     return max_acc_;
 }
-float Plot::PlotObject::getMaxDecel()
+float Plot::PlotObject::getMaxDecel() const
 {
     return max_decel_;
 }
-float Plot::PlotObject::getMaxSpeed()
+float Plot::PlotObject::getMaxSpeed() const
 {
     return max_speed_;
 }
-std::string Plot::PlotObject::getName()
+std::string Plot::PlotObject::getName() const
 {
     return name_;
 }

@@ -47,8 +47,17 @@ namespace vehicle
                 @param steering Steering output left (>0) or right (<0) in the range(-1, 1)
         */
         void DrivingControlAnalog(double dt, double throttle, double steering);
+
+        /**
+                Update vehicle in terms of explicit acceleration and steering angle
+                @param dt Timestep (sec)
+                @param acceleration Longitudinal acceleration
+                @param steering_angle Lateral steering angle
+        */
+        void DrivingControlAccAndSteer(double dt, double acceleration, double steering_angle);
         void SetWheelAngle(double angle);
         void SetWheelRotation(double rotation);
+        void SetSpeed(double speed);
         void SetLength(double length)
         {
             length_ = length;
@@ -68,8 +77,8 @@ namespace vehicle
         {
             pitch_ = pitch;
         }
-        void   SetMaxSpeed(double speed);
-        double GetMaxSpeed()
+        void   SetMaxSpeed(double maxSpeed);
+        double GetMaxSpeed() const
         {
             return max_speed_;
         }
@@ -77,7 +86,7 @@ namespace vehicle
         {
             max_acc_ = acc;
         }
-        double GetMaxAcc()
+        double GetMaxAcc() const
         {
             return max_acc_;
         }
@@ -85,7 +94,7 @@ namespace vehicle
         {
             max_dec_ = dec;
         }
-        double GetMaxDec()
+        double GetMaxDec() const
         {
             return max_dec_;
         }
@@ -93,7 +102,7 @@ namespace vehicle
         {
             steering_rate_ = steering_rate;
         }
-        double GetSteeringRate()
+        double GetSteeringRate() const
         {
             return steering_rate_;
         }
@@ -101,19 +110,24 @@ namespace vehicle
         {
             steering_return_factor_ = steering_return_factor;
         }
-        double GetSteeringReturnFactor()
+        double GetSteeringReturnFactor() const
         {
             return steering_return_factor_;
         }
+
+        /**
+        Set steering inertia related to vehicle speed
+        @param steering_scale Steering inertia factor, default = 0.02
+        */
         void SetSteeringScale(double steering_scale)
         {
             steering_scale_ = steering_scale;
         }
-        double GetSteeringScale()
+        double GetSteeringScale() const
         {
             return steering_scale_;
         }
-        bool GetThrottleDisabled()
+        bool GetThrottleDisabled() const
         {
             return steering_disabled_;
         }
@@ -121,7 +135,7 @@ namespace vehicle
         {
             throttle_disabled_ = value;
         }
-        bool GetSteeringDisabled()
+        bool GetSteeringDisabled() const
         {
             return steering_disabled_;
         }

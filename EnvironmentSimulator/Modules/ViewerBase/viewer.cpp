@@ -15,13 +15,10 @@
 #include <osgDB/ReadFile>
 #include <osg/ComputeBoundsVisitor>
 #include <osg/LineWidth>
-#include <osg/Point>
-#include <osg/BlendFunc>
 #include <osg/BlendColor>
 #include <osg/Geode>
 #include <osg/Group>
 #include <osg/CullFace>
-#include <osgGA/StateSetManipulator>
 #include <osgGA/TrackballManipulator>
 #include <osgGA/KeySwitchMatrixManipulator>
 #include <osgGA/FlightManipulator>
@@ -31,37 +28,48 @@
 #include <osgDB/Registry>
 #include <osgDB/WriteFile>
 #include <osgUtil/SmoothingVisitor>
-#include <osgUtil/Tessellator>  // to tessellate multiple contours
-#include <osgUtil/Optimizer>    // to flatten transform nodes
+#include <osg/Fog>
+#include "OSCEnvironment.hpp"
 
-#define SHADOW_SCALE                       1.20
-#define SHADOW_MODEL_FILEPATH              "shadow_face.osgb"
-#define ARROW_MODEL_FILEPATH               "arrow.osgb"
-#define LOD_DIST                           3000
-#define LOD_DIST_ROAD_FEATURES             500
-#define LOD_SCALE_DEFAULT                  1.0
-#define DEFAULT_AA_MULTISAMPLES            4
-#define OSI_LINE_WIDTH                     2.0f
-#define OSI_LINE_WIDTH_BOLD                4.0f
-#define TRAIL_WIDTH                        2
-#define TRAIL_DOT_SIZE                     10
-#define TRAIL_DOT3D_SIZE                   0.2
-#define WAYPOINT_HEIGHT                    0.2
-#define TRAILDOT3D                         1
-#define PERSP_FOV                          30.0
-#define ORTHO_FOV                          1.0
-#define DEFAULT_LENGTH_FOR_CONTINUOUS_OBJS 10.0
+#if __has_include(<filesystem>)
+#include <filesystem>
+namespace fs = std::filesystem;
+#elif __has_include(<experimental/filesystem>)
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+#else
+#error "Missing <filesystem> header"
+#endif
+
+#define SHADOW_SCALE            1.20
+#define SHADOW_MODEL_FILEPATH   "shadow_face.osgb"
+#define ARROW_MODEL_FILEPATH    "arrow.osgb"
+#define LOD_DIST                3000
+#define LOD_SCALE_DEFAULT       1.0
+#define DEFAULT_AA_MULTISAMPLES 4
+#define OSI_LINE_WIDTH          2.0f
+#define OSI_LINE_WIDTH_BOLD     4.0f
+#define OSI_DOT_SIZE            6.0
+#define TRAIL_WIDTH             2
+#define TRAIL_DOT_SIZE          10
+#define TRAIL_DOT3D_SIZE        0.2
+#define WAYPOINT_HEIGHT         0.2
+#define TRAILDOT3D              1
+#define PERSP_FOV               30.0
+#define ORTHO_FOV               1.0
 
 float color_green[3]      = {0.2f, 0.6f, 0.3f};
 float color_gray[3]       = {0.7f, 0.7f, 0.7f};
-float color_dark_gray[3]  = {0.5f, 0.5f, 0.5f};
-float color_light_gray[3] = {0.7f, 0.7f, 0.7f};
-float color_red[3]        = {0.73f, 0.26f, 0.26f};
+float color_red[3]        = {0.8f, 0.3f, 0.3f};
 float color_black[3]      = {0.2f, 0.2f, 0.2f};
 float color_blue[3]       = {0.25f, 0.38f, 0.7f};
 float color_yellow[3]     = {0.75f, 0.7f, 0.4f};
 float color_white[3]      = {1.0f, 1.0f, 0.9f};
+float color_background[3] = {0.5f, 0.75f, 1.0f};
 
+// cppcheck-suppress unknownMacro
+// The following macros are defined by the framework or plugin system and are correctly expanded during compilation.
+// Cppcheck cannot resolve them during static analysis, so this warning is false positive.
 USE_OSGPLUGIN(osg2)
 USE_OSGPLUGIN(jpeg)
 USE_SERIALIZER_WRAPPER_LIBRARY(osg)
@@ -70,34 +78,6 @@ USE_COMPRESSOR_WRAPPER(ZLibCompressor)
 USE_GRAPHICSWINDOW()
 
 using namespace viewer;
-
-osg::Vec4 viewer::ODR2OSGColor(roadmanager::RoadMarkColor color)
-{
-    osg::Vec4 osgc;
-
-    if (color == roadmanager::RoadMarkColor::YELLOW)
-    {
-        osgc.set(0.9f, 0.9f, 0.25f, 1.0f);
-    }
-    else if (color == roadmanager::RoadMarkColor::GREEN)
-    {
-        osgc.set(0.2f, 0.8f, 0.4f, 1.0f);
-    }
-    else if (color == roadmanager::RoadMarkColor::RED)
-    {
-        osgc.set(0.95f, 0.4f, 0.3f, 1.0f);
-    }
-    else if (color == roadmanager::RoadMarkColor::BLUE)
-    {
-        osgc.set(0.2f, 0.5f, 0.9f, 1.0f);
-    }
-    else
-    {
-        osgc.set(0.95f, 0.95f, 0.92f, 1.0f);
-    }
-
-    return osgc;
-}
 
 // Derive a class from NodeVisitor to find a node with a  specific name.
 class FindNamedNode : public osg::NodeVisitor
@@ -223,8 +203,15 @@ osg::ref_ptr<osg::Geode> CreateDotGeometry(double size, osg::Vec4 color, int nrP
     return geode;
 }
 
-PolyLine::PolyLine(osg::Group* parent, osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width, double dotsize, bool dots3D)
-    : dots_geom_(nullptr),
+PolyLine::PolyLine(Viewer*                      viewer,
+                   osg::Group*                  parent,
+                   osg::ref_ptr<osg::Vec3Array> points,
+                   osg::Vec4                    color,
+                   double                       width,
+                   double                       dotsize,
+                   bool                         dots3D)
+    : viewer_(viewer),
+      dots_geom_(nullptr),
       dot3D_geode_(nullptr),
       dots3D_(dots3D),
       dots_array_(nullptr)
@@ -348,8 +335,10 @@ void PolyLine::SetPoints(osg::ref_ptr<osg::Vec3Array> points)
     Update();
 }
 
-void PolyLine::AddPoint(osg::Vec3 point)
+void PolyLine::AddPoint(double x, double y, double z)
 {
+    osg::Vec3 point(static_cast<float>(x - viewer_->origin_[0]), static_cast<float>(y - viewer_->origin_[1]), static_cast<float>(z));
+
     pline_vertex_data_->push_back(point);
 
     if (dots3D_)
@@ -378,7 +367,7 @@ void PolyLine::Add3DDot(osg::Vec3 pos)
     dots3D_group_->addChild(tx);
 }
 
-SensorViewFrustum::SensorViewFrustum(ObjectSensor* sensor, osg::Group* parent)
+SensorViewFrustum::SensorViewFrustum(Viewer* viewer, ObjectSensor* sensor, osg::Group* parent)
 {
     sensor_ = sensor;
     txNode_ = new osg::PositionAttitudeTransform;
@@ -399,7 +388,7 @@ SensorViewFrustum::SensorViewFrustum(ObjectSensor* sensor, osg::Group* parent)
         osg::ref_ptr<osg::Vec3Array> varray = new osg::Vec3Array;
         varray->push_back(osg::Vec3(0.0f, 0.0f, 0.0f));
         varray->push_back(osg::Vec3(1.0f, 0.0f, 0.0f));
-        PolyLine* pline = new PolyLine(line_group_, varray, osg::Vec4(0.8f, 0.8f, 0.8f, 1.0f), 2.0);
+        PolyLine* pline = new PolyLine(viewer, line_group_, varray, osg::Vec4(0.8f, 0.8f, 0.8f, 1.0f), 2.0);
         plines_.push_back(pline);
     }
 
@@ -521,7 +510,10 @@ SensorViewFrustum::SensorViewFrustum(ObjectSensor* sensor, osg::Group* parent)
     // Geometry2 -> Drawing solid lines representing the boundary of each volume of FOV
     osg::ref_ptr<osg::Geometry>  geom2     = new osg::Geometry;
     osg::ref_ptr<osg::Vec4Array> FOV_color = new osg::Vec4Array(1);
-    (*FOV_color)[0].set(color_green[0], color_green[1], color_green[2], 1.0);
+    (*FOV_color)[0].set(SE_Color::Color2RBG(SE_Color::Color::GREEN)[0],
+                        SE_Color::Color2RBG(SE_Color::Color::GREEN)[1],
+                        SE_Color::Color2RBG(SE_Color::Color::GREEN)[2],
+                        1.0);
     geom2->setUseDisplayList(true);
     geom2->setUseVertexBufferObjects(true);
     geom2->setVertexArray(vertices.get());
@@ -543,7 +535,10 @@ SensorViewFrustum::SensorViewFrustum(ObjectSensor* sensor, osg::Group* parent)
     // Geometry3 -> Drawing solid lines representing the boundary of blind spot area between sensor mounting position and near FOV plane
     osg::ref_ptr<osg::Geometry>  geom3            = new osg::Geometry;
     osg::ref_ptr<osg::Vec4Array> blind_spot_color = new osg::Vec4Array(1);
-    (*blind_spot_color)[0].set(color_red[0], color_red[1], color_red[2], 1.0);
+    (*blind_spot_color)[0].set(SE_Color::Color2RBG(SE_Color::Color::RED)[0],
+                               SE_Color::Color2RBG(SE_Color::Color::RED)[1],
+                               SE_Color::Color2RBG(SE_Color::Color::RED)[2],
+                               1.0);
     geom3->setUseDisplayList(true);
     geom3->setUseVertexBufferObjects(true);
     geom3->setVertexArray(vertices.get());
@@ -563,7 +558,10 @@ SensorViewFrustum::SensorViewFrustum(ObjectSensor* sensor, osg::Group* parent)
     osg::ref_ptr<osg::Vec4Array> mounting_color   = new osg::Vec4Array(1);
     osg::ref_ptr<osg::Point>     mount_point      = new osg::Point();
     mount_point->setSize(8.0f);
-    (*mounting_color)[0].set(color_red[0], color_red[1], color_red[2], 1.0);
+    (*mounting_color)[0].set(SE_Color::Color2RBG(SE_Color::Color::RED)[0],
+                             SE_Color::Color2RBG(SE_Color::Color::RED)[1],
+                             SE_Color::Color2RBG(SE_Color::Color::RED)[2],
+                             1.0);
     (*mounting_vertice)[0].set(0, 0, 0);
     geom4->setUseDisplayList(true);
     geom4->setUseVertexBufferObjects(true);
@@ -619,297 +617,6 @@ void SensorViewFrustum::Update()
     }
 }
 
-#ifdef _USE_OSI
-
-OSISensorDetection::OSISensorDetection(osg::ref_ptr<osg::Group> parent)
-{
-    parent_ = parent;
-
-    detected_points_group_ = new osg::Group;
-    detected_points_group_->setDataVariance(osg::Object::DYNAMIC);
-    parent->addChild(detected_points_group_);
-    detected_bb_group_ = new osg::Group;
-    detected_bb_group_->setDataVariance(osg::Object::DYNAMIC);
-    parent->addChild(detected_bb_group_);
-}
-
-OSISensorDetection::~OSISensorDetection()
-{
-    for (auto point : detected_points_)
-    {
-        delete point.second;
-    }
-    detected_points_.clear();
-
-    for (auto car : detected_cars_)
-    {
-        delete car.second;
-    }
-    detected_cars_.clear();
-
-    parent_->removeChild(detected_points_group_);
-    parent_->removeChild(detected_bb_group_);
-}
-
-void OSISensorDetection::Update(osi3::SensorView* sv)
-{
-    // lets find the detected objects that are still under the radar FOV
-    if (sv)
-    {
-        bool found = false;
-        for (auto point : detected_points_)
-        {
-            for (int i = 0; i < sv->global_ground_truth().lane_boundary_size(); ++i)
-            {
-                for (int j = 0; j < sv->global_ground_truth().lane_boundary()[i].boundary_line_size(); ++j)
-                {
-                    // lets see the lane boundary ID and check if detected points map are in the sensor view
-                    std::string str_id = std::to_string(sv->global_ground_truth().lane_boundary()[i].id().value()) + std::to_string(j);
-                    uint64_t    id     = std::stoul(str_id);
-                    if (point.first == id)
-                    {
-                        found = true;
-                        break;
-                    }
-                    if (found)
-                    {
-                        break;
-                    }
-                }
-            }
-
-            // If the point isn't in the sensor view then we hide it
-            if (!found)
-            {
-                point.second->Hide();
-            }
-            // If the point was detected before, we show it again
-            else if (found && !point.second->showing_)
-            {
-                point.second->Show();
-            }
-            found = false;
-        }
-
-        found = false;
-        for (auto car : detected_cars_)
-        {
-            for (int i = 0; i < sv->global_ground_truth().moving_object_size(); i++)
-            {
-                // lets see the moving object ID and check if detected cars map are in the sensor view
-                uint64_t id = sv->global_ground_truth().moving_object()[i].id().value();
-                if (car.first == id)
-                {
-                    found = true;
-                    break;
-                }
-            }
-
-            // If the moving object isn't in the sensor view then we hide it
-            if (!found)
-            {
-                car.second->Hide();
-            }
-            // If the moving object was detected before, we show it again
-            else if (found && !car.second->showing_)
-            {
-                car.second->Show();
-            }
-            found = false;
-        }
-
-        // Lets check if it is needed to create new points and moving objects visuals
-        double z_offset = 0.10;
-        if (sv->has_global_ground_truth())
-        {
-            for (int i = 0; i < sv->global_ground_truth().moving_object_size(); i++)
-            {
-                // Get moving object position and dimension
-                const osi3::Vector3d    moving_object_position  = sv->global_ground_truth().moving_object()[i].base().position();
-                const osi3::Dimension3d moving_object_dimension = sv->global_ground_truth().moving_object()[i].base().dimension();
-
-                // Get moving object id
-                uint64_t id = sv->global_ground_truth().moving_object()[i].id().value();
-
-                // If the moving object ID isn't in the cars map then we create one and added to the map
-                if (detected_cars_.count(id) == 0)
-                {
-                    detected_cars_.emplace(id,
-                                           new OSIDetectedCar(osg::Vec3(static_cast<float>(moving_object_position.x()),
-                                                                        static_cast<float>(moving_object_position.y()),
-                                                                        static_cast<float>(moving_object_position.z() + z_offset)),
-                                                              moving_object_dimension.height() + 1.0,
-                                                              moving_object_dimension.width() + 1.0,
-                                                              moving_object_dimension.length() + 1.0,
-                                                              detected_bb_group_));
-                }
-                else
-                {
-                    // Otherwise update the visual object
-                    osg::Vec3 bb_dimension = detected_cars_.find(id)->second->bb_dimensions_;
-                    detected_cars_.find(id)->second->Update(
-                        osg::Vec3(static_cast<float>(moving_object_position.x()),
-                                  static_cast<float>(moving_object_position.y()),
-                                  static_cast<float>(moving_object_position.z()) + bb_dimension.z() + static_cast<float>(z_offset)));
-                }
-            }
-
-            for (int i = 0; i < sv->global_ground_truth().lane_boundary_size(); ++i)
-            {
-                for (int j = 0; j < sv->global_ground_truth().lane_boundary()[i].boundary_line_size(); ++j)
-                {
-                    // Get line boundary id
-                    std::string str_id = std::to_string(sv->global_ground_truth().lane_boundary()[i].id().value()) + std::to_string(j);
-                    uint64_t    id     = std::stoul(str_id);
-
-                    // Get line boundary position
-                    const osi3::Vector3d boundary_line_position = sv->global_ground_truth().lane_boundary()[i].boundary_line()[j].position();
-
-                    // If the lane boundary ID isn't in the points map then we create one and added to the map
-                    if (detected_points_.count(id) == 0)
-                    {
-                        detected_points_.emplace(id,
-                                                 new OSIDetectedPoint(osg::Vec3(static_cast<float>(boundary_line_position.x()),
-                                                                                static_cast<float>(boundary_line_position.y()),
-                                                                                static_cast<float>(boundary_line_position.z() + z_offset)),
-                                                                      detected_points_group_));
-                    }
-                    else
-                    {
-                        // Otherwise update the visual object
-                        detected_points_.find(id)->second->Update(osg::Vec3(static_cast<float>(boundary_line_position.x()),
-                                                                            static_cast<float>(boundary_line_position.y()),
-                                                                            static_cast<float>(boundary_line_position.z() + z_offset)));
-                    }
-                }
-            }
-        }
-    }
-}
-
-OSIDetectedPoint::OSIDetectedPoint(const osg::Vec3 point, osg::ref_ptr<osg::Group> parent)
-{
-    parent_                                      = parent;
-    osi_detection_geom_                          = new osg::Geometry;
-    osi_detection_points_                        = new osg::Vec3Array;
-    osi_detection_color_                         = new osg::Vec4Array;
-    osg::ref_ptr<osg::Point> osi_detection_point = new osg::Point();
-
-    // start point of each road mark
-    osi_detection_points_->push_back(point);
-    osi_detection_color_->push_back(osg::Vec4(color_green[0], color_green[1], color_green[2], 1.0));
-
-    osi_detection_point->setSize(8.0f);
-    osi_detection_geom_->getOrCreateStateSet()->setAttributeAndModes(osi_detection_point, osg::StateAttribute::ON);
-    osi_detection_geom_->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-    osi_detection_geom_->getOrCreateStateSet()->setDataVariance(osg::Object::DYNAMIC);
-
-    osi_detection_geom_->setVertexArray(osi_detection_points_.get());
-    osi_detection_geom_->setColorArray(osi_detection_color_.get());
-    osi_detection_geom_->setColorBinding(osg::Geometry::BIND_PER_VERTEX);
-    osi_detection_geom_->addPrimitiveSet(new osg::DrawArrays(GL_POINTS, 0, static_cast<int>(osi_detection_points_->size())));
-    osi_detection_geom_->setNodeMask(NodeMask::NODE_MASK_OBJECT_SENSORS);
-    showing_ = true;
-
-    parent_->addChild(osi_detection_geom_);
-}
-
-void OSIDetectedPoint::Update(const osg::Vec3 point)
-{
-    osi_detection_points_->clear();
-    osi_detection_points_->push_back(point);
-    osi_detection_points_->dirty();
-    osi_detection_geom_->dirtyGLObjects();
-    osi_detection_geom_->dirtyBound();
-}
-
-OSIDetectedPoint::~OSIDetectedPoint()
-{
-    parent_->removeChild(osi_detection_geom_);
-}
-
-OSIDetectedCar::OSIDetectedCar(const osg::Vec3 point, double h, double w, double l, osg::ref_ptr<osg::Group> parent)
-{
-    parent_ = parent;
-    bb_dimensions_.set(static_cast<float>(l), static_cast<float>(w), static_cast<float>(h));
-
-    car_                     = new osg::Group;
-    osi_detection_geode_box_ = new osg::Geode;
-    osi_detection_geode_box_->addDrawable(new osg::ShapeDrawable(new osg::Box()));
-    osi_detection_geode_box_->getDrawable(0)->setDataVariance(osg::Object::DataVariance::DYNAMIC);
-
-    osi_detection_tx_ = new osg::PositionAttitudeTransform;
-
-    osg::Material* material = new osg::Material();
-
-    // Set color of vehicle based on its index
-    float* color = color_green;
-    float  b     = 1.0;  // brighness range (0,1)
-
-    material->setAmbient(osg::Material::FRONT, osg::Vec4(b * color[0], b * color[1], b * color[2], 1.0f));
-    material->setDiffuse(osg::Material::FRONT, osg::Vec4(b * color[0], b * color[1], b * color[2], 1.0f));
-
-    // Set dimensions of the entity "box"
-    osi_detection_tx_->setScale(bb_dimensions_);
-    osi_detection_tx_->setPosition(osg::Vec3d(point.x(), point.y(), point.z()));
-
-    // Draw only wireframe
-    osg::PolygonMode* polygonMode = new osg::PolygonMode;
-    polygonMode->setMode(osg::PolygonMode::FRONT_AND_BACK, osg::PolygonMode::LINE);
-    osg::ref_ptr<osg::StateSet> stateset = osi_detection_geode_box_->getOrCreateStateSet();  // Get the StateSet of the group
-    stateset->setAttributeAndModes(polygonMode, osg::StateAttribute::OVERRIDE | osg::StateAttribute::ON);
-    stateset->setMode(GL_COLOR_MATERIAL, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-    stateset->setDataVariance(osg::Object::DYNAMIC);
-    osi_detection_geode_box_->setNodeMask(NodeMask::NODE_MASK_OBJECT_SENSORS);
-
-    osi_detection_geode_center_ = new osg::Geode;
-    osi_detection_geode_center_->addDrawable(new osg::ShapeDrawable(new osg::Sphere(osg::Vec3(0.0f, 0.0f, 0.0f), 0.2f)));
-    osi_detection_geode_center_->getDrawable(0)->setDataVariance(osg::Object::DYNAMIC);
-
-    osi_detection_geode_center_->setNodeMask(NodeMask::NODE_MASK_OBJECT_SENSORS);
-    car_->addChild(osi_detection_geode_center_);
-
-    osi_detection_tx_->addChild(osi_detection_geode_box_);
-    osi_detection_tx_->getOrCreateStateSet()->setMode(GL_RESCALE_NORMAL, osg::StateAttribute::ON);
-    osi_detection_tx_->getOrCreateStateSet()->setAttribute(material);
-    osi_detection_tx_->getOrCreateStateSet()->setDataVariance(osg::Object::DYNAMIC);
-    car_->setName("BoundingBox");
-    car_->addChild(osi_detection_tx_);
-
-    parent_->addChild(car_);
-}
-
-OSIDetectedCar::~OSIDetectedCar()
-{
-    parent_->removeChild(car_);
-}
-
-void OSIDetectedCar::Update(const osg::Vec3 point)
-{
-    osi_detection_tx_->setPosition(point);
-    osi_detection_tx_->dirtyBound();
-    osi_detection_geode_center_->dirtyBound();
-    osi_detection_geode_box_->dirtyBound();
-}
-
-void OSIDetectedCar::Show()
-{
-    car_->setNodeMask(NodeMask::NODE_MASK_OBJECT_SENSORS);
-    osi_detection_geode_box_->setNodeMask(NodeMask::NODE_MASK_OBJECT_SENSORS);
-    osi_detection_geode_center_->setNodeMask(NodeMask::NODE_MASK_OBJECT_SENSORS);
-    showing_ = true;
-}
-
-void OSIDetectedCar::Hide()
-{
-    car_->setNodeMask(0x0);
-    osi_detection_geode_box_->setNodeMask(0x0);
-    osi_detection_geode_center_->setNodeMask(0x0);
-    showing_ = false;
-}
-
-#endif  // _USE_OSI
-
 void VisibilityCallback::operator()(osg::Node* sa, osg::NodeVisitor* nv)
 {
     (void)sa;
@@ -918,7 +625,7 @@ void VisibilityCallback::operator()(osg::Node* sa, osg::NodeVisitor* nv)
     {
         if (object_->visibilityMask_ & scenarioengine::Object::Visibility::GRAPHICS)
         {
-            entity_->txNode_->getChild(0)->setNodeMask(NodeMask::NODE_MASK_ENTITY_MODEL | viewer::NodeMask::NODE_MASK_ENTITY_BB);
+            entity_->txNode_->getChild(0)->setNodeMask(NodeMask::NODE_MASK_ENTITY_MODEL | NodeMask::NODE_MASK_ENTITY_BB);
             if (object_->visibilityMask_ & scenarioengine::Object::Visibility::SENSORS)
             {
                 entity_->SetTransparency(0.0);
@@ -937,9 +644,9 @@ void VisibilityCallback::operator()(osg::Node* sa, osg::NodeVisitor* nv)
     object_->ClearDirtyBits(scenarioengine::Object::DirtyBit::VISIBILITY);
 }
 
-Trajectory::Trajectory(osg::Group* parent, osgViewer::Viewer* viewer) : parent_(parent), activeRMTrajectory_(0), viewer_(viewer)
+Trajectory::Trajectory(osg::Group* parent, Viewer* viewer) : parent_(parent), activeRMTrajectory_(0), viewer_(viewer)
 {
-    pline_ = std::make_unique<PolyLine>(parent_, new osg::Vec3Array, osg::Vec4(0.9f, 0.7f, 0.3f, 1.0f), 3.0);
+    pline_ = std::make_unique<PolyLine>(viewer, parent_, new osg::Vec3Array, osg::Vec4(0.9f, 0.7f, 0.3f, 1.0f), 3.0);
 }
 
 void Trajectory::SetActiveRMTrajectory(roadmanager::RMTrajectory* RMTrajectory)
@@ -955,12 +662,14 @@ void Trajectory::SetActiveRMTrajectory(roadmanager::RMTrajectory* RMTrajectory)
         return;
     }
 
-    for (int i = 0; i < RMTrajectory->shape_->pline_.GetNumberOfVertices(); i++)
+    for (unsigned int i = 0; i < RMTrajectory->shape_->pline_.GetNumberOfVertices(); i++)
     {
         roadmanager::TrajVertex& v = RMTrajectory->shape_->pline_.vertex_[static_cast<unsigned int>(i)];
 
-        vertices_.push_back({v.x, v.y, v.z, v.h});
-        pline_->pline_vertex_data_->push_back(osg::Vec3(static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z + z_offset)));
+        vertices_.push_back({v.x - viewer_->origin_[0], v.y - viewer_->origin_[1], v.z, v.h});
+        pline_->pline_vertex_data_->push_back(osg::Vec3(static_cast<float>(v.x - viewer_->origin_[0]),
+                                                        static_cast<float>(v.y - viewer_->origin_[1]),
+                                                        static_cast<float>(v.z + z_offset)));
     }
 
     pline_->Update();
@@ -976,23 +685,40 @@ void Trajectory::Disable()
     pline_->Update();
 }
 
-RouteWayPoints::RouteWayPoints(osg::ref_ptr<osg::Group> parent, osg::Vec4 color) : parent_(parent)
+RouteWayPoints::RouteWayPoints(osg::ref_ptr<osg::Group> parent, osg::Vec4 color, Viewer* viewer) : parent_(parent)
 {
-    group_ = new osg::Group;
-    group_->setNodeMask(NodeMask::NODE_MASK_ROUTE_WAYPOINTS);
+    group_all_wp_      = new osg::Group;
+    group_scenario_wp_ = new osg::Group;
+    group_minimal_wp_  = new osg::Group;
+
+    group_all_wp_->setNodeMask(NodeMask::NODE_MASK_ROUTE_WAYPOINTS);
+    group_scenario_wp_->setNodeMask(NodeMask::NODE_MASK_ROUTE_WAYPOINTS);
+    group_minimal_wp_->setNodeMask(NodeMask::NODE_MASK_ROUTE_WAYPOINTS);
+
+    viewer_ = viewer;
 
     // Finally attach a simple material for shading properties
     osg::ref_ptr<osg::Material> material_ = new osg::Material;
     material_->setDiffuse(osg::Material::FRONT_AND_BACK, color);
     material_->setAmbient(osg::Material::FRONT_AND_BACK, color);
-    group_->getOrCreateStateSet()->setAttributeAndModes(material_.get());
+    group_all_wp_->getOrCreateStateSet()->setAttributeAndModes(material_.get());
+    group_scenario_wp_->getOrCreateStateSet()->setAttributeAndModes(material_.get());
 
-    parent->addChild(group_);
+    osg::ref_ptr<osg::Material> material_dull_ = new osg::Material;
+    material_dull_->setDiffuse(osg::Material::FRONT_AND_BACK, color * 0.6);
+    material_dull_->setAmbient(osg::Material::FRONT_AND_BACK, color * 0.6);
+    group_minimal_wp_->getOrCreateStateSet()->setAttributeAndModes(material_dull_.get());
+
+    parent->addChild(group_all_wp_);
+    parent->addChild(group_scenario_wp_);
+    parent->addChild(group_minimal_wp_);
 }
 
 RouteWayPoints::~RouteWayPoints()
 {
-    group_->removeChildren(0, group_->getNumChildren());
+    group_all_wp_->removeChildren(0, group_all_wp_->getNumChildren());
+    group_scenario_wp_->removeChildren(0, group_scenario_wp_->getNumChildren());
+    group_minimal_wp_->removeChildren(0, group_minimal_wp_->getNumChildren());
 }
 
 osg::ref_ptr<osg::Geode> RouteWayPoints::CreateWayPointGeometry(double x, double y, double z, double h, double scale)
@@ -1068,16 +794,38 @@ void RouteWayPoints::SetWayPoints(roadmanager::Route* route)
         return;
     }
 
-    group_->removeChildren(0, group_->getNumChildren());
+    group_all_wp_->removeChildren(0, group_all_wp_->getNumChildren());
+    group_scenario_wp_->removeChildren(0, group_scenario_wp_->getNumChildren());
+    group_minimal_wp_->removeChildren(0, group_minimal_wp_->getNumChildren());
 
     // First put all waypoints on ground
     for (int i = 0; i < static_cast<int>(route->all_waypoints_.size()); i++)
     {
-        group_->addChild(CreateWayPointGeometry(route->all_waypoints_[static_cast<unsigned int>(i)].GetX(),
-                                                route->all_waypoints_[static_cast<unsigned int>(i)].GetY(),
-                                                route->all_waypoints_[static_cast<unsigned int>(i)].GetZ(),
-                                                route->all_waypoints_[static_cast<unsigned int>(i)].GetH(),
-                                                1.0));
+        group_all_wp_->addChild(CreateWayPointGeometry(route->all_waypoints_[static_cast<unsigned int>(i)].GetX() - viewer_->origin_[0],
+                                                       route->all_waypoints_[static_cast<unsigned int>(i)].GetY() - viewer_->origin_[1],
+                                                       route->all_waypoints_[static_cast<unsigned int>(i)].GetZ(),
+                                                       route->all_waypoints_[static_cast<unsigned int>(i)].GetH(),
+                                                       0.75));
+    }
+
+    // Then add scenario waypoints
+    for (int i = 0; i < static_cast<int>(route->scenario_waypoints_.size()); i++)
+    {
+        group_scenario_wp_->addChild(CreateWayPointGeometry(route->scenario_waypoints_[static_cast<unsigned int>(i)].GetX() - viewer_->origin_[0],
+                                                            route->scenario_waypoints_[static_cast<unsigned int>(i)].GetY() - viewer_->origin_[1],
+                                                            route->scenario_waypoints_[static_cast<unsigned int>(i)].GetZ(),
+                                                            route->scenario_waypoints_[static_cast<unsigned int>(i)].GetH(),
+                                                            1.5));
+    }
+
+    // First put all minimal on ground
+    for (int i = 0; i < static_cast<int>(route->minimal_waypoints_.size()); i++)
+    {
+        group_minimal_wp_->addChild(CreateWayPointGeometry(route->minimal_waypoints_[static_cast<unsigned int>(i)].GetX() - viewer_->origin_[0],
+                                                           route->minimal_waypoints_[static_cast<unsigned int>(i)].GetY() - viewer_->origin_[1],
+                                                           route->minimal_waypoints_[static_cast<unsigned int>(i)].GetZ(),
+                                                           route->minimal_waypoints_[static_cast<unsigned int>(i)].GetH(),
+                                                           0.75));
     }
 
 #if 0  // Keeping code below in case need arise to visualize minimal wp set on top
@@ -1093,49 +841,98 @@ void RouteWayPoints::SetWayPoints(roadmanager::Route* route)
 #endif
 }
 
-osg::ref_ptr<osg::PositionAttitudeTransform> CarModel::AddWheel(osg::ref_ptr<osg::Node> carNode, const char* wheelName)
+int CarModel::AddWheel(osg::ref_ptr<osg::Node> carNode, const std::string& wheelName, bool front)
 {
-    osg::ref_ptr<osg::PositionAttitudeTransform> tx_node = 0;
-
     // Find wheel node
     std::vector<osg::Node*> nodes;
     FindNamedNodes          fnn(wheelName, nodes);
     carNode->accept(fnn);
 
-    for (size_t i = 0; i < nodes.size(); i++)
+    if (nodes.size() == 0)
     {
-        // Assume wheel is a tranformation node
-        osg::MatrixTransform* node = dynamic_cast<osg::MatrixTransform*>(nodes[i]);
-        if (node != NULL)
+        return -1;
+    }
+
+    for (auto& node : nodes)
+    {
+        WheelCompound wc;
+
+        osg::Group* group = dynamic_cast<osg::Group*>(node);
+
+        std::string find_str("Grp_Wheel_");
+        if (wheelName.compare(0, find_str.length(), find_str) == 0)
         {
-            tx_node = new osg::PositionAttitudeTransform;
-            // We found the wheel. Put it under a useful transform node
-            tx_node->addChild(node);
-
-            // reset pivot point
-            osg::Vec3 pos = node->getMatrix().getTrans();
-            tx_node->setPivotPoint(pos);
-            tx_node->setPosition(pos);
-
-            osg::ref_ptr<osg::Group> parent = node->getParent(0);  // assume the wheel node only belongs to one vehicle
-            parent->removeChild(node);
-            parent->addChild(tx_node);
-
-            if (std::string(wheelName).find("wheel_r") != std::string::npos)
+            // Assume OpenMATERIAL3D structure
+            if (group->getNumChildren() > 0 && group->getNumChildren() < 3)
             {
-                rear_wheel_.push_back(tx_node);
+                wc.steering_part = new osg::MatrixTransform();
+                wc.rolling_part  = new osg::MatrixTransform();
+                if (group->getNumChildren() == 1)
+                {
+                    // assume non rolling part missing, e.g. caliper
+                    wc.rolling_part->addChild(group->getChild(0));
+                }
+                else
+                {
+                    // two wheel nodes, assume first is non rolling parts, second is the rest
+                    wc.steering_part->addChild(group->getChild(0));
+                    wc.rolling_part->addChild(group->getChild(1));
+                }
+                wc.steering_part->addChild(wc.rolling_part);
+                group->removeChildren(0, group->getNumChildren());
+                group->addChild(wc.steering_part);
             }
-            else if (std::string(wheelName).find("wheel_f") != std::string::npos)
+            else
             {
-                front_wheel_.push_back(tx_node);
+                LOG_WARN("Expected 1 or 2 wheel children of OpenMATERIAL3D wheel structure, found {}", group->getNumChildren());
+                return -1;
             }
+        }
+        else
+        {
+            // assume esmini native wheel structure
+            // create three matrix nodes: Wheel position, Steering, Rolling
+
+            osg::MatrixTransform* mt = dynamic_cast<osg::MatrixTransform*>(node);
+            if (mt == nullptr)
+            {
+                LOG_WARN("Expected osg::MatrixTransform wheel node, found {}", nodes[0]->className());
+                return -1;
+            }
+
+            osg::ref_ptr<osg::MatrixTransform> wpos = new osg::MatrixTransform;
+            wc.steering_part                        = new osg::MatrixTransform();
+            wc.rolling_part                         = new osg::MatrixTransform();
+
+            // move translation from wheel node to parent position node
+            osg::Matrix m = mt->getMatrix();
+            wpos->setMatrix(osg::Matrix::translate(m.getTrans()));
+            m.setTrans(0.0, 0.0, 0.0);
+            mt->setMatrix(m);
+
+            wc.rolling_part->addChild(node);
+            wc.steering_part->addChild(wc.rolling_part);
+            wpos->addChild(wc.steering_part);
+
+            // replace original wheel node with the new structure
+            group->getParent(0)->addChild(wpos);
+            group->getParent(0)->removeChild(node);
+        }
+
+        if (front)
+        {
+            front_wheel_.push_back(wc);
+        }
+        else
+        {
+            rear_wheel_.push_back(wc);
         }
     }
 
-    return tx_node;
+    return 0;
 }
 
-EntityModel::EntityModel(osgViewer::Viewer*       viewer,
+EntityModel::EntityModel(Viewer*                  viewer,
                          osg::ref_ptr<osg::Group> group,
                          osg::ref_ptr<osg::Group> parent,
                          osg::ref_ptr<osg::Group> trail_parent,
@@ -1153,6 +950,7 @@ EntityModel::EntityModel(osgViewer::Viewer*       viewer,
     name_   = name;
     group_  = group;
     parent_ = parent;
+    viewer_ = viewer;
 
     // Add LevelOfDetail node
     lod_ = new osg::LOD();
@@ -1167,18 +965,17 @@ EntityModel::EntityModel(osgViewer::Viewer*       viewer,
     parent_->addChild(txNode_);
 
     // Add trajectory placeholder
-    trajectory_ = std::make_unique<Trajectory>(traj_parent, viewer);
+    trajectory_ = std::make_unique<Trajectory>(traj_parent, viewer_);
 
-    viewer_      = viewer;
     state_set_   = 0;
     blend_color_ = 0;
 
     // Prepare trail of dots
-    trail_ = std::make_unique<PolyLine>(trail_parent, nullptr, trail_color, TRAIL_WIDTH, TRAIL_DOT3D_SIZE, true);
+    trail_ = std::make_unique<PolyLine>(viewer_, trail_parent, nullptr, trail_color, TRAIL_WIDTH, TRAIL_DOT3D_SIZE, true);
     trail_->SetNodeMaskLines(NodeMask::NODE_MASK_TRAIL_LINES);
     trail_->SetNodeMaskDots(NodeMask::NODE_MASK_TRAIL_DOTS);
 
-    routewaypoints_ = std::make_unique<RouteWayPoints>(route_waypoint_parent, trail_color);
+    routewaypoints_ = std::make_unique<RouteWayPoints>(route_waypoint_parent, trail_color, viewer_);
 }
 
 EntityModel::~EntityModel()
@@ -1189,7 +986,7 @@ EntityModel::~EntityModel()
     }
 }
 
-MovingModel::MovingModel(osgViewer::Viewer*       viewer,
+MovingModel::MovingModel(Viewer*                  viewer,
                          osg::ref_ptr<osg::Group> group,
                          osg::ref_ptr<osg::Group> parent,
                          osg::ref_ptr<osg::Group> trail_parent,
@@ -1207,7 +1004,7 @@ MovingModel::MovingModel(osgViewer::Viewer*       viewer,
     trail_sensor_    = 0;
 }
 
-CarModel::CarModel(osgViewer::Viewer*       viewer,
+CarModel::CarModel(Viewer*                  viewer,
                    osg::ref_ptr<osg::Group> group,
                    osg::ref_ptr<osg::Group> parent,
                    osg::ref_ptr<osg::Group> trail_parent,
@@ -1221,32 +1018,45 @@ CarModel::CarModel(osgViewer::Viewer*       viewer,
     wheel_angle_ = 0;
     wheel_rot_   = 0;
 
-    osg::ref_ptr<osg::Group> retval[4];
-    osg::ref_ptr<osg::Node>  car_node = txNode_->getChild(0);
-    retval[0]                         = AddWheel(car_node, "wheel_fl");
-    retval[1]                         = AddWheel(car_node, "wheel_fr");
-    retval[2]                         = AddWheel(car_node, "wheel_rr");
-    retval[3]                         = AddWheel(car_node, "wheel_rl");
+    static const std::vector<std::vector<std::pair<std::string, bool>>> wheel_groups = {
+        {{"wheel_fl", true}, {"wheel_fr", true}, {"wheel_rr", false}, {"wheel_rl", false}},
+        {{"Grp_Wheel_0_0", true}, {"Grp_Wheel_0_1", true}, {"Grp_Wheel_1_0", false}, {"Grp_Wheel_1_1", false}},
+    };
+    osg::ref_ptr<osg::Group> retval;
+    osg::ref_ptr<osg::Node>  car_node    = txNode_->getChild(0);
+    bool                     wheel_found = false;
 
-    // Print message only if some wheel nodes are missing
-    if (retval[0] || retval[1] || retval[2] || retval[3])
+    for (auto const& wheel_group : wheel_groups)
     {
-        if (!retval[0])
+        for (auto const& wheel : wheel_group)
         {
-            LOG_ONCE("Missing wheel node %s in vehicle model %s - ignoring", "wheel_fl", car_node->getName().c_str());
+            if (AddWheel(car_node, wheel.first, wheel.second) != 0)
+            {
+                if (wheel_found)
+                {
+                    LOG_WARN("Failed to find additional wheel {}", wheel.first);
+                }
+                else
+                {
+                    LOG_DEBUG("Failed to find first wheel in group {}", wheel.first);
+                }
+            }
+            else
+            {
+                wheel_found = true;
+            }
         }
-        if (!retval[1])
+
+        if (wheel_found)
         {
-            LOG_ONCE("Missing wheel node %s in vehicle model %s - ignoring", "wheel_fr", car_node->getName().c_str());
+            // done when found at least one wheel in group
+            break;
         }
-        if (!retval[2])
-        {
-            LOG_ONCE("Missing wheel node %s in vehicle model %s - ignoring", "wheel_rr", car_node->getName().c_str());
-        }
-        if (!retval[3])
-        {
-            LOG_ONCE("Missing wheel node %s in vehicle model %s - ignoring", "wheel_rl", car_node->getName().c_str());
-        }
+    }
+
+    if (!wheel_found)
+    {
+        LOG_DEBUG("No wheels found on {}. If unexpected, check first wheel element name in model structure", car_node->getName());
     }
 }
 
@@ -1279,7 +1089,7 @@ CarModel::~CarModel()
 
 void EntityModel::SetPosition(double x, double y, double z)
 {
-    txNode_->setPosition(osg::Vec3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)));
+    txNode_->setPosition(osg::Vec3(static_cast<float>(x - viewer_->origin_[0]), static_cast<float>(y - viewer_->origin_[1]), static_cast<float>(z)));
 }
 
 void EntityModel::SetRotation(double hRoad, double pRoad, double hRelative, double r)
@@ -1319,34 +1129,32 @@ void EntityModel::SetRotation(double h, double p, double r)
     txNode_->setAttitude(quat_);
 }
 
+const osg::Vec3d* viewer::EntityModel::GetPosition() const
+{
+    if (txNode_ != nullptr)
+    {
+        return &txNode_->getPosition();
+    }
+
+    LOG_ERROR("Unexpected missing transform node in EntityModel {}", name_);
+    return nullptr;
+}
+
 void CarModel::UpdateWheels(double wheel_angle, double wheel_rotation)
 {
     // Update wheel angles and rotation for front wheels
     wheel_angle_ = wheel_angle;
     wheel_rot_   = wheel_rotation;
-    osg::Quat quat;
 
     for (size_t i = 0; i < front_wheel_.size(); i++)
     {
-        quat.makeRotate(0,
-                        osg::Vec3(1, 0, 0),  // Roll
-                        wheel_rotation,
-                        osg::Vec3(0, 1, 0),  // Pitch
-                        wheel_angle,
-                        osg::Vec3(0, 0, 1));  // Heading
-        front_wheel_[i]->setAttitude(quat);
+        front_wheel_[i].steering_part->setMatrix(osg::Matrix::rotate(wheel_angle_, 0, 0, 1));
+        front_wheel_[i].rolling_part->setMatrix(osg::Matrix::rotate(wheel_rot_, 0, 1, 0));
     }
 
     for (size_t i = 0; i < rear_wheel_.size(); i++)
     {
-        // Update rotation for rear wheels
-        quat.makeRotate(0,
-                        osg::Vec3(1, 0, 0),  // Roll
-                        wheel_rotation,
-                        osg::Vec3(0, 1, 0),  // Pitch
-                        0,
-                        osg::Vec3(0, 0, 1));  // Heading
-        rear_wheel_[i]->setAttitude(quat);
+        rear_wheel_[i].rolling_part->setMatrix(osg::Matrix::rotate(wheel_rot_, 0, 1, 0));
     }
 }
 
@@ -1369,12 +1177,21 @@ void MovingModel::ShowRouteSensor(bool mode)
 
 void EntityModel::SetTransparency(double factor)
 {
-    if (factor < 0 || factor > 1)
+    if (factor < 0.0 || factor > 1.0)
     {
-        LOG("Clamping transparency factor %.2f to [0:1]", factor);
-        factor = CLAMP(factor, 0, 1);
+        LOG_INFO("Clamping transparency factor {:.2f} to [0:1]", factor);
+        factor = CLAMP(factor, 0.0, 1.0);
     }
-    blend_color_->setConstantColor(osg::Vec4(1.0f, 1.0f, 1.0f, 1.0f - static_cast<float>(factor)));
+
+    if (factor < SMALL_NUMBER)
+    {
+        blend_func_->setFunction(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+    else
+    {
+        blend_func_->setFunction(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA);
+        blend_color_->setConstantColor(osg::Vec4(1.0f, 1.0f, 1.0f, 1.0f - static_cast<float>(factor)));
+    }
 }
 
 Viewer::FetchImage::FetchImage(Viewer* viewer)
@@ -1499,40 +1316,6 @@ int Viewer::InitTraits(osg::ref_ptr<osg::GraphicsContext::Traits> traits,
     return 0;
 }
 
-int Viewer::AddGroundSurface()
-{
-    const double margin   = 1E4;
-    const double z_offset = -1.0;
-    // const osg::BoundingSphere bs = environment_->getBound();
-
-    osg::ComputeBoundsVisitor cbv;
-    osg::BoundingBox          bb;
-    if (environment_ != nullptr)
-    {
-        environment_->accept(cbv);
-        bb = cbv.getBoundingBox();
-    }
-    else
-    {
-        bb.set(osg::Vec3d(0.0, 0.0, 0.0), osg::Vec3d(1e4, 1e4, 1e4));
-    }
-
-    osg::ref_ptr<osg::Geode>    ground = new osg::Geode;
-    osg::ref_ptr<osg::Geometry> geom   = osg::createTexturedQuadGeometry(
-        osg::Vec3(bb.xMin() - static_cast<float>(margin), bb.yMin() - static_cast<float>(margin), bb.zMin() + static_cast<float>(z_offset)),
-        osg::Vec3(0.0f, 2.0f * static_cast<float>(margin) + (bb.yMax() - bb.yMin()), bb.zMin() + static_cast<float>(z_offset)),
-        osg::Vec3(2.0f * static_cast<float>(margin) + (bb.xMax() - bb.xMin()), 0.0f, bb.zMin() + static_cast<float>(z_offset)));
-    osg::ref_ptr<osg::Vec4Array> color = new osg::Vec4Array;
-    color->push_back(osg::Vec4(0.8f, 0.8f, 0.8f, 1.0f));
-    geom->setColorArray(color.get());
-    geom->setColorBinding(osg::Geometry::BIND_PER_PRIMITIVE_SET);
-    ground->addDrawable(geom);
-
-    envTx_->addChild(ground.get());
-
-    return 0;
-}
-
 Viewer::Viewer(roadmanager::OpenDrive* odrManager,
                const char*             modelFilename,
                const char*             scenarioFilename,
@@ -1576,11 +1359,16 @@ Viewer::Viewer(roadmanager::OpenDrive* odrManager,
     osg_screenshot_event_handler_ = false;
     imgCallback_                  = {nullptr, nullptr};
     winDim_                       = {-1, -1, -1, -1};
-    bool decoration               = true;
-    int  screenNum                = -1;
+    time_                         = 0.0;
+    frictionScaleFactor_          = 1.0;  // default friction scale factor
+    defaultClearColorUsed_        = false;
+    fogColor_                     = {0.75f, 0.75f, 0.75f};  // Default fog color, average of color_background
+
+    bool decoration = true;
+    int  screenNum  = -1;
 
     int aa_mode = DEFAULT_AA_MULTISAMPLES;
-    if (opt && (arg_str = opt->GetOptionArg("aa_mode")) != "")
+    if (opt && (arg_str = opt->GetOptionValue("aa_mode")) != "")
     {
         aa_mode = atoi(arg_str.c_str());
     }
@@ -1614,7 +1402,12 @@ Viewer::Viewer(roadmanager::OpenDrive* odrManager,
     {
         // Viewer failed to create graphics context. Probably Anti Aliasing is not supported on executing platform.
         // Make another attempt without AA
-        LOG("Viewer failure. Probably requested level of Anti Aliasing (%d multisamples) is not supported. Making another attempt without Anti-Alias and on first screen.",
+        LOG_ERROR(
+            "Failed to create window {} {} {} {}. Maybe the Anti Aliasing setting ({} multisamples) is not supported. Making another attempt without Anti-Alias and on first screen.",
+            winDim_.x,
+            winDim_.y,
+            winDim_.w,
+            winDim_.h,
             aa_mode);
 
         InitTraits(traits, winDim_.x, winDim_.y, winDim_.w, winDim_.h, 0, decoration, 0, opt->GetOptionSet("headless"));
@@ -1623,7 +1416,7 @@ Viewer::Viewer(roadmanager::OpenDrive* odrManager,
 
         if (!gc.valid())
         {
-            LOG("Failed 2nd attempt to create viewer, giving up. Try --headless option to run without viewer");
+            LOG_ERROR("Failed 2nd attempt to create viewer, giving up. Try --headless option to run without viewer");
             return;
         }
     }
@@ -1631,14 +1424,20 @@ Viewer::Viewer(roadmanager::OpenDrive* odrManager,
     osgViewer::GraphicsWindow* gw = dynamic_cast<osgViewer::GraphicsWindow*>(gc.get());
     if (!opt->GetOptionSet("headless") && gw == nullptr)
     {
-        LOG("Failed to create viewer window. Try --headless option to run without window");
+        LOG_ERROR("Failed to create viewer window {} {} {} {}. Try --headless option to run without window",
+                  winDim_.x,
+                  winDim_.y,
+                  winDim_.w,
+                  winDim_.h);
         return;
     }
+
+    LOG_INFO("Window created at {},{} with size {},{}", MAX(0, traits->x), MAX(0, traits->y), traits->width, traits->height);
 
     osgViewer_ = new osgViewer::Viewer;
     if (osgViewer_ == nullptr)
     {
-        LOG("Failed to initialize OSG viewer");
+        LOG_ERROR("Failed to initialize OSG viewer");
         return;
     }
 
@@ -1649,7 +1448,8 @@ Viewer::Viewer(roadmanager::OpenDrive* odrManager,
     if (!clear_color)
     {
         // Default background color
-        camera->setClearColor(osg::Vec4(0.5f, 0.75f, 1.0f, 1.0f));
+        // camera->setClearColor(osg::Vec4(0.5f, 0.75f, 1.0f, 1.0f)); currrnt code, check if it is needed
+        camera->setClearColor(osg::Vec4(color_background[0], color_background[1], color_background[2], 1.0f));
     }
     else
     {
@@ -1663,12 +1463,13 @@ Viewer::Viewer(roadmanager::OpenDrive* odrManager,
 
     osgViewer_->setCamera(camera.get());
 
-    envTx_ = new osg::PositionAttitudeTransform;
-    envTx_->setPosition(osg::Vec3(0, 0, 0));
-    envTx_->setScale(osg::Vec3(1, 1, 1));
-    envTx_->setAttitude(osg::Quat(0, 0, 0, 1));
-    envTx_->setNodeMask(NodeMask::NODE_MASK_ENV_MODEL);
-    rootnode_->addChild(envTx_);
+    envGroup_ = new osg::Group;
+    envGroup_->setNodeMask(NodeMask::NODE_MASK_ENV_MODEL);
+    env_origin2odr_ = new osg::MatrixTransform;
+    envGroup_->addChild(env_origin2odr_);  // add a subnode for all elements translated from OpenDRIVE origin
+    rootnode_->addChild(envGroup_);
+    root_origin2odr_ = new osg::MatrixTransform;
+    rootnode_->addChild(root_origin2odr_);
 
     ClearNodeMaskBits(NodeMask::NODE_MASK_TRAIL_LINES);  // hide trails per default
     ClearNodeMaskBits(NodeMask::NODE_MASK_TRAIL_DOTS);
@@ -1685,22 +1486,41 @@ Viewer::Viewer(roadmanager::OpenDrive* odrManager,
 
     roadSensors_ = new osg::Group;
     roadSensors_->setNodeMask(NodeMask::NODE_MASK_ODR_FEATURES);
-    rootnode_->addChild(roadSensors_);
+    root_origin2odr_->addChild(roadSensors_);
     trails_ = new osg::Group;
-    rootnode_->addChild(trails_);
+    root_origin2odr_->addChild(trails_);
     odrLines_ = new osg::Group;
     odrLines_->setNodeMask(NodeMask::NODE_MASK_ODR_FEATURES);
-    rootnode_->addChild(odrLines_);
+    root_origin2odr_->addChild(odrLines_);
     osiFeatures_ = new osg::Group;
-    rootnode_->addChild(osiFeatures_);
+    root_origin2odr_->addChild(osiFeatures_);
     trajectoryLines_ = new osg::Group;
     trajectoryLines_->setNodeMask(NodeMask::NODE_MASK_TRAJECTORY_LINES);
-    rootnode_->addChild(trajectoryLines_);
+    root_origin2odr_->addChild(trajectoryLines_);
     routewaypoints_ = new osg::Group;
     routewaypoints_->setNodeMask(NodeMask::NODE_MASK_ROUTE_WAYPOINTS);
-    rootnode_->addChild(routewaypoints_);
+    root_origin2odr_->addChild(routewaypoints_);
 
     exe_path_ = exe_path;
+
+    // environment_bs_ = environment_->getBound();  // bounding sphere of the environment model
+    // printf("bs radius %.2f pos: %.2f, %.2f\n", environment_bs_.radius(), environment_bs_.center().x(), environment_bs_.center().y());
+
+    // establish origin of the road network, pick coordinates of the first lane OSI point
+    if (odrManager_->GetNumOfRoads() > 0)
+    {
+        if (odrManager_->GetRoadByIdx(0))
+        {
+            if (odrManager_->GetRoadByIdx(0)->GetLaneSectionByIdx(0))
+            {
+                if (odrManager_->GetRoadByIdx(0)->GetLaneSectionByIdx(0)->GetLaneByIdx(0))
+                {
+                    origin_[0] = odrManager_->GetRoadByIdx(0)->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetXfromIdx(0);
+                    origin_[1] = odrManager_->GetRoadByIdx(0)->GetLaneSectionByIdx(0)->GetLaneByIdx(0)->GetOSIPoints()->GetYfromIdx(0);
+                }
+            }
+        }
+    }
 
     // add environment
     if (modelFilename != 0 && strcmp(modelFilename, ""))
@@ -1730,7 +1550,7 @@ Viewer::Viewer(roadmanager::OpenDrive* odrManager,
             {
                 if (AddEnvironment(file_name_candidates[i].c_str()) == 0)
                 {
-                    LOG("Loaded scenegraph: %s", file_name_candidates[i].c_str());
+                    LOG_INFO("Loaded scenegraph: {}", file_name_candidates[i]);
                     break;
                 }
             }
@@ -1738,64 +1558,54 @@ Viewer::Viewer(roadmanager::OpenDrive* odrManager,
 
         if (i == file_name_candidates.size())
         {
-            LOG("Failed to read environment model %s!", modelFilename);
+            LOG_ERROR("Failed to read environment model {}", modelFilename);
         }
     }
 
-    if (environment_ == 0 || opt->GetOptionSet("enforce_generate_model"))
+    bool gen_road_surface = (environment_ == nullptr || opt->GetOptionSet("enforce_generate_model")) && odrManager->GetNumOfRoads() > 0;
+    bool gen_road_objects = !(opt && opt->GetOptionSet("generate_no_road_objects"));
+    bool optimize         = !SE_Env::Inst().GetOptions().GetOptionSet("save_generated_model");
+    roadGeom              = std::make_unique<RoadGeom>(odrManager,
+                                          environment_,
+                                          origin_,
+                                          gen_road_surface,
+                                          gen_road_objects,
+                                          opt->GetOptionSet("ground_plane"),
+                                          exe_path_,
+                                          optimize);
+    if (roadGeom->root_ != nullptr)
     {
-        if (odrManager->GetNumOfRoads() > 0)
-        {
-            // No visual model of the road network loaded
-            // Generate a simplistic 3D model based on OpenDRIVE content
-            LOG("No scenegraph 3D model loaded. Generating a simplistic one...");
-
-            roadGeom     = std::make_unique<RoadGeom>(odrManager);
-            environment_ = roadGeom->root_;
-            envTx_->addChild(environment_);
-
-            // Since the generated 3D model is based on OSI features, let's hide those
-            ClearNodeMaskBits(NodeMask::NODE_MASK_ODR_FEATURES);
-            ClearNodeMaskBits(NodeMask::NODE_MASK_OSI_LINES);
-        }
+        environment_ = roadGeom->root_;
     }
+    env_origin2odr_->addChild(environment_);
 
-    // Add an optional large ground surface
-    if (opt->GetOptionSet("ground_plane"))
-    {
-        AddGroundSurface();
-    }
+    // Since the generated 3D model is based on OSI features, let's hide those
+    ClearNodeMaskBits(NodeMask::NODE_MASK_ODR_FEATURES);
+    ClearNodeMaskBits(NodeMask::NODE_MASK_OSI_LINES);
 
-    // const osg::BoundingSphere bs = environment_->getBound();
-    // printf("bs radius %.2f\n", bs.radius());
-    if (odrManager->GetNumOfRoads() > 0 && !CreateRoadLines(odrManager))
+    env_origin2odr_->setMatrix(osg::Matrix::translate(origin_));
+    root_origin2odr_->setMatrix(osg::Matrix::translate(origin_));
+
+    if (odrManager->GetNumOfRoads() > 0 && !CreateRoadLines(this, odrManager))
     {
-        LOG("Viewer::Viewer Failed to create road lines!");
+        LOG_ERROR("Viewer::Viewer Failed to create road lines!");
     }
 
     if (odrManager->GetNumOfRoads() > 0 && !CreateRoadMarkLines(odrManager))
     {
-        LOG("Viewer::Viewer Failed to create road mark lines!");
-    }
-
-    if (!(opt && opt->GetOptionSet("generate_no_road_objects")))
-    {
-        if (odrManager->GetNumOfRoads() > 0 && CreateRoadSignsAndObjects(odrManager) != 0)
-        {
-            LOG("Viewer::Viewer Failed to create road signs and objects!");
-        }
+        LOG_ERROR("Viewer::Viewer Failed to create road mark lines!");
     }
 
     if (roadGeom && opt && (opt->GetOptionSet("save_generated_model")))
     {
         // If road model was generated AND user want to save it
-        if (osgDB::writeNodeFile(*envTx_, "generated_road.osgb"))
+        if (osgDB::writeNodeFile(*envGroup_, "generated_road.osgb"))
         {
-            LOG("Saved generated 3D model in \"generated_road.osgb\"");
+            LOG_INFO("Saved generated 3D model in \"generated_road.osgb\"");
         }
         else
         {
-            LOG("Failed to save generated 3D model");
+            LOG_ERROR("Failed to save generated 3D model");
         }
     }
 
@@ -1859,14 +1669,15 @@ Viewer::Viewer(roadmanager::OpenDrive* odrManager,
         }
         else
         {
-            LOG("Invalid clear color \"%s\" - setting some default", colorStr.c_str());
+            LOG_WARN("Invalid clear color \"{}\" - setting some default", colorStr);
         }
     }
 
     if (!clearColorSet)
     {
-        camera->setClearColor(osg::Vec4(0.5f, 0.75f, 1.0f, 1.0f));
-        clearColorSet = true;
+        camera->setClearColor(osg::Vec4(color_background[0], color_background[1], color_background[2], 1.0f));
+        clearColorSet          = true;
+        defaultClearColorUsed_ = true;
     }
 
     // Setup the camera models
@@ -1890,8 +1701,8 @@ Viewer::Viewer(roadmanager::OpenDrive* odrManager,
     terrainManipulator = new osgGA::TerrainManipulator();
     terrainManipulator->setWheelZoomFactor(-1 * terrainManipulator->getWheelZoomFactor());  // inverse scroll wheel
 
-    rubberbandManipulator_ = new osgGA::RubberbandManipulator(static_cast<unsigned int>(camMode_));
-    SetCameraTrackNode(envTx_, true);
+    rubberbandManipulator_ = new osgGA::RubberbandManipulator(static_cast<unsigned int>(camMode_), origin_, time_);
+    SetCameraTrackNode(envGroup_, true);
 
     {
         osg::ref_ptr<osgGA::KeySwitchMatrixManipulator> keyswitchManipulator = new osgGA::KeySwitchMatrixManipulator;
@@ -1918,14 +1729,19 @@ Viewer::Viewer(roadmanager::OpenDrive* odrManager,
     light->setPosition(osg::Vec4(-7500., 5000., 10000., 1.0));
     light->setDirection(osg::Vec3(7.5, -5., -10.));
     float ambient = 0.4f;
-    light->setAmbient(osg::Vec4(ambient, ambient, 0.9f * ambient, 1.0f));
-    light->setDiffuse(osg::Vec4(0.8f, 0.8f, 0.7f, 1.0f));
+    light->setAmbient(osg::Vec4(ambient, ambient, 0.9 * ambient, 1));
+    light->setDiffuse(osg::Vec4(0.8, 0.8, 0.7, 1));
 
     // Overlay text
+    float font_size = 12.0f;
+    if (opt->IsOptionArgumentSet("text_scale"))
+    {
+        font_size *= atof(opt->GetOptionValue("text_scale").c_str());
+    }
     osg::ref_ptr<osg::Geode> textGeode = new osg::Geode;
     infoText                           = new osgText::Text;
     infoText->setColor(osg::Vec4(0.9f, 0.9f, 0.9f, 1.0f));
-    infoText->setCharacterSize(12.0f);
+    infoText->setCharacterSize(font_size);
     infoText->setAxisAlignment(osgText::Text::SCREEN);
     infoText->setPosition(osg::Vec3(10, 10, 0));
     infoText->setDataVariance(osg::Object::DYNAMIC);
@@ -1963,15 +1779,108 @@ Viewer::Viewer(roadmanager::OpenDrive* odrManager,
     osgViewer_->realize();
 }
 
+void Viewer::CreateFog(const double range, const double sunIntensityFactor, const double cloudinessFactor)
+{
+    /*
+        Generate fog based on the following equation:
+        fogColor = color_gray * cloudiness + color_background_gray * (1 - cloudiness)
+
+        Apply fog with sunIntensityFactor, but keep the fogColor as gray for blending with sky color later.
+    */
+    osg::ref_ptr<osg::Fog> fog = new osg::Fog;
+    fog->setMode(osg::Fog::EXP);
+    fog->setDensity(1 / range);
+    fog->setStart(static_cast<float>(-range));
+    fog->setEnd(static_cast<float>(range));
+
+    double skyGray   = (color_background[0] + color_background[1] + color_background[2]) / 3.0;
+    double cloudGray = (color_gray[0] + color_gray[1] + color_gray[2]) / 3.0;
+    double grayFog   = cloudGray * cloudinessFactor + skyGray * (1 - cloudinessFactor);
+
+    fogColor_[0] = grayFog;
+    fogColor_[1] = grayFog;
+    fogColor_[2] = grayFog;
+
+    fog->setColor(osg::Vec4(sunIntensityFactor * fogColor_[0], sunIntensityFactor * fogColor_[1], sunIntensityFactor * fogColor_[2], 1.0f));
+    rootnode_->getOrCreateStateSet()->setAttributeAndModes(fog.get());
+}
+
+void viewer::Viewer::SetSkyColor(const double sunIntensityFactor, const double fogVisualRangeFactor, const double cloudinessFactor)
+{
+    /*
+     Sky color equation: sunIntensity * ((1 - cloudiness) * background + cloudiness * fogcolor), where:
+     background = visual_range * fogcolor + (1 - visual_range) * color_background
+     fogColor = color_gray * cloudiness + color_background_gray * (1 - cloudiness)
+    */
+    osg::Light* light = osgViewer_->getLight();
+    light->setDiffuse(osg::Vec4(0.9 * sunIntensityFactor - 0.1, 0.9 * sunIntensityFactor - 0.1, 0.8 * sunIntensityFactor - 0.1, 1));
+
+    // Blend background color (blue) with fog color (gray) based on fogVisualRangeFactor (scaled up to have higher influence of fog with low visual
+    // range) This creates a smooth transition from blue sky to gray fog as the visual range decreases.
+    float clamped_visual_range = CLAMP(0.0, 1.0, fogVisualRangeFactor * 100.0);
+    float blended_background_r = clamped_visual_range * fogColor_[0] + (1 - clamped_visual_range) * color_background[0];
+    float blended_background_g = clamped_visual_range * fogColor_[1] + (1 - clamped_visual_range) * color_background[1];
+    float blended_background_b = clamped_visual_range * fogColor_[2] + (1 - clamped_visual_range) * color_background[2];
+
+    // Blend the background color with fog color based on cloudinessFactor (very cloudy sky will be overwhelmingly gray), else blue sky with fog
+    // influence
+    float r = sunIntensityFactor * ((1 - cloudinessFactor) * blended_background_r + cloudinessFactor * fogColor_[0]);
+    float g = sunIntensityFactor * ((1 - cloudinessFactor) * blended_background_g + cloudinessFactor * fogColor_[1]);
+    float b = sunIntensityFactor * ((1 - cloudinessFactor) * blended_background_b + cloudinessFactor * fogColor_[2]);
+
+    osgViewer_->getCamera()->setClearColor(osg::Vec4(r, g, b, 0.0f));
+}
+
+void Viewer::CreateWeatherGroup(const scenarioengine::OSCEnvironment& environment)
+{
+    weatherGroup_ = new osg::PositionAttitudeTransform;
+    if (environment.IsFogSet())
+    {
+        CreateFog(environment.GetFog().visibility_range, environment.GetSunIntensityFactor(), environment.GetFractionalCloudStateFactor());
+    }
+    if (defaultClearColorUsed_)  // no --clear-color option
+    {
+        SetSkyColor(environment.GetSunIntensityFactor(), environment.GetFogVisibilityRangeFactor(), environment.GetFractionalCloudStateFactor());
+    }
+
+    if (environment.IsRoadConditionSet())
+    {
+        UpdateFrictonScaleFactorInMaterial(environment.GetRoadCondition().friction_scale_factor);
+    }
+
+    rootnode_->addChild(weatherGroup_);
+}
+
+void viewer::Viewer::UpdateFrictonScaleFactorInMaterial(const double factor)
+{
+    if (roadGeom != nullptr)
+    {
+        for (const auto& [key, std_material] : roadGeom->std_materials_)
+        {
+            double material_friction;
+            if (std_material->getUserValue("friction", material_friction))
+            {
+                osg::Vec4 friction_color = roadGeom->GetFrictionColor(material_friction * factor);
+                std_material->setAmbient(osg::Material::FRONT_AND_BACK, friction_color);
+                std_material->setDiffuse(osg::Material::FRONT_AND_BACK, friction_color);
+            }
+        }
+    }
+}
+
 Viewer::~Viewer()
 {
-    renderSemaphore.Wait();     //  wait for any ongoing rendering
-    osgViewer_->setDone(true);  // flag OSG to tear down
+    renderSemaphore.Wait();  //  wait for any ongoing rendering
 
-    while (!osgViewer_->done() || osgViewer_->areThreadsRunning())
+    if (osgViewer_ != nullptr)
     {
-        osgViewer_->stopThreading();
-        SE_sleep(100);  // In case viewer still not closed
+        osgViewer_->setDone(true);  // flag OSG to tear down
+
+        while (!osgViewer_->done() || osgViewer_->areThreadsRunning())
+        {
+            osgViewer_->stopThreading();
+            SE_sleepMilliseconds(100);  // In case viewer still not closed
+        }
     }
 
     for (size_t i = 0; i < entities_.size(); i++)
@@ -1985,20 +1894,6 @@ Viewer::~Viewer()
     }
 
     entities_.clear();
-}
-
-void Viewer::PrintUsage()
-{
-    // Inform about a few OSG options
-    printf("Additional OSG graphics options:\n");
-    printf("  --clear-color <color>                      Set the background color of the viewer in the form \"r,g,b[,a]\"\n");
-    printf("  --screen <num>                             Set the screen to use when multiple screens are present\n");
-    printf("  --window <x y w h>                         Set the position x, y and size w, h of the viewer window. -1 -1 -1 -1 for fullscreen.\n");
-    printf(
-        "  --borderless-window <x y w h>	             Set the position x, y and size w, h of a borderless viewer window. -1 -1 -1 -1 for fullscreen.\n");
-    printf("  --SingleThreaded                           Run application and all graphics tasks in one single thread.\n");
-    printf("  --lodScale <LOD scalefactor>               Adjust Level Of Detail 1=default >1 decrease fidelity <1 increase fidelity\n");
-    printf("\n");
 }
 
 void Viewer::AddCustomCamera(double x, double y, double z, double h, double p, bool fixed_pos)
@@ -2077,6 +1972,11 @@ void Viewer::SetCameraMode(int mode)
     UpdateCameraFOV();
 }
 
+int Viewer::GetCameraMode()
+{
+    return camMode_;
+}
+
 int Viewer::GetNumberOfCameraModes()
 {
     return static_cast<int>(rubberbandManipulator_->GetNumberOfCameraModes());
@@ -2139,6 +2039,7 @@ EntityModel* Viewer::CreateEntityModel(std::string             modelFilepath,
                                        bool                    road_sensor,
                                        std::string             name,
                                        OSCBoundingBox*         boundingBox,
+                                       double                  x_offset,
                                        EntityScaleMode         scaleMode)
 {
     // Load 3D model
@@ -2149,6 +2050,7 @@ EntityModel* Viewer::CreateEntityModel(std::string             modelFilepath,
     std::vector<std::string> file_name_candidates;
     double                   carStdDim[]  = {4.5, 1.8, 1.5};
     double                   carStdOrig[] = {1.5, 0.0, 0.75};
+    std::string              filepath;
 
     // Check if model already loaded
     for (size_t i = 0; i < entities_.size(); i++)
@@ -2171,7 +2073,7 @@ EntityModel* Viewer::CreateEntityModel(std::string             modelFilepath,
         {
             file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], modelFilepath));
             file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], "../models/" + modelFilepath));
-            file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], "/../resources/models/" + modelFilepath));
+            file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], "../resources/models/" + modelFilepath));
             file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], FileNameOf(modelFilepath)));
         }
         for (size_t i = 0; i < file_name_candidates.size(); i++)
@@ -2180,6 +2082,7 @@ EntityModel* Viewer::CreateEntityModel(std::string             modelFilepath,
             {
                 if (modelgroup = LoadEntityModel(file_name_candidates[i].c_str(), modelBB))
                 {
+                    filepath = fs::path(file_name_candidates[i]).lexically_normal().generic_string();
                     break;
                 }
             }
@@ -2188,39 +2091,45 @@ EntityModel* Viewer::CreateEntityModel(std::string             modelFilepath,
 
     // Make sure we have a 3D model
     // Set color of vehicle based on its index
-    float* color;
-    float  b     = 1.0;  // brighness
-    int    index = entities_.size() % 4;
+    const float(*color)[3] = nullptr;
+    float b                = 1.0;  // brighness
+    int   index            = entities_.size() % 4;
 
     if (index == 0)
-        color = color_light_gray;
+    {
+        color = &SE_Color::Color2RBG(SE_Color::Color::LIGHT_GRAY);
+    }
     else if (index == 1)
-        color = color_red;
+    {
+        color = &SE_Color::Color2RBG(SE_Color::Color::RED);
+    }
     else if (index == 2)
-        color = color_blue;
+    {
+        color = &SE_Color::Color2RBG(SE_Color::Color::BLUE);
+    }
     else
-        color = color_yellow;
+    {
+        color = &SE_Color::Color2RBG(SE_Color::Color::YELLOW);
+    }
 
     osg::Material* material = new osg::Material();
-    material->setDiffuse(osg::Material::FRONT, osg::Vec4(b * color[0], b * color[1], b * color[2], 1.0f));
-    material->setAmbient(osg::Material::FRONT, osg::Vec4(b * color[0], b * color[1], b * color[2], 1.0f));
+    material->setDiffuse(osg::Material::FRONT, osg::Vec4(b * (*color)[0], b * (*color)[1], b * (*color)[2], 1.0f));
+    material->setAmbient(osg::Material::FRONT, osg::Vec4(b * (*color)[0], b * (*color)[1], b * (*color)[2], 1.0f));
     osg::ref_ptr<osg::PositionAttitudeTransform> modeltx = new osg::PositionAttitudeTransform;
     if (modelgroup == nullptr)
     {
         if (modelFilepath.empty())
         {
-            LOG("No filename specified for model! - creating a dummy model");
+            LOG_WARN("No filename specified for model! - creating a dummy model");
         }
         else
         {
-            LOG("Failed to load visual model %s. %s",
-                modelFilepath.c_str(),
-                file_name_candidates.size() > 1 ? "Also tried the following paths:" : "");
+            LOG_ERROR("Failed to load visual model {}. {}", modelFilepath, file_name_candidates.size() > 1 ? "Also tried the following paths:" : "");
             for (size_t i = 1; i < file_name_candidates.size(); i++)
             {
-                LOG("    %s", file_name_candidates[i].c_str());
+                LOG_INFO("    {}", file_name_candidates[i]);
             }
-            LOG("Creating a dummy model instead");
+            LOG_WARN("Creating a dummy model instead");
         }
 
         // Create a dummy cuboid
@@ -2274,13 +2183,13 @@ EntityModel* Viewer::CreateEntityModel(std::string             modelFilepath,
         {
             if (scaleMode == EntityScaleMode::MODEL_TO_BB)
             {
-                LOG("Request to scale model (%s / %s) to non existing or 0 size bounding box. Created a dummy BB of typical car dimension.",
-                    name.c_str(),
-                    modelFilepath.c_str());
+                LOG_WARN("Request to scale model ({} / {}) to non existing or 0 size bounding box. Created a dummy BB of typical car dimension.",
+                         name,
+                         modelFilepath);
             }
             else if (scaleMode == EntityScaleMode::NONE)
             {
-                LOG("Non existing or 0 size bounding box. Created a dummy BB of typical car dimension.");
+                LOG_WARN("Non existing or 0 size bounding box. Created a dummy BB of typical car dimension.");
             }
 
             // No bounding box specified. Create a bounding box of typical car dimension.
@@ -2303,8 +2212,14 @@ EntityModel* Viewer::CreateEntityModel(std::string             modelFilepath,
         }
     }
 
-    if (scaleMode == EntityScaleMode::BB_TO_MODEL)
+    if (scaleMode == EntityScaleMode::NONE)
     {
+        modeltx->setPosition(osg::Vec3(x_offset, 0.0, 0.0));
+    }
+    else if (scaleMode == EntityScaleMode::BB_TO_MODEL)
+    {
+        modeltx->setPosition(osg::Vec3(x_offset, 0.0, 0.0));
+
         // Create visual model of object bounding box, copy values from model bounding box
         bbGeode->addDrawable(new osg::ShapeDrawable(new osg::Box(modelBB.center(),
                                                                  modelBB._max.x() - modelBB._min.x(),
@@ -2321,21 +2236,21 @@ EntityModel* Viewer::CreateEntityModel(std::string             modelFilepath,
             boundingBox->dimensions_.width_  = modelBB._max.y() - modelBB._min.y();
             boundingBox->dimensions_.height_ = modelBB._max.z() - modelBB._min.z();
 
-            LOG("Adjusted %s bounding box to model %s - xyz: %.2f, %.2f, %.2f lwh: %.2f, %.2f, %.2f",
-                name.c_str(),
-                FileNameOf(modelFilepath).c_str(),
-                static_cast<double>(boundingBox->center_.x_),
-                static_cast<double>(boundingBox->center_.y_),
-                static_cast<double>(boundingBox->center_.z_),
-                static_cast<double>(boundingBox->dimensions_.length_),
-                static_cast<double>(boundingBox->dimensions_.width_),
-                static_cast<double>(boundingBox->dimensions_.height_));
+            LOG_INFO("Adjusted {} bounding box to model {} - xyz: {:.2f}, {:.2f}, {:.2f} lwh: {:.2f}, {:.2f}, {:.2f}",
+                     name,
+                     FileNameOf(modelFilepath),
+                     static_cast<double>(boundingBox->center_.x_),
+                     static_cast<double>(boundingBox->center_.y_),
+                     static_cast<double>(boundingBox->center_.z_),
+                     static_cast<double>(boundingBox->dimensions_.length_),
+                     static_cast<double>(boundingBox->dimensions_.width_),
+                     static_cast<double>(boundingBox->dimensions_.height_));
         }
     }
     else if (scaleMode == EntityScaleMode::MODEL_TO_BB)
     {
         // Scale loaded 3d model
-        modeltx->getOrCreateStateSet()->setMode(GL_RESCALE_NORMAL, osg::StateAttribute::ON);
+        modeltx->getOrCreateStateSet()->setMode(GL_NORMALIZE, osg::StateAttribute::ON);
 
         double sx = boundingBox->dimensions_.length_ / (modelBB._max.x() - modelBB._min.x());
         double sy = boundingBox->dimensions_.width_ / (modelBB._max.y() - modelBB._min.y());
@@ -2374,25 +2289,28 @@ EntityModel* Viewer::CreateEntityModel(std::string             modelFilepath,
     EntityModel* emodel;
     if (type == EntityModel::EntityType::VEHICLE)
     {
-        emodel = new CarModel(osgViewer_, group, rootnode_, trails_, trajectoryLines_, dot_node_, routewaypoints_, trail_color, name);
+        emodel = new CarModel(this, group, root_origin2odr_, trails_, trajectoryLines_, dot_node_, routewaypoints_, trail_color, name);
     }
     else if (type == EntityModel::EntityType::MOVING)
     {
-        emodel = new MovingModel(osgViewer_, group, rootnode_, trails_, trajectoryLines_, dot_node_, routewaypoints_, trail_color, name);
+        emodel = new MovingModel(this, group, root_origin2odr_, trails_, trajectoryLines_, dot_node_, routewaypoints_, trail_color, name);
     }
     else
     {
-        emodel = new EntityModel(osgViewer_, group, rootnode_, trails_, trajectoryLines_, dot_node_, routewaypoints_, trail_color, name);
+        emodel = new EntityModel(this, group, root_origin2odr_, trails_, trajectoryLines_, dot_node_, routewaypoints_, trail_color, name);
     }
 
-    emodel->filename_ = modelFilepath;
+    // if file found, set full path, else use the requested filename
+    emodel->filename_ = filepath.empty() ? modelFilepath : filepath;
 
     emodel->blend_color_ = new osg::BlendColor(osg::Vec4(1, 1, 1, 1));
     emodel->blend_color_->setDataVariance(osg::Object::DYNAMIC);
+    emodel->blend_func_ = new osg::BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     emodel->state_set_ = emodel->lod_->getOrCreateStateSet();  // Creating material
-    osg::BlendFunc* bf = new osg::BlendFunc(osg::BlendFunc::CONSTANT_ALPHA, osg::BlendFunc::ONE_MINUS_CONSTANT_ALPHA);
     emodel->state_set_->setAttributeAndModes(emodel->blend_color_);
-    emodel->state_set_->setAttributeAndModes(bf);
+    emodel->state_set_->setAttributeAndModes(emodel->blend_func_);
+
     emodel->state_set_->setMode(GL_DEPTH_TEST, osg::StateAttribute::ON);
     emodel->state_set_->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
 
@@ -2419,7 +2337,12 @@ EntityModel* Viewer::CreateEntityModel(std::string             modelFilepath,
     emodel->on_screen_info_.geode_    = new osg::Geode;
     emodel->on_screen_info_.osg_text_ = new osgText::Text;
     emodel->on_screen_info_.osg_text_->setColor(osg::Vec4(1.0f, 1.0f, 0.1f, 1.0f));
-    emodel->on_screen_info_.osg_text_->setCharacterSize(10.0);
+    float font_size = 10.0f;
+    if (SE_Env::Inst().GetOptions().IsOptionArgumentSet("text_scale"))
+    {
+        font_size *= atof(SE_Env::Inst().GetOptions().GetOptionValue("text_scale").c_str());
+    }
+    emodel->on_screen_info_.osg_text_->setCharacterSize(font_size);
     emodel->on_screen_info_.osg_text_->setCharacterSizeMode(osgText::TextBase::CharacterSizeMode::SCREEN_COORDS);
     emodel->on_screen_info_.osg_text_->setAxisAlignment(osgText::Text::SCREEN);
     emodel->on_screen_info_.osg_text_->setDrawMode(osgText::Text::TEXT);
@@ -2561,7 +2484,8 @@ osg::ref_ptr<osg::Group> Viewer::LoadEntityModel(const char* filename, osg::Boun
     {
         shadow_tx = new osg::PositionAttitudeTransform;
         shadow_tx->setName("shadow_tx");
-        shadow_tx->setPosition(osg::Vec3d(xc, yc, 0.05 * elev));
+        shadow_tx->setPosition(osg::Vec3d(xc, yc, 0.05 * elev + bb._min.z()));
+        shadow_tx->getOrCreateStateSet()->setMode(GL_NORMALIZE, osg::StateAttribute::ON);
         shadow_tx->setScale(osg::Vec3d(SHADOW_SCALE * (dx / 2), SHADOW_SCALE * (dy / 2), 1.0));
         shadow_tx->addChild(shadow_node_);
 
@@ -2578,229 +2502,102 @@ bool Viewer::CreateRoadMarkLines(roadmanager::OpenDrive* od)
     double    z_offset = 0.10;
     osg::Vec3 point(0, 0, 0);
 
-    for (int r = 0; r < od->GetNumOfRoads(); r++)
+    for (unsigned int r = 0; r < od->GetNumOfRoads(); r++)
     {
         roadmanager::Road* road = od->GetRoadByIdx(r);
-        for (int i = 0; i < road->GetNumberOfLaneSections(); i++)
+        for (unsigned int i = 0; i < road->GetNumberOfLaneSections(); i++)
         {
             roadmanager::LaneSection* lane_section = road->GetLaneSectionByIdx(i);
-            for (int j = 0; j < lane_section->GetNumberOfLanes(); j++)
+            for (unsigned int j = 0; j < lane_section->GetNumberOfLanes(); j++)
             {
                 roadmanager::Lane* lane = lane_section->GetLaneByIdx(j);
-                for (int k = 0; k < lane->GetNumberOfRoadMarks(); k++)
+                for (unsigned int k = 0; k < lane->GetNumberOfRoadMarks(); k++)
                 {
                     roadmanager::LaneRoadMark* lane_roadmark = lane->GetLaneRoadMarkByIdx(k);
-                    for (int m = 0; m < lane_roadmark->GetNumberOfRoadMarkTypes(); m++)
+                    for (unsigned int m = 0; m < lane_roadmark->GetNumberOfRoadMarkTypes(); m++)
                     {
                         roadmanager::LaneRoadMarkType* lane_roadmarktype = lane_roadmark->GetLaneRoadMarkTypeByIdx(m);
-                        int                            inner_index       = -1;
-                        if (lane_roadmark->GetType() == roadmanager::LaneRoadMark::RoadMarkType::BROKEN_SOLID ||
-                            lane_roadmark->GetType() == roadmanager::LaneRoadMark::RoadMarkType::SOLID_BROKEN)
-                        {
-                            if (lane_roadmarktype->GetNumberOfRoadMarkTypeLines() < 2)
-                            {
-                                break;
-                                std::runtime_error("You need to specify at least 2 line for broken solid or solid broken roadmark type");
-                            }
-                            std::vector<double> sort_solidbroken_brokensolid;
-                            for (int q = 0; q < lane_roadmarktype->GetNumberOfRoadMarkTypeLines(); q++)
-                            {
-                                sort_solidbroken_brokensolid.push_back(lane_roadmarktype->GetLaneRoadMarkTypeLineByIdx(q)->GetTOffset());
-                            }
 
-                            if (lane->GetId() < 0 || lane->GetId() == 0)
-                            {
-                                inner_index =
-                                    static_cast<int>(std::max_element(sort_solidbroken_brokensolid.begin(), sort_solidbroken_brokensolid.end()) -
-                                                     sort_solidbroken_brokensolid.begin());
-                            }
-                            else
-                            {
-                                inner_index =
-                                    static_cast<int>(std::min_element(sort_solidbroken_brokensolid.begin(), sort_solidbroken_brokensolid.end()) -
-                                                     sort_solidbroken_brokensolid.begin());
-                            }
-                        }
-
-                        for (int n = 0; n < lane_roadmarktype->GetNumberOfRoadMarkTypeLines(); n++)
+                        for (unsigned int n = 0; n < lane_roadmarktype->GetNumberOfRoadMarkTypeLines(); n++)
                         {
                             roadmanager::LaneRoadMarkTypeLine* lane_roadmarktypeline = lane_roadmarktype->GetLaneRoadMarkTypeLineByIdx(n);
                             roadmanager::OSIPoints*            curr_osi_rm           = lane_roadmarktypeline->GetOSIPoints();
 
-                            bool broken = false;
-                            if (lane_roadmark->GetType() == roadmanager::LaneRoadMark::RoadMarkType::BROKEN_SOLID)
+                            // osg references for road mark osi points
+                            osg::ref_ptr<osg::Geometry>  osi_rm_geom   = new osg::Geometry;
+                            osg::ref_ptr<osg::Vec3Array> osi_rm_points = new osg::Vec3Array;
+                            osg::ref_ptr<osg::Vec4Array> osi_rm_color  = new osg::Vec4Array;
+                            osg::ref_ptr<osg::Point>     osi_rm_point  = new osg::Point();
+                            osi_rm_color->push_back(ODR2OSGColor(lane_roadmark->GetColor()));
+
+                            // osg references for drawing lines between each road mark osi points
+                            osg::ref_ptr<osg::Vec4Array> color     = new osg::Vec4Array;
+                            osg::ref_ptr<osg::LineWidth> lineWidth = new osg::LineWidth();
+                            osg::ref_ptr<osg::Geometry>  geom;
+                            osg::ref_ptr<osg::Vec3Array> points;
+
+                            if (lane_roadmark->GetWeight() == roadmanager::LaneRoadMark::BOLD)
                             {
-                                if (inner_index == n)
-                                {
-                                    broken = true;
-                                }
+                                lineWidth->setWidth(OSI_LINE_WIDTH_BOLD);
+                            }
+                            else
+                            {
+                                lineWidth->setWidth(OSI_LINE_WIDTH);
                             }
 
-                            if (lane_roadmark->GetType() == roadmanager::LaneRoadMark::RoadMarkType::SOLID_BROKEN)
+                            int startpoint = 0;
+
+                            for (int q = 0; q < static_cast<int>(curr_osi_rm->GetPoints().size()); q++)
                             {
-                                broken = true;
-                                if (inner_index == n)
+                                if (q == startpoint)
                                 {
-                                    broken = false;
+                                    // new geometry at new startpoint
+                                    geom   = new osg::Geometry;
+                                    points = new osg::Vec3Array;
                                 }
-                            }
 
-                            if (lane_roadmark->GetType() == roadmanager::LaneRoadMark::RoadMarkType::BOTTS_DOTS)
-                            {
-                                // osg references for botts dot osi points
-                                osg::ref_ptr<osg::Geometry>  osi_rm_geom   = new osg::Geometry;
-                                osg::ref_ptr<osg::Vec3Array> osi_rm_points = new osg::Vec3Array;
-                                osg::ref_ptr<osg::Vec4Array> osi_rm_color  = new osg::Vec4Array;
+                                roadmanager::PointStruct osi_point = curr_osi_rm->GetPoint(q);
 
-                                for (int q = 0; q < static_cast<int>(curr_osi_rm->GetPoints().size()); q++)
+                                // start point of each road mark
+                                point.set(static_cast<float>(osi_point.x - origin_[0]),
+                                          static_cast<float>(osi_point.y - origin_[1]),
+                                          static_cast<float>(osi_point.z + z_offset));
+
+                                points->push_back(point);
+
+                                if (q == startpoint || osi_point.endpoint)
                                 {
-                                    roadmanager::PointStruct osi_point = curr_osi_rm->GetPoint(q);
-
-                                    // Put points at the location of the botts dot
-                                    osg::ref_ptr<osg::Point> osi_rm_point = new osg::Point();
-                                    point.set(static_cast<float>(osi_point.x),
-                                              static_cast<float>(osi_point.y),
-                                              static_cast<float>(osi_point.z + z_offset));
                                     osi_rm_points->push_back(point);
-                                    osi_rm_color->push_back(ODR2OSGColor(lane_roadmark->GetColor()));
-                                    osi_rm_point->setSize(6.0f);
-                                    osi_rm_geom->setVertexArray(osi_rm_points.get());
-                                    osi_rm_geom->setColorArray(osi_rm_color.get());
-                                    osi_rm_geom->setColorBinding(osg::Geometry::BIND_PER_VERTEX);
-                                    osi_rm_geom->addPrimitiveSet(new osg::DrawArrays(GL_POINTS, 0, static_cast<int>(osi_rm_points->size())));
-                                    osi_rm_geom->getOrCreateStateSet()->setAttributeAndModes(osi_rm_point, osg::StateAttribute::ON);
-                                    osi_rm_geom->getOrCreateStateSet()->setMode(GL_LIGHTING,
-                                                                                osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-
-                                    osi_rm_geom->setNodeMask(NodeMask::NODE_MASK_OSI_POINTS);
                                 }
-                                osiFeatures_->addChild(osi_rm_geom);
-                            }
-                            if (lane_roadmark->GetType() == roadmanager::LaneRoadMark::RoadMarkType::BROKEN ||
-                                lane_roadmark->GetType() == roadmanager::LaneRoadMark::RoadMarkType::BROKEN_BROKEN || broken)
-                            {
-                                // osg references for road mark osi points
-                                osg::ref_ptr<osg::Geometry>  osi_rm_geom   = new osg::Geometry;
-                                osg::ref_ptr<osg::Vec3Array> osi_rm_points = new osg::Vec3Array;
-                                osg::ref_ptr<osg::Vec4Array> osi_rm_color  = new osg::Vec4Array;
-                                osg::ref_ptr<osg::Point>     osi_rm_point  = new osg::Point();
 
-                                // osg references for drawing lines between each road mark osi points
-                                osg::ref_ptr<osg::Geometry>  geom      = new osg::Geometry;
-                                osg::ref_ptr<osg::Vec3Array> points    = new osg::Vec3Array;
-                                osg::ref_ptr<osg::Vec4Array> color     = new osg::Vec4Array;
-                                osg::ref_ptr<osg::LineWidth> lineWidth = new osg::LineWidth();
-
-                                osi_rm_color->push_back(ODR2OSGColor(lane_roadmark->GetColor()));
-
-                                for (int q = 0; q < static_cast<int>(curr_osi_rm->GetPoints().size()); q += 2)
+                                if (osi_point.endpoint)
                                 {
-                                    roadmanager::PointStruct osi_point1 = curr_osi_rm->GetPoint(q);
-                                    roadmanager::PointStruct osi_point2 = curr_osi_rm->GetPoint(q + 1);
-
-                                    // start point of each road mark
-                                    point.set(static_cast<float>(osi_point1.x),
-                                              static_cast<float>(osi_point1.y),
-                                              static_cast<float>(osi_point1.z + z_offset));
-                                    osi_rm_points->push_back(point);
-
-                                    // end point of each road mark
-                                    point.set(static_cast<float>(osi_point2.x),
-                                              static_cast<float>(osi_point2.y),
-                                              static_cast<float>(osi_point2.z + z_offset));
-                                    osi_rm_points->push_back(point);
-
-                                    // Put points at the start and end of the roadmark
-                                    osi_rm_point->setSize(6.0f);
-                                    osi_rm_geom->setVertexArray(osi_rm_points.get());
-                                    osi_rm_geom->setColorArray(osi_rm_color.get());
-                                    osi_rm_geom->setColorBinding(osg::Geometry::BIND_OVERALL);
-                                    osi_rm_geom->addPrimitiveSet(new osg::DrawArrays(GL_POINTS, 0, static_cast<int>(osi_rm_points->size())));
-                                    osi_rm_geom->getOrCreateStateSet()->setAttributeAndModes(osi_rm_point, osg::StateAttribute::ON);
-                                    osi_rm_geom->getOrCreateStateSet()->setMode(GL_LIGHTING,
-                                                                                osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-
-                                    osi_rm_geom->setNodeMask(NodeMask::NODE_MASK_OSI_POINTS);
-
                                     // Draw lines from the start of the roadmark to the end of the roadmark
-                                    if (lane_roadmark->GetWeight() == roadmanager::LaneRoadMark::BOLD)
-                                    {
-                                        lineWidth->setWidth(OSI_LINE_WIDTH_BOLD);
-                                    }
-                                    else
-                                    {
-                                        lineWidth->setWidth(OSI_LINE_WIDTH);
-                                    }
-                                    geom->setVertexArray(osi_rm_points.get());
+                                    geom->setVertexArray(points.get());
                                     geom->setColorArray(osi_rm_color.get());
                                     geom->setColorBinding(osg::Geometry::BIND_OVERALL);
-                                    geom->addPrimitiveSet(new osg::DrawArrays(GL_LINES, 0, static_cast<int>(osi_rm_points->size())));
+                                    geom->addPrimitiveSet(new osg::DrawArrays(GL_LINE_STRIP, 0, static_cast<int>(points->size())));
                                     geom->getOrCreateStateSet()->setAttributeAndModes(lineWidth, osg::StateAttribute::ON);
                                     geom->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
 
                                     geom->setNodeMask(NodeMask::NODE_MASK_OSI_LINES);
+                                    osiFeatures_->addChild(geom);
+
+                                    startpoint = q + 1;  // next point after endpoint is always a start point
                                 }
-                                osiFeatures_->addChild(osi_rm_geom);
-                                osiFeatures_->addChild(geom);
                             }
-                            else if (lane_roadmark->GetType() == roadmanager::LaneRoadMark::RoadMarkType::SOLID ||
-                                     lane_roadmark->GetType() == roadmanager::LaneRoadMark::RoadMarkType::SOLID_SOLID || !broken)
-                            {
-                                // osg references for road mark osi points
-                                osg::ref_ptr<osg::Geometry>  osi_rm_geom   = new osg::Geometry;
-                                osg::ref_ptr<osg::Vec3Array> osi_rm_points = new osg::Vec3Array;
-                                osg::ref_ptr<osg::Vec4Array> osi_rm_color  = new osg::Vec4Array;
-                                osg::ref_ptr<osg::Point>     osi_rm_point  = new osg::Point();
 
-                                // osg references for drawing lines between each road mark osi points
-                                osg::ref_ptr<osg::Geometry>  geom      = new osg::Geometry;
-                                osg::ref_ptr<osg::Vec3Array> points    = new osg::Vec3Array;
-                                osg::ref_ptr<osg::Vec4Array> color     = new osg::Vec4Array;
-                                osg::ref_ptr<osg::LineWidth> lineWidth = new osg::LineWidth();
+                            // Put points at the start and end of the roadmark
+                            osi_rm_point->setSize(6.0f);
+                            osi_rm_geom->setVertexArray(osi_rm_points.get());
+                            osi_rm_geom->setColorArray(osi_rm_color.get());
+                            osi_rm_geom->setColorBinding(osg::Geometry::BIND_OVERALL);
+                            osi_rm_geom->addPrimitiveSet(new osg::DrawArrays(GL_POINTS, 0, static_cast<int>(osi_rm_points->size())));
+                            osi_rm_geom->getOrCreateStateSet()->setAttributeAndModes(osi_rm_point, osg::StateAttribute::ON);
+                            osi_rm_geom->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
 
-                                // Creating points for the given roadmark
-                                for (int s = 0; s < static_cast<int>(curr_osi_rm->GetPoints().size()); s++)
-                                {
-                                    point.set(static_cast<float>(curr_osi_rm->GetPoint(s).x),
-                                              static_cast<float>(curr_osi_rm->GetPoint(s).y),
-                                              static_cast<float>(curr_osi_rm->GetPoint(s).z + z_offset));
-                                    osi_rm_points->push_back(point);
-                                    osi_rm_color->push_back(ODR2OSGColor(lane_roadmark->GetColor()));
-                                }
-
-                                // Put points on selected locations
-                                osi_rm_point->setSize(6.0f);
-                                osi_rm_geom->setVertexArray(osi_rm_points.get());
-                                osi_rm_geom->setColorArray(osi_rm_color.get());
-                                osi_rm_geom->setColorBinding(osg::Geometry::BIND_PER_VERTEX);
-                                osi_rm_geom->addPrimitiveSet(new osg::DrawArrays(GL_POINTS, 0, static_cast<int>(osi_rm_points->size())));
-                                osi_rm_geom->getOrCreateStateSet()->setAttributeAndModes(osi_rm_point, osg::StateAttribute::ON);
-                                osi_rm_geom->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-
-                                osi_rm_geom->setNodeMask(NodeMask::NODE_MASK_OSI_POINTS);
-                                osiFeatures_->addChild(osi_rm_geom);
-
-                                // Draw lines between each selected points
-                                if (lane_roadmark->GetWeight() == roadmanager::LaneRoadMark::BOLD)
-                                {
-                                    lineWidth->setWidth(OSI_LINE_WIDTH_BOLD);
-                                }
-                                else
-                                {
-                                    lineWidth->setWidth(OSI_LINE_WIDTH);
-                                }
-                                color->push_back(osg::Vec4(color_white[0], color_white[1], color_white[2], 1.0));
-
-                                geom->setVertexArray(osi_rm_points.get());
-                                geom->setColorArray(color.get());
-                                geom->setColorBinding(osg::Geometry::BIND_PER_PRIMITIVE_SET);
-                                geom->addPrimitiveSet(new osg::DrawArrays(GL_LINE_STRIP, 0, static_cast<int>(osi_rm_points->size())));
-                                geom->getOrCreateStateSet()->setAttributeAndModes(lineWidth, osg::StateAttribute::ON);
-                                geom->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-
-                                geom->setNodeMask(NodeMask::NODE_MASK_OSI_LINES);
-                                osiFeatures_->addChild(geom);
-                            }
+                            osi_rm_geom->setNodeMask(NodeMask::NODE_MASK_OSI_POINTS);
+                            osiFeatures_->addChild(osi_rm_geom);
                         }
                     }
                 }
@@ -2811,7 +2608,7 @@ bool Viewer::CreateRoadMarkLines(roadmanager::OpenDrive* od)
     return true;
 }
 
-bool Viewer::CreateRoadLines(roadmanager::OpenDrive* od)
+bool Viewer::CreateRoadLines(Viewer* viewer, roadmanager::OpenDrive* od)
 {
     double                z_offset = 0.10;
     roadmanager::Position pos;
@@ -2819,9 +2616,14 @@ bool Viewer::CreateRoadLines(roadmanager::OpenDrive* od)
 
     roadmanager::OSIPoints* curr_osi = nullptr;
 
-    for (int r = 0; r < od->GetNumOfRoads(); r++)
+    for (unsigned int r = 0; r < od->GetNumOfRoads(); r++)
     {
         roadmanager::Road* road = od->GetRoadByIdx(r);
+
+        if (road->GetNumberOfGeometries() == 0)
+        {
+            continue;
+        }
 
         // Road key points
         osg::ref_ptr<osg::Geometry>  kp_geom   = new osg::Geometry;
@@ -2830,28 +2632,36 @@ bool Viewer::CreateRoadLines(roadmanager::OpenDrive* od)
         osg::ref_ptr<osg::Point>     kp_point  = new osg::Point();
 
         roadmanager::Geometry* geom = nullptr;
-        for (int i = 0; i < road->GetNumberOfGeometries() + 1; i++)
+        for (unsigned int i = 0; i < road->GetNumberOfGeometries() + 1; i++)
         {
             if (i < road->GetNumberOfGeometries())
             {
                 geom = road->GetGeometry(i);
-                pos.SetTrackPos(road->GetId(), geom->GetS(), 0);
+                pos.SetTrackPos(road->GetId(), geom->GetS(), 0.0);
             }
             else
             {
-                pos.SetTrackPos(road->GetId(), geom->GetS() + geom->GetLength(), 0);
+                pos.SetTrackPos(road->GetId(), geom->GetS() + geom->GetLength(), 0.0);
             }
 
-            point.set(static_cast<float>(pos.GetX()), static_cast<float>(pos.GetY()), static_cast<float>(pos.GetZ() + z_offset));
+            point.set(static_cast<float>(pos.GetX() - origin_[0]),
+                      static_cast<float>(pos.GetY() - origin_[1]),
+                      static_cast<float>(pos.GetZ() + z_offset));
             kp_points->push_back(point);
 
             if (i == 0)
             {
-                kp_color->push_back(osg::Vec4(color_yellow[0], color_yellow[1], color_yellow[2], 1.0));
+                kp_color->push_back(osg::Vec4(SE_Color::Color2RBG(SE_Color::Color::YELLOW)[0],
+                                              SE_Color::Color2RBG(SE_Color::Color::YELLOW)[1],
+                                              SE_Color::Color2RBG(SE_Color::Color::YELLOW)[2],
+                                              1.0));
             }
             else
             {
-                kp_color->push_back(osg::Vec4(color_red[0], color_red[1], color_red[2], 1.0));
+                kp_color->push_back(osg::Vec4(SE_Color::Color2RBG(SE_Color::Color::RED)[0],
+                                              SE_Color::Color2RBG(SE_Color::Color::RED)[1],
+                                              SE_Color::Color2RBG(SE_Color::Color::RED)[2],
+                                              1.0));
             }
         }
 
@@ -2865,20 +2675,18 @@ bool Viewer::CreateRoadLines(roadmanager::OpenDrive* od)
 
         odrLines_->addChild(kp_geom);
 
-        for (int i = 0; i < road->GetNumberOfLaneSections(); i++)
+        for (unsigned int i = 0; i < road->GetNumberOfLaneSections(); i++)
         {
             roadmanager::LaneSection* lane_section = road->GetLaneSectionByIdx(i);
-            for (int j = 0; j < lane_section->GetNumberOfLanes(); j++)
+            for (unsigned int j = 0; j < lane_section->GetNumberOfLanes(); j++)
             {
                 roadmanager::Lane* lane = lane_section->GetLaneByIdx(j);
 
-                // visualize both lane center and lane boundary
-                for (int k = 0; k < 2; k++)
+                // visualize both lane boundary and lane center and
+                for (unsigned int k = 0; k < 2; k++)
                 {
                     // skip lane center for all non driving lanes except center lane
-                    if ((k == 0 && lane->GetId() != 0 && !lane->IsDriving()) ||
-                        // skip lane boundary for center lane
-                        (k == 1 && lane->GetId() == 0))
+                    if ((k == 1 && lane->GetId() != 0) && !lane->IsDriving())
                     {
                         continue;
                     }
@@ -2886,43 +2694,99 @@ bool Viewer::CreateRoadLines(roadmanager::OpenDrive* od)
                     // osg references for drawing lines on the lane center using osi points
                     osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
 
-                    if (k == 0)
+                    if (k == 0 && lane->GetId() == 0)
                     {
-                        curr_osi = lane->GetOSIPoints();
+                        // visualize road reference line
+                        roadmanager::OSIPoints ref_line_osi_points = lane_section->GetRefLineOSIPoints();
+                        for (const auto& ref_line_point : ref_line_osi_points.GetPoints())
+                        {
+                            vertices->push_back(osg::Vec3(static_cast<float>(ref_line_point.x - origin_[0]),
+                                                          static_cast<float>(ref_line_point.y - origin_[1]),
+                                                          static_cast<float>(ref_line_point.z + z_offset)));
+                        }
                     }
                     else
                     {
-                        if (lane->GetLaneBoundary() != nullptr)
+                        curr_osi = nullptr;
+
+                        if (k == 1)
                         {
-                            curr_osi = lane->GetLaneBoundary()->GetOSIPoints();
+                            curr_osi = lane->GetOSIPoints();
                         }
-                    }
+                        else
+                        {
+                            if (lane->GetLaneBoundary() != nullptr)
+                            {
+                                curr_osi = lane->GetLaneBoundary()->GetOSIPoints();
+                            }
+                        }
 
-                    if (curr_osi == 0)
-                    {
-                        continue;
-                    }
+                        if (curr_osi == nullptr)
+                        {
+                            continue;
+                        }
 
-                    for (int m = 0; m < static_cast<int>(curr_osi->GetPoints().size()); m++)
-                    {
-                        roadmanager::PointStruct osi_point_s = curr_osi->GetPoint(m);
-                        vertices->push_back(osg::Vec3(static_cast<float>(osi_point_s.x),
-                                                      static_cast<float>(osi_point_s.y),
-                                                      static_cast<float>(osi_point_s.z + z_offset)));
+                        for (const auto& osi_point_s : curr_osi->GetPoints())
+                        {
+                            vertices->push_back(osg::Vec3(static_cast<float>(osi_point_s.x - origin_[0]),
+                                                          static_cast<float>(osi_point_s.y - origin_[1]),
+                                                          static_cast<float>(osi_point_s.z + z_offset)));
+                        }
                     }
 
                     PolyLine* pline = nullptr;
                     if (lane->GetId() == 0)
                     {
-                        pline = AddPolyLine(odrLines_, vertices, osg::Vec4(color_red[0], color_red[1], color_red[2], 1.0), 4.0, 3.0);
+                        if (k == 0)
+                        {
+                            // reference line
+                            pline = AddPolyLine(viewer,
+                                                odrLines_,
+                                                vertices,
+                                                osg::Vec4(SE_Color::Color2RBG(SE_Color::Color::YELLOW)[0],
+                                                          SE_Color::Color2RBG(SE_Color::Color::YELLOW)[1],
+                                                          SE_Color::Color2RBG(SE_Color::Color::YELLOW)[2],
+                                                          1.0),
+                                                2.0,
+                                                OSI_DOT_SIZE);
+                        }
+                        else
+                        {
+                            // center lane
+                            AddPolyLine(viewer,
+                                        odrLines_,
+                                        vertices,
+                                        osg::Vec4(SE_Color::Color2RBG(SE_Color::Color::RED)[0],
+                                                  SE_Color::Color2RBG(SE_Color::Color::RED)[1],
+                                                  SE_Color::Color2RBG(SE_Color::Color::RED)[2],
+                                                  1.0),
+                                        6.0,
+                                        OSI_DOT_SIZE);
+                        }
                     }
-                    else if (k == 0)
+                    else if (k == 1)
                     {
-                        pline = AddPolyLine(odrLines_, vertices, osg::Vec4(color_blue[0], color_blue[1], color_blue[2], 1.0), 1.5, 3.0);
+                        pline = AddPolyLine(viewer,
+                                            odrLines_,
+                                            vertices,
+                                            osg::Vec4(SE_Color::Color2RBG(SE_Color::Color::BLUE)[0],
+                                                      SE_Color::Color2RBG(SE_Color::Color::BLUE)[1],
+                                                      SE_Color::Color2RBG(SE_Color::Color::BLUE)[2],
+                                                      1.0),
+                                            1.5,
+                                            OSI_DOT_SIZE);
                     }
                     else
                     {
-                        pline = AddPolyLine(odrLines_, vertices, osg::Vec4(color_gray[0], color_gray[1], color_gray[2], 1.0), 1.5, 3.0);
+                        pline = AddPolyLine(viewer,
+                                            odrLines_,
+                                            vertices,
+                                            osg::Vec4(SE_Color::Color2RBG(SE_Color::Color::GRAY)[0],
+                                                      SE_Color::Color2RBG(SE_Color::Color::GRAY)[1],
+                                                      SE_Color::Color2RBG(SE_Color::Color::GRAY)[2],
+                                                      1.0),
+                                            1.5,
+                                            OSI_DOT_SIZE);
                     }
                     if (pline != nullptr)
                     {
@@ -2936,537 +2800,16 @@ bool Viewer::CreateRoadLines(roadmanager::OpenDrive* od)
     return true;
 }
 
-int Viewer::CreateOutlineObject(roadmanager::Outline* outline, osg::Vec4 color)
-{
-    if (outline == 0)
-        return -1;
-    bool roof = outline->closed_ ? true : false;
-
-    // nrPoints will be corners + 1 if the outline should be closed, reusing first corner as last
-    int nrPoints = outline->closed_ ? static_cast<int>(outline->corner_.size()) + 1 : static_cast<int>(outline->corner_.size());
-
-    osg::ref_ptr<osg::Group> group = new osg::Group();
-
-    osg::ref_ptr<osg::Vec3Array> vertices_sides = new osg::Vec3Array(static_cast<unsigned int>(nrPoints) * 2);  // one set at bottom and one at top
-    osg::ref_ptr<osg::Vec3Array> vertices_top   = new osg::Vec3Array(static_cast<unsigned int>(nrPoints));      // one set at bottom and one at top
-
-    // Set vertices
-    for (size_t i = 0; i < outline->corner_.size(); i++)
-    {
-        double                      x, y, z;
-        roadmanager::OutlineCorner* corner = outline->corner_[i];
-        corner->GetPos(x, y, z);
-        (*vertices_sides)[i * 2 + 0].set(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z + corner->GetHeight()));
-        (*vertices_sides)[i * 2 + 1].set(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
-        (*vertices_top)[i].set(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z + corner->GetHeight()));
-    }
-
-    // Close geometry
-    if (outline->closed_)
-    {
-        (*vertices_sides)[2 * static_cast<unsigned int>(nrPoints) - 2].set((*vertices_sides)[0]);
-        (*vertices_sides)[2 * static_cast<unsigned int>(nrPoints) - 1].set((*vertices_sides)[1]);
-        (*vertices_top)[static_cast<unsigned int>(nrPoints) - 1].set((*vertices_top)[0]);
-    }
-
-    // Finally create and add geometry
-    osg::ref_ptr<osg::Geode>    geode  = new osg::Geode;
-    osg::ref_ptr<osg::Geometry> geom[] = {new osg::Geometry, new osg::Geometry};
-
-    geom[0]->setVertexArray(vertices_sides.get());
-    geom[0]->addPrimitiveSet(new osg::DrawArrays(GL_QUAD_STRIP, 0, 2 * nrPoints));
-
-    if (roof)
-    {
-        geom[1]->setVertexArray(vertices_top.get());
-        geom[1]->addPrimitiveSet(new osg::DrawArrays(GL_POLYGON, 0, nrPoints));
-        osgUtil::Tessellator tessellator;
-        tessellator.retessellatePolygons(*geom[1]);
-    }
-
-    int nrGeoms = roof ? 2 : 1;
-    for (int i = 0; i < nrGeoms; i++)
-    {
-        osgUtil::SmoothingVisitor::smooth(*geom[i], 0.5);
-        geom[i]->setDataVariance(osg::Object::STATIC);
-        geom[i]->setUseDisplayList(true);
-        geode->addDrawable(geom[i]);
-    }
-
-    osg::ref_ptr<osg::Material> material_ = new osg::Material;
-    material_->setDiffuse(osg::Material::FRONT_AND_BACK, color);
-    material_->setAmbient(osg::Material::FRONT_AND_BACK, color);
-    geode->getOrCreateStateSet()->setAttributeAndModes(material_.get());
-
-    group->addChild(geode);
-    envTx_->addChild(group);
-
-    return 0;
-}
-
-osg::ref_ptr<osg::PositionAttitudeTransform> Viewer::LoadRoadFeature(roadmanager::Road* road, std::string filename)
-{
-    (void)road;
-    osg::ref_ptr<osg::Node>                      node;
-    osg::ref_ptr<osg::PositionAttitudeTransform> xform = 0;
-
-    // Load file, try multiple paths
-    std::vector<std::string> file_name_candidates;
-    file_name_candidates.push_back(filename);
-    file_name_candidates.push_back(CombineDirectoryPathAndFilepath(DirNameOf(exe_path_) + "/../resources/models", filename));
-    // Finally check registered paths
-    for (size_t i = 0; i < SE_Env::Inst().GetPaths().size(); i++)
-    {
-        file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], filename));
-        file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], "../models/" + filename));
-        file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], FileNameOf(filename)));
-    }
-    for (size_t i = 0; i < file_name_candidates.size(); i++)
-    {
-        if (FileExists(file_name_candidates[i].c_str()))
-        {
-            node = osgDB::readNodeFile(file_name_candidates[i]);
-            if (!node)
-            {
-                return 0;
-            }
-
-            xform = new osg::PositionAttitudeTransform;
-            xform->addChild(node);
-        }
-    }
-
-    return xform;
-}
-
-int Viewer::CreateRoadSignsAndObjects(roadmanager::OpenDrive* od)
-{
-    osg::ref_ptr<osg::Group>                     objGroup = new osg::Group;
-    osg::ref_ptr<osg::PositionAttitudeTransform> tx       = nullptr;
-
-    roadmanager::Position pos;
-
-    for (int r = 0; r < od->GetNumOfRoads(); r++)
-    {
-        roadmanager::Road* road = od->GetRoadByIdx(r);
-        for (size_t s = 0; s < static_cast<unsigned int>(road->GetNumberOfSignals()); s++)
-        {
-            tx                          = nullptr;
-            roadmanager::Signal* signal = road->GetSignal(static_cast<int>(s));
-
-            // Road sign filename is the combination of type_subtype_value
-            std::string filename = signal->GetCountry() + "_" + signal->GetType();
-            if (!(signal->GetSubType().empty() || signal->GetSubType() == "none" || signal->GetSubType() == "-1"))
-            {
-                filename += "_" + signal->GetSubType();
-            }
-
-            if (!signal->GetValueStr().empty())
-            {
-                filename += "-" + signal->GetValueStr();
-            }
-            tx = LoadRoadFeature(road, filename + ".osgb");
-
-            if (tx == nullptr)
-            {
-                // if file according to type, subtype and value could not be resolved, try from name
-                tx = LoadRoadFeature(road, signal->GetName() + ".osgb");
-            }
-
-            if (tx == nullptr)
-            {
-                LOG("Failed to load signal %s / %s", (filename + ".osgb").c_str(), (signal->GetName() + ".osgb").c_str());
-                continue;
-            }
-            else
-            {
-                tx->setPosition(osg::Vec3(static_cast<float>(signal->GetX()),
-                                          static_cast<float>(signal->GetY()),
-                                          static_cast<float>(signal->GetZ() + signal->GetZOffset())));
-                tx->setAttitude(osg::Quat(signal->GetH() + signal->GetHOffset(), osg::Vec3(0, 0, 1)));
-
-                objGroup->addChild(tx);
-            }
-        }
-
-        for (size_t o = 0; o < static_cast<unsigned int>(road->GetNumberOfObjects()); o++)
-        {
-            roadmanager::RMObject* object = road->GetRoadObject(static_cast<int>(o));
-            osg::Vec4              color;
-            tx = nullptr;
-
-            // Set color based on object type
-            if (object->GetType() == roadmanager::RMObject::ObjectType::BUILDING || object->GetType() == roadmanager::RMObject::ObjectType::BARRIER)
-            {
-                color = osg::Vec4(0.6f, 0.6f, 0.6f, 1.0f);
-            }
-            else if (object->GetType() == roadmanager::RMObject::ObjectType::OBSTACLE)
-            {
-                color = osg::Vec4(0.5f, 0.3f, 0.3f, 1.0f);
-            }
-            else if (object->GetType() == roadmanager::RMObject::ObjectType::TREE ||
-                     object->GetType() == roadmanager::RMObject::ObjectType::VEGETATION)
-            {
-                color = osg::Vec4(0.22f, 0.32f, 0.22f, 1.0f);
-            }
-            else
-            {
-                color = osg::Vec4(0.4f, 0.4f, 0.4f, 1.0f);
-            }
-
-            if (object->GetNumberOfOutlines() > 0 &&
-                object->GetNumberOfRepeats() == 0)  // if repeats are defined, wait and see if outline should replace failed 3D model or not
-            {
-                for (size_t j = 0; j < static_cast<unsigned int>(object->GetNumberOfOutlines()); j++)
-                {
-                    roadmanager::Outline* outline = object->GetOutline(static_cast<int>(j));
-                    CreateOutlineObject(outline, color);
-                }
-                LOG("Created outline geometry for object %s.", object->GetName().c_str());
-                LOG("  if it looks strange, e.g.faces too dark or light color, ");
-                LOG("  check that corners are defined counter-clockwise (as OpenGL default).");
-            }
-            else
-            {
-                double orientation = object->GetOrientation() == roadmanager::Signal::Orientation::NEGATIVE ? M_PI : 0.0;
-
-                // absolute path or relative to current directory
-                std::string filename = object->GetName();
-
-                // Assume name is representing a 3D model filename
-                if (!filename.empty())
-                {
-                    std::vector<std::string> file_name_candidates;
-
-                    if (FileNameExtOf(filename) == "")
-                    {
-                        filename += ".osgb";  // add missing extension
-                    }
-
-                    tx = LoadRoadFeature(road, filename);
-
-                    if (tx == nullptr)
-                    {
-                        LOG("Failed to load road object model file: %s (%s). Creating a bounding box as stand in.",
-                            filename.c_str(),
-                            object->GetName().c_str());
-                    }
-                }
-
-                roadmanager::Repeat*         rep     = object->GetRepeat();
-                int                          nCopies = 0;
-                double                       cur_s   = 0.0;
-                osg::ref_ptr<osg::Vec3Array> vertices_right_side;
-                osg::ref_ptr<osg::Vec3Array> vertices_left_side;
-                osg::ref_ptr<osg::Vec3Array> vertices_top;
-                osg::ref_ptr<osg::Group>     group;
-                if (tx == nullptr)  // No model loaded
-                {
-                    if (rep && rep->GetDistance() < SMALL_NUMBER)  //  non continuous objects
-                    {
-                        // use outline, if exists
-                        if (object->GetNumberOfOutlines() > 0)
-                        {
-                            for (size_t j = 0; j < static_cast<unsigned int>(object->GetNumberOfOutlines()); j++)
-                            {
-                                roadmanager::Outline* outline = object->GetOutline(static_cast<int>(j));
-                                CreateOutlineObject(outline, color);
-                            }
-                            continue;
-                        }
-                        else
-                        {
-                            // create stand in object
-                            vertices_left_side  = new osg::Vec3Array;
-                            vertices_right_side = new osg::Vec3Array;
-                            vertices_top        = new osg::Vec3Array;
-                            group               = new osg::Group();
-                        }
-                    }
-                    else
-                    {
-                        // create a bounding box to represent the object
-                        tx = new osg::PositionAttitudeTransform;
-
-                        // avoid zero width, length and width - set to a minimum value of 0.05m
-                        osg::ref_ptr<osg::ShapeDrawable> shape =
-                            new osg::ShapeDrawable(new osg::Box(osg::Vec3(0.0f, 0.0f, 0.5f * MAX(0.05f, static_cast<float>(object->GetHeight()))),
-                                                                MAX(0.05f, static_cast<float>(object->GetLength())),
-                                                                MAX(0.05f, static_cast<float>(object->GetWidth())),
-                                                                MAX(0.05f, static_cast<float>(object->GetHeight()))));
-
-                        shape->setColor(color);
-                        tx->addChild(shape);
-                    }
-                }
-
-                double dim_x = 0.0;
-                double dim_y = 0.0;
-                double dim_z = 0.0;
-
-                osg::BoundingBox boundingBox;
-                if (tx != nullptr)
-                {
-                    osg::ComputeBoundsVisitor cbv;
-                    tx->accept(cbv);
-                    boundingBox = cbv.getBoundingBox();
-
-                    dim_x = boundingBox._max.x() - boundingBox._min.x();
-                    dim_y = boundingBox._max.y() - boundingBox._min.y();
-                    dim_z = boundingBox._max.z() - boundingBox._min.z();
-                    if (object->GetLength() < SMALL_NUMBER && dim_x > SMALL_NUMBER)
-                    {
-                        LOG("Object %s missing length, set to bounding box length %.2f", object->GetName().c_str(), dim_x);
-                        object->SetLength(dim_x);
-                    }
-                    if (object->GetWidth() < SMALL_NUMBER && dim_y > SMALL_NUMBER)
-                    {
-                        LOG("Object %s missing width, set to bounding box width %.2f", object->GetName().c_str(), dim_y);
-                        object->SetWidth(dim_y);
-                    }
-                    if (object->GetHeight() < SMALL_NUMBER && dim_z > SMALL_NUMBER)
-                    {
-                        LOG("Object %s missing height, set to bounding box height %.2f", object->GetName().c_str(), dim_z);
-                        object->SetHeight(dim_z);
-                    }
-                }
-
-                double                                       lastLODs = 0.0;  // used for putting object copies in LOD groups
-                osg::ref_ptr<osg::Group>                     LODGroup = 0;
-                osg::ref_ptr<osg::PositionAttitudeTransform> clone    = 0;
-
-                for (; nCopies < 1 ||
-                       (rep && rep->length_ > SMALL_NUMBER && cur_s < rep->GetLength() + SMALL_NUMBER && cur_s + rep->GetS() < road->GetLength());
-                     nCopies++)
-                {
-                    double factor, t, s, zOffset;
-                    double scale_x = 1.0;
-                    double scale_y = 1.0;
-                    double scale_z = 1.0;
-
-                    if (rep && cur_s + rep->GetS() + (object->GetLength() * scale_x) * cos(object->GetHOffset()) > road->GetLength())
-                    {
-                        break;  // object would reach outside specified total length
-                    }
-
-                    clone = tx != nullptr ? dynamic_cast<osg::PositionAttitudeTransform*>(tx->clone(osg::CopyOp::SHALLOW_COPY)) : nullptr;
-
-                    if (rep == nullptr)
-                    {
-                        factor  = 1.0;
-                        t       = object->GetT();
-                        s       = object->GetS();
-                        zOffset = object->GetZOffset();
-
-                        if (object->GetLength() > SMALL_NUMBER)
-                        {
-                            scale_x = object->GetLength() / dim_x;
-                        }
-                        if (object->GetWidth() > SMALL_NUMBER)
-                        {
-                            scale_y = object->GetWidth() / dim_y;
-                        }
-                        if (object->GetHeight() > SMALL_NUMBER)
-                        {
-                            scale_z = object->GetHeight() / dim_z;
-                        }
-
-                        // position mode relative for aligning to road heading
-                        pos.SetTrackPosMode(road->GetId(),
-                                            object->GetS(),
-                                            object->GetT(),
-                                            roadmanager::Position::PosMode::H_REL | roadmanager::Position::PosMode::Z_REL |
-                                                roadmanager::Position::PosMode::P_REL | roadmanager::Position::PosMode::R_REL);
-
-                        clone->setScale(osg::Vec3(static_cast<float>(scale_x), static_cast<float>(scale_y), static_cast<float>(scale_z)));
-                        clone->setPosition(osg::Vec3(static_cast<float>(pos.GetX()),
-                                                     static_cast<float>(pos.GetY()),
-                                                     static_cast<float>(object->GetZOffset() + pos.GetZ())));
-
-                        // First align to road orientation
-                        osg::Quat quatRoad(osg::Quat(pos.GetR(), osg::X_AXIS, pos.GetP(), osg::Y_AXIS, pos.GetH(), osg::Z_AXIS));
-                        // Specified local rotation
-                        osg::Quat quatLocal(orientation + object->GetHOffset(), osg::Vec3(osg::Z_AXIS));  // Heading
-                        // Combine
-                        clone->setAttitude(quatLocal * quatRoad);
-                    }
-                    else  // repeated objects (separate or continuous)
-                    {
-                        factor  = cur_s / rep->GetLength();
-                        t       = rep->GetTStart() + factor * (rep->GetTEnd() - rep->GetTStart());
-                        s       = rep->GetS() + cur_s;
-                        zOffset = rep->GetZOffsetStart() + factor * (rep->GetZOffsetEnd() - rep->GetZOffsetStart());
-
-                        // position mode relative for aligning to road heading
-                        pos.SetTrackPosMode(road->GetId(),
-                                            s,
-                                            t,
-                                            roadmanager::Position::PosMode::H_REL | roadmanager::Position::PosMode::Z_REL |
-                                                roadmanager::Position::PosMode::P_REL | roadmanager::Position::PosMode::R_REL);
-
-                        // Find angle based on delta t
-                        double h_offset = atan2(rep->GetTEnd() - rep->GetTStart(), rep->GetLength());
-                        pos.SetHeadingRelative(h_offset);
-
-                        if (tx == nullptr && rep->GetDistance() < SMALL_NUMBER)  // one single continuous object to be created
-                        {
-                            // add two vertices at this s-value
-                            double x   = 0.0;
-                            double y   = rep->GetWidthStart() + factor * (rep->GetWidthEnd() - rep->GetWidthStart());
-                            double z   = rep->GetHeightStart() + factor * (rep->GetHeightEnd() - rep->GetHeightStart());
-                            double p0x = 0.0;
-                            double p0y = 0.0;
-                            double p1x = 0.0;
-                            double p1y = 0.0;
-                            RotateVec2D(x, y, pos.GetH(), p0x, p0y);
-                            RotateVec2D(x, -y, pos.GetH(), p1x, p1y);
-
-                            vertices_right_side->push_back(osg::Vec3d(pos.GetX() + p1x, pos.GetY() + p1y, pos.GetZ()));
-                            vertices_right_side->push_back(osg::Vec3d(pos.GetX() + p1x, pos.GetY() + p1y, pos.GetZ() + z));
-                            // add left vertices in reversed order, since they will be concatenated later in reversed order
-                            vertices_left_side->push_back(osg::Vec3d(pos.GetX() + p0x, pos.GetY() + p0y, pos.GetZ() + z));
-                            vertices_left_side->push_back(osg::Vec3d(pos.GetX() + p0x, pos.GetY() + p0y, pos.GetZ()));
-                            vertices_top->push_back(osg::Vec3d(pos.GetX() + p0x, pos.GetY() + p0y, pos.GetZ() + z));
-                            vertices_top->push_back(osg::Vec3d(pos.GetX() + p1x, pos.GetY() + p1y, pos.GetZ() + z));
-                        }
-                        else  // separate objects
-                        {
-                            if (rep->GetLengthStart() > SMALL_NUMBER || rep->GetLengthEnd() > SMALL_NUMBER)
-                            {
-                                scale_x = ((rep->GetLengthStart() + factor * (rep->GetLengthEnd() - rep->GetLengthStart())) / cos(h_offset)) / dim_x;
-                            }
-                            else
-                            {
-                                scale_x = (abs(h_offset) < M_PI_2 - SMALL_NUMBER) ? scale_x / cos(h_offset) : LARGE_NUMBER;
-                            }
-                            if (rep->GetWidthStart() > SMALL_NUMBER || rep->GetWidthEnd() > SMALL_NUMBER)
-                            {
-                                scale_y = (rep->GetWidthStart() + factor * (rep->GetWidthEnd() - rep->GetWidthStart())) / dim_y;
-                            }
-                            if (rep->GetHeightStart() > SMALL_NUMBER || rep->GetHeightEnd() > SMALL_NUMBER)
-                            {
-                                scale_z = (rep->GetHeightStart() + factor * (rep->GetHeightEnd() - rep->GetHeightStart())) / dim_z;
-                            }
-
-                            clone->getOrCreateStateSet()->setMode(GL_RESCALE_NORMAL, osg::StateAttribute::ON);
-                            clone->setScale(osg::Vec3(static_cast<float>(scale_x), static_cast<float>(scale_y), static_cast<float>(scale_z)));
-                            clone->setPosition(
-                                osg::Vec3(static_cast<float>(pos.GetX()), static_cast<float>(pos.GetY()), static_cast<float>(pos.GetZ() + zOffset)));
-
-                            // First align to road orientation
-                            osg::Quat quatRoad(osg::Quat(pos.GetR(), osg::X_AXIS, pos.GetP(), osg::Y_AXIS, pos.GetH(), osg::Z_AXIS));
-
-                            // Specified local rotation
-                            osg::Quat quatLocal(object->GetHOffset(), osg::Vec3(osg::Z_AXIS));  // Heading
-
-                            // Combine
-                            clone->setAttitude(quatLocal * quatRoad);
-                        }
-
-                        // increase current s according to distance
-                        if (rep->distance_ > SMALL_NUMBER)
-                        {
-                            cur_s += rep->distance_;
-                        }
-                        else
-                        {
-                            // for continuous objects, move along s wrt to road curvature
-                            cur_s +=
-                                pos.DistanceToDS(object->GetLength() < SMALL_NUMBER ? MIN(rep->GetLength(), DEFAULT_LENGTH_FOR_CONTINUOUS_OBJS)
-                                                                                    : MIN(object->GetLength(), DEFAULT_LENGTH_FOR_CONTINUOUS_OBJS));
-                        }
-                    }
-
-                    if (tx != nullptr)  // wait with continuous object
-                    {
-                        clone->setDataVariance(osg::Object::STATIC);
-
-                        if (LODGroup == 0 || s - lastLODs > 0.5 * LOD_DIST_ROAD_FEATURES)
-                        {
-                            // add current LOD and create a new one
-                            osg::ref_ptr<osg::LOD> lod = new osg::LOD();
-                            LODGroup                   = new osg::Group();
-                            lod->addChild(LODGroup);
-                            lod->setRange(
-                                0,
-                                0,
-                                LOD_DIST_ROAD_FEATURES + MAX(boundingBox.xMax() - boundingBox.xMin(), boundingBox.yMax() - boundingBox.yMin()));
-                            objGroup->addChild(lod);
-                            lastLODs = s;
-                        }
-
-                        LODGroup->addChild(clone);
-                    }
-                }
-                if (tx == nullptr)
-                {
-                    // Create geometry for continuous object
-                    osg::ref_ptr<osg::Geode>    geode  = new osg::Geode;
-                    osg::ref_ptr<osg::Geometry> geom[] = {new osg::Geometry, new osg::Geometry};
-
-                    // Concatenate vertices for right and left side into one single array going around the object counter clockwise
-                    osg::ref_ptr<osg::Vec3Array> vertices = vertices_right_side;
-                    vertices->insert(vertices->end(), vertices_left_side->rbegin(), vertices_left_side->rend());
-
-                    // Finally, duplicate first set of vertices to the end in order to close the geometry
-                    vertices->insert(vertices->end(), vertices_right_side->begin(), vertices_right_side->begin() + 2);
-
-                    geom[0]->setVertexArray(vertices.get());
-                    geom[0]->addPrimitiveSet(new osg::DrawArrays(GL_QUAD_STRIP, 0, static_cast<int>(vertices->size())));
-
-                    // Add roof
-                    geom[1]->setVertexArray(vertices_top.get());
-                    geom[1]->addPrimitiveSet(new osg::DrawArrays(GL_QUAD_STRIP, 0, static_cast<int>(vertices_top->size())));
-
-                    osgUtil::Tessellator tessellator;
-                    tessellator.retessellatePolygons(*geom[1]);
-
-                    osg::ref_ptr<osg::Vec4Array> color_obj = new osg::Vec4Array();
-                    color_obj->push_back(color);
-                    for (auto& g : geom)
-                    {
-                        osgUtil::SmoothingVisitor::smooth(*g, 0.5);
-                        g->setDataVariance(osg::Object::STATIC);
-                        g->setUseDisplayList(true);
-                        g->setColorArray(color_obj);
-                        g->setColorBinding(osg::Geometry::BIND_OVERALL);
-                        geode->addDrawable(g);
-                        group->addChild(g);
-                    }
-
-                    osg::ComputeBoundsVisitor cbv;
-                    group->accept(cbv);
-                    boundingBox = cbv.getBoundingBox();
-
-                    osg::ref_ptr<osg::LOD> lod = new osg::LOD();
-                    lod->addChild(group);
-                    lod->setRange(0,
-                                  0,
-                                  LOD_DIST_ROAD_FEATURES + MAX(boundingBox.xMax() - boundingBox.xMin(), boundingBox.yMax() - boundingBox.yMin()));
-                    objGroup->addChild(lod);
-                }
-            }
-        }
-    }
-
-    osgUtil::Optimizer optimizer;
-    optimizer.optimize(objGroup, osgUtil::Optimizer::FLATTEN_STATIC_TRANSFORMS);
-
-    envTx_->addChild(objGroup);
-
-    return 0;
-}
-
 bool Viewer::CreateRoadSensors(MovingModel* moving_model)
 {
-    moving_model->road_sensor_  = CreateSensor(color_gray, true, false, 0.35, 2.5);
-    moving_model->route_sensor_ = CreateSensor(color_blue, true, false, 0.30, 2.5);
-    moving_model->lane_sensor_  = CreateSensor(color_gray, true, true, 0.25, 2.5);
+    moving_model->road_sensor_  = CreateSensor(SE_Color::Color2RBG(SE_Color::Color::GRAY), true, false, 0.35, 2.5);
+    moving_model->route_sensor_ = CreateSensor(SE_Color::Color2RBG(SE_Color::Color::BLUE), true, false, 0.30, 2.5);
+    moving_model->lane_sensor_  = CreateSensor(SE_Color::Color2RBG(SE_Color::Color::GRAY), true, true, 0.25, 2.5);
 
     return true;
 }
 
-PointSensor* Viewer::CreateSensor(float color[], bool create_ball, bool create_line, double ball_radius, double line_width)
+PointSensor* Viewer::CreateSensor(const float (&color)[3], bool create_ball, bool create_line, double ball_radius, double line_width)
 {
     PointSensor* sensor = new PointSensor();
     sensor->group_      = new osg::Group();
@@ -3558,13 +2901,17 @@ void Viewer::UpdateRoadSensors(PointSensor* road_sensor, PointSensor* route_sens
 void Viewer::SensorSetPivotPos(PointSensor* sensor, double x, double y, double z)
 {
     double z_offset   = 0.2;
-    sensor->pivot_pos = osg::Vec3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z + MAX(sensor->ball_radius_ / 3.0, z_offset)));
+    sensor->pivot_pos = osg::Vec3(static_cast<float>(x - origin_[0]),
+                                  static_cast<float>(y - origin_[1]),
+                                  static_cast<float>(z + MAX(sensor->ball_radius_ / 3.0, z_offset)));
 }
 
 void Viewer::SensorSetTargetPos(PointSensor* sensor, double x, double y, double z)
 {
     double z_offset    = 0.2;
-    sensor->target_pos = osg::Vec3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z + MAX(sensor->ball_radius_ / 3.0, z_offset)));
+    sensor->target_pos = osg::Vec3(static_cast<float>(x - origin_[0]),
+                                   static_cast<float>(y - origin_[1]),
+                                   static_cast<float>(z + MAX(sensor->ball_radius_ / 3.0, z_offset)));
 }
 
 void Viewer::UpdateSensor(PointSensor* sensor)
@@ -3594,22 +2941,35 @@ void Viewer::UpdateSensor(PointSensor* sensor)
 
 int Viewer::LoadShadowfile(std::string vehicleModelFilename)
 {
-    // Load shadow geometry - assume it resides in the same resource folder as the vehicle model
-    std::string shadowFilename = DirNameOf(vehicleModelFilename).append("/" + std::string(SHADOW_MODEL_FILEPATH));
-    if (FileExists(shadowFilename.c_str()))
+    std::vector<std::string> file_name_candidates;
+
+    // First look in same folder as the vehicle model
+    file_name_candidates.push_back(DirNameOf(vehicleModelFilename).append("/" + std::string(SHADOW_MODEL_FILEPATH)));
+
+    // Then check registered paths
+    for (size_t i = 0; i < SE_Env::Inst().GetPaths().size(); i++)
     {
-        shadow_node_ = osgDB::readNodeFile(shadowFilename);
+        file_name_candidates.push_back(CombineDirectoryPathAndFilepath(SE_Env::Inst().GetPaths()[i], std::string(SHADOW_MODEL_FILEPATH)));
     }
 
-    if (!shadow_node_)
+    for (size_t i = 0; i < file_name_candidates.size(); i++)
     {
-        LOG("Failed to locate shadow model %s based on vehicle model filename %s - continue without",
-            SHADOW_MODEL_FILEPATH,
-            vehicleModelFilename.c_str());
-        return -1;
+        if (FileExists(file_name_candidates[i].c_str()))
+        {
+            // Load shadow geometry
+            shadow_node_ = osgDB::readNodeFile(file_name_candidates[i]);
+            if (shadow_node_ != nullptr)
+            {
+                return 0;
+            }
+        }
     }
 
-    return 0;
+    LOG_WARN("Failed to locate shadow model {} based on vehicle model file path {} - continue without",
+             SHADOW_MODEL_FILEPATH,
+             vehicleModelFilename.c_str());
+
+    return -1;
 }
 
 int Viewer::AddEnvironment(const char* filename)
@@ -3618,7 +2978,7 @@ int Viewer::AddEnvironment(const char* filename)
     if (environment_ != 0)
     {
         printf("Removing current env\n");
-        envTx_->removeChild(environment_);
+        envGroup_->getParent(0)->removeChild(environment_);
     }
 
     // load and apply new model
@@ -3629,12 +2989,11 @@ int Viewer::AddEnvironment(const char* filename)
         {
             return -1;
         }
-
-        envTx_->addChild(environment_);
+        envGroup_->addChild(environment_);
     }
     else
     {
-        LOG("AddEnvironment: No environment 3D model specified (%s) - go ahead without\n", filename);
+        LOG_WARN("AddEnvironment: No environment 3D model specified ({}) - go ahead without", filename);
     }
 
     return 0;
@@ -3684,18 +3043,31 @@ void Viewer::SetCameraTrackNode(osg::ref_ptr<osg::Node> node, bool calcDistance)
     nodeTrackerManipulator_->setTrackNode(node);
 }
 
-void Viewer::SetVehicleInFocus(int idx)
+void Viewer::SetVehicleInFocus(int idx, bool calcDistance)
 {
     if (idx >= 0 && idx < static_cast<int>(entities_.size()))
     {
-        // calculate distance only for first vehicle and non top views
-        SetCameraTrackNode(
-            entities_[static_cast<unsigned int>(idx)]->bbGroup_,
-            (currentCarInFocus_ == -1 && rubberbandManipulator_->getMode() != osgGA::RubberbandManipulator::CAMERA_MODE::RB_MODE_TOP) ? true : false);
+        // focus on entity, calculate distance only when  first vehicle and non top views
+        SetCameraTrackNode(entities_[static_cast<unsigned int>(idx)]->bbGroup_, calcDistance);
         rubberbandManipulator_->setTrackTransform(entities_[static_cast<unsigned int>(idx)]->txNode_);
-
-        currentCarInFocus_ = idx;
     }
+    else if (idx >= static_cast<int>(entities_.size()) && entities_.size() > 1)
+    {
+        // special mode 1: Fit all entities in view, focus on geometric center
+        SetCameraTrackNode(nullptr, false);
+    }
+    else if (idx < 0 && environment_ != nullptr)
+    {
+        // special mode 2: Track environment model
+        SetCameraTrackNode(environment_, true);
+        rubberbandManipulator_->setTrackTransform(nullptr);
+    }
+    else
+    {
+        LOG_WARN("SetVehicleInFocus: Invalid vehicle index {} - no change in focus", idx);
+        return;
+    }
+    currentCarInFocus_ = CLAMP(idx, -1, static_cast<int>(entities_.size()));
 }
 
 void SetFixCameraFlag(bool fixed)
@@ -3723,6 +3095,9 @@ void Viewer::SetWindowTitle(std::string title)
 void Viewer::SetWindowTitleFromArgs(std::vector<std::string>& args)
 {
     std::string titleString;
+    SE_Options& opt               = SE_Env::Inst().GetOptions();
+    bool        osc_active        = false;
+    bool        param_dist_active = false;
     for (unsigned int i = 0; i < args.size(); i++)
     {
         std::string arg = args[i];
@@ -3731,39 +3106,57 @@ void Viewer::SetWindowTitleFromArgs(std::vector<std::string>& args)
             if (args[i].compare(0, 2, "--"))
             {
                 // first argument is not an esmini argument, assume it's the name of the application.
-                arg = FileNameWithoutExtOf(arg);
+                titleString += FileNameWithoutExtOf(arg) + " ";
             }
             else
             {
                 // add esmini as application name
                 arg = "esmini";
+                titleString += arg + " ";
             }
         }
         else if (arg == "--osc" || arg == "--odr" || arg == "--model")
         {
             titleString += arg + " ";
             i++;
-            arg = FileNameOf(args[i]);
+            if (opt.IsOptionArgumentSet("osc"))
+            {
+                titleString += FileNameOf(opt.GetOptionValue("osc")) + " ";
+            }
+            else
+            {
+                titleString += FileNameOf(args[i]) + " ";
+            }
+
+            if (opt.IsOptionArgumentSet("param_dist"))
+            {
+                OSCParameterDistribution& dist = OSCParameterDistribution::Inst();
+                titleString += " " + std::to_string(dist.GetIndex() + 1) + " of " + std::to_string(dist.GetNumPermutations()) + " ";
+                param_dist_active = true;
+            }
+            osc_active = true;
         }
         else if (arg == "--window")
         {
             i += 4;
-            continue;
         }
-        else if (arg == "--param_dist")
+        else if (arg == "--param_dist" &&
+                 !param_dist_active)  // if only --param_dist directly set in command line and not parm_dist already set by --osc <param_dist_file>
         {
+            if (opt.IsOptionArgumentSet("osc") && !osc_active)  // if ony --param_dist <param_dist_file>, set osc file name
+            {
+                arg = "--osc";
+                titleString += arg + " ";
+                titleString += FileNameOf(opt.GetOptionValue("osc")) + " ";
+            }
             i += 1;
             OSCParameterDistribution& dist = OSCParameterDistribution::Inst();
             titleString += " " + std::to_string(dist.GetIndex() + 1) + " of " + std::to_string(dist.GetNumPermutations()) + " ";
-            continue;
         }
         else if (arg == "--param_permutation")
         {
             i += 1;
-            continue;
         }
-
-        titleString += arg + " ";
     }
 
     SetWindowTitle(titleString);
@@ -3781,16 +3174,16 @@ void Viewer::SetWindowTitleFromArgs(int argc, char* argv[])
     SetWindowTitleFromArgs(args);
 }
 
-PolyLine* Viewer::AddPolyLine(osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width, double dotsize)
+PolyLine* Viewer::AddPolyLine(Viewer* viewer, osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width, double dotsize)
 {
-    PolyLine* pline = new PolyLine(rootnode_, points, color, width, dotsize);
+    PolyLine* pline = new PolyLine(viewer, root_origin2odr_, points, color, width, dotsize);
     polyLine_.push_back(pline);
     return polyLine_.back();
 }
 
-PolyLine* Viewer::AddPolyLine(osg::Group* parent, osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width, double dotsize)
+PolyLine* Viewer::AddPolyLine(Viewer* viewer, osg::Group* parent, osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width, double dotsize)
 {
-    PolyLine* pline = new PolyLine(parent, points, color, width, dotsize);
+    PolyLine* pline = new PolyLine(viewer, parent, points, color, width, dotsize);
     polyLine_.push_back(pline);
     return pline;
 }
@@ -3845,8 +3238,55 @@ void Viewer::SetOffScreenActive(bool state)
     }
 }
 
-void Viewer::Frame()
+void Viewer::Frame(double time)
 {
+    if (rubberbandManipulator_->getTrackNode() == nullptr)
+    {
+        if (entities_.size() > 1)
+        {
+            // calculate center point of all entities, and set distance based on bounding box size
+            double min_x = 0.0, min_y = 0.0, max_x = 0.0, max_y = 0.0, min_z = 0.0, max_z = 0.0;
+            for (unsigned int i = 0; i < entities_.size(); i++)
+            {
+                const osg::Vec3d* v = entities_[i]->GetPosition();
+                if (v == nullptr)
+                {
+                    continue;  // no position available
+                }
+                double x = v->x() + origin_[0];
+                double y = v->y() + origin_[1];
+                double z = v->z() + origin_[2];
+                if (i == 0)
+                {
+                    min_x = max_x = x;
+                    min_y = max_y = y;
+                    min_z = max_z = z;
+                }
+                else
+                {
+                    min_x = MIN(min_x, x);
+                    max_x = MAX(max_x, x);
+                    min_y = MIN(min_y, y);
+                    max_y = MAX(max_y, y);
+                    min_z = MIN(min_z, z);
+                    max_z = MAX(max_z, z);
+                }
+            }
+
+            float  center_x = static_cast<float>((min_x + max_x) / 2.0);
+            float  center_y = static_cast<float>((min_y + max_y) / 2.0);
+            float  center_z = static_cast<float>((min_z + max_z) / 2.0);
+            double distance = GetLengthOfLine2D(min_x, min_y, max_x, max_y);
+            rubberbandManipulator_->setCenterAndDistance(osg::Vec3(center_x, center_y, center_z), 20 + distance);
+        }
+        else
+        {
+            rubberbandManipulator_->setTrackNode(environment_, true);
+        }
+    }
+
+    time_ = time;
+
     if (IsOffScreenRequested())
     {
         renderSemaphore.Set();  // Raise semaphore to flag rendering ongoing
@@ -3858,6 +3298,16 @@ void Viewer::Frame()
     {
         frameCounter_++;
     }
+}
+
+void Viewer::SetFrictionScaleFactor(const double factor)
+{
+    frictionScaleFactor_ = factor;
+}
+
+double Viewer::GetFrictionScaleFactor() const
+{
+    return frictionScaleFactor_;
 }
 
 bool ViewerEventHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter&)
@@ -3959,11 +3409,11 @@ bool ViewerEventHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActi
             }
         }
         break;
-        case (osgGA::GUIEventAdapter::KEY_O):
+        case ('o'):
         {
             if (ea.getEventType() & osgGA::GUIEventAdapter::KEYDOWN)
             {
-                viewer_->ToggleNodeMaskBits(viewer::NodeMask::NODE_MASK_ODR_FEATURES);
+                viewer_->ToggleNodeMaskBits(NodeMask::NODE_MASK_ODR_FEATURES);
             }
         }
         break;
@@ -3971,7 +3421,7 @@ bool ViewerEventHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActi
         {
             if (ea.getEventType() & osgGA::GUIEventAdapter::KEYDOWN)
             {
-                viewer_->ToggleNodeMaskBits(viewer::NodeMask::NODE_MASK_ROUTE_WAYPOINTS);
+                viewer_->ToggleNodeMaskBits(NodeMask::NODE_MASK_ROUTE_WAYPOINTS);
             }
         }
         break;
@@ -3979,7 +3429,7 @@ bool ViewerEventHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActi
         {
             if (ea.getEventType() & osgGA::GUIEventAdapter::KEYDOWN)
             {
-                viewer_->ToggleNodeMaskBits(viewer::NodeMask::NODE_MASK_TRAJECTORY_LINES);
+                viewer_->ToggleNodeMaskBits(NodeMask::NODE_MASK_TRAJECTORY_LINES);
             }
         }
         break;
@@ -3987,7 +3437,7 @@ bool ViewerEventHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActi
         {
             if (ea.getEventType() & osgGA::GUIEventAdapter::KEYDOWN)
             {
-                viewer_->ToggleNodeMaskBits(viewer::NodeMask::NODE_MASK_OSI_LINES);
+                viewer_->ToggleNodeMaskBits(NodeMask::NODE_MASK_OSI_LINES);
             }
         }
         break;
@@ -3995,7 +3445,7 @@ bool ViewerEventHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActi
         {
             if (ea.getEventType() & osgGA::GUIEventAdapter::KEYDOWN)
             {
-                viewer_->ToggleNodeMaskBits(viewer::NodeMask::NODE_MASK_OSI_POINTS);
+                viewer_->ToggleNodeMaskBits(NodeMask::NODE_MASK_OSI_POINTS);
             }
         }
         break;
@@ -4040,16 +3490,46 @@ bool ViewerEventHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActi
                 }
                 int idx = viewer_->currentCarInFocus_ + step;
 
-                if (idx >= static_cast<int>(viewer_->entities_.size()))
+                if ((idx < -1 && viewer_->environment_ != nullptr) || (idx == -1 && viewer_->environment_ == nullptr))
                 {
-                    idx = 0;
+                    if (viewer_->entities_.size() > 1)
+                    {
+                        // wrap to group of all entities
+                        idx = static_cast<int>(viewer_->entities_.size());
+                    }
+                    else if (viewer_->entities_.size() > 0)
+                    {
+                        // wrap to first and single entities
+                        idx = 0;
+                    }
+                    else
+                    {
+                        // fall back to NONE
+                        idx = -1;
+                    }
                 }
-                else if (idx < 0)
+                else if ((idx > static_cast<int>(viewer_->entities_.size())) ||
+                         ((idx > static_cast<int>(viewer_->entities_.size() - 1) && (viewer_->entities_.size() < 2))))
                 {
-                    idx = static_cast<int>(viewer_->entities_.size()) - 1;
+                    // wrap to NONE
+                    idx = -1;
                 }
 
-                viewer_->SetVehicleInFocus(idx);
+                // handle resulting index
+                if (idx == -1)
+                {
+                    if (viewer_->environment_ == nullptr)
+                    {
+                        if (viewer_->entities_.size() > 0)
+                        {
+                            // entity 0 exists, focus on that instead of environment
+                            idx = 0;
+                        }
+                    }
+                }
+
+                // calculate distance only when moving focus from ALL or NONE to a single entity
+                viewer_->SetVehicleInFocus(idx, (step == 1 && idx == 0) || (step == -1 && idx == viewer_->entities_.size() - 1));
             }
         }
         break;
@@ -4057,13 +3537,13 @@ bool ViewerEventHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActi
         {
             if (ea.getEventType() & osgGA::GUIEventAdapter::KEYDOWN)
             {
-                int mask = viewer_->GetNodeMaskBit(viewer::NodeMask::NODE_MASK_ENTITY_MODEL | viewer::NodeMask::NODE_MASK_ENTITY_BB) /
-                           viewer::NodeMask::NODE_MASK_ENTITY_MODEL;
+                int mask =
+                    viewer_->GetNodeMaskBit(NodeMask::NODE_MASK_ENTITY_MODEL | NodeMask::NODE_MASK_ENTITY_BB) / NodeMask::NODE_MASK_ENTITY_MODEL;
 
                 // Toggle between modes: 0: none, 1: model only, 2: bounding box, 3. model + Bounding box
-                mask = ((mask + 1) % 4) * viewer::NodeMask::NODE_MASK_ENTITY_MODEL;
+                mask = ((mask + 1) % 4) * NodeMask::NODE_MASK_ENTITY_MODEL;
 
-                viewer_->SetNodeMaskBits(viewer::NodeMask::NODE_MASK_ENTITY_MODEL | viewer::NodeMask::NODE_MASK_ENTITY_BB, mask);
+                viewer_->SetNodeMaskBits(NodeMask::NODE_MASK_ENTITY_MODEL | NodeMask::NODE_MASK_ENTITY_BB, mask);
             }
         }
         break;
@@ -4071,13 +3551,12 @@ bool ViewerEventHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActi
         {
             if (ea.getEventType() & osgGA::GUIEventAdapter::KEYDOWN)
             {
-                int mask = viewer_->GetNodeMaskBit(viewer::NodeMask::NODE_MASK_INFO | viewer::NodeMask::NODE_MASK_INFO_PER_OBJ) /
-                           viewer::NodeMask::NODE_MASK_INFO;
+                int mask = viewer_->GetNodeMaskBit(NodeMask::NODE_MASK_INFO | NodeMask::NODE_MASK_INFO_PER_OBJ) / NodeMask::NODE_MASK_INFO;
 
                 // Toggle between modes: 0: none, 1: global info, 2: per object only, 3. both
-                mask = ((mask + 1) % 4) * viewer::NodeMask::NODE_MASK_INFO;
+                mask = ((mask + 1) % 4) * NodeMask::NODE_MASK_INFO;
 
-                viewer_->SetNodeMaskBits(viewer::NodeMask::NODE_MASK_INFO | viewer::NodeMask::NODE_MASK_INFO_PER_OBJ, mask);
+                viewer_->SetNodeMaskBits(NodeMask::NODE_MASK_INFO | NodeMask::NODE_MASK_INFO_PER_OBJ, mask);
             }
         }
         break;
@@ -4085,13 +3564,13 @@ bool ViewerEventHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActi
         {
             if (ea.getEventType() & osgGA::GUIEventAdapter::KEYDOWN)
             {
-                int mask = viewer_->GetNodeMaskBit(viewer::NodeMask::NODE_MASK_TRAIL_LINES | viewer::NodeMask::NODE_MASK_TRAIL_DOTS) /
-                           viewer::NodeMask::NODE_MASK_TRAIL_LINES;
+                int mask =
+                    viewer_->GetNodeMaskBit(NodeMask::NODE_MASK_TRAIL_LINES | NodeMask::NODE_MASK_TRAIL_DOTS) / NodeMask::NODE_MASK_TRAIL_LINES;
 
                 // Toggle between modes: 0: none, 1: lines only, 2: dots only, 3. lines and dots
-                mask = ((mask + 1) % 4) * viewer::NodeMask::NODE_MASK_TRAIL_LINES;
+                mask = ((mask + 1) % 4) * NodeMask::NODE_MASK_TRAIL_LINES;
 
-                viewer_->SetNodeMaskBits(viewer::NodeMask::NODE_MASK_TRAIL_LINES | viewer::NodeMask::NODE_MASK_TRAIL_DOTS, mask);
+                viewer_->SetNodeMaskBits(NodeMask::NODE_MASK_TRAIL_LINES | NodeMask::NODE_MASK_TRAIL_DOTS, mask);
             }
         }
         break;
@@ -4099,7 +3578,7 @@ bool ViewerEventHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActi
         {
             if (ea.getEventType() & osgGA::GUIEventAdapter::KEYDOWN)
             {
-                viewer_->ToggleNodeMaskBits(viewer::NodeMask::NODE_MASK_OBJECT_SENSORS);
+                viewer_->ToggleNodeMaskBits(NodeMask::NODE_MASK_OBJECT_SENSORS);
             }
         }
         break;

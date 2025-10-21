@@ -18,6 +18,7 @@
 #include "Parameters.hpp"
 #include "Entities.hpp"
 #include "vehicle.hpp"
+#include "OSCPrivateAction.hpp"
 #include <queue>
 
 // Enable test mode, which stops the vehicle when reaching a target
@@ -39,39 +40,28 @@ namespace scenarioengine
     {
     public:
         ControllerFollowRoute(InitArgs *args);
+        ~ControllerFollowRoute();
 
-        static const char *GetTypeNameStatic()
+        virtual const char *GetTypeName()
         {
             return CONTROLLER_FOLLOW_ROUTE_TYPE_NAME;
         }
-        virtual const char *GetTypeName()
-        {
-            return GetTypeNameStatic();
-        }
-        static int GetTypeStatic()
-        {
-            return CONTROLLER_TYPE_FOLLOW_ROUTE;
-        }
         virtual int GetType()
         {
-            return GetTypeStatic();
+            return CONTROLLER_TYPE_FOLLOW_ROUTE;
         }
 
         void Init();
         void Step(double timeStep);
-        void Activate(DomainActivation lateral, DomainActivation longitudinal);
+        int  Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)]);
         void ReportKeyEvent(int key, bool down);
-        void SetScenarioEngine(ScenarioEngine *scenarioEngine)
-        {
-            scenarioEngine_ = scenarioEngine;
-        };
 
         /**
          * @brief Get the time for a lane change
          *
          * @return double, (s)
          */
-        double GetLaneChangeTime()
+        double GetLaneChangeTime() const
         {
             return laneChangeTime_;
         };
@@ -80,7 +70,7 @@ namespace scenarioengine
          *
          * @return double, (m)
          */
-        double GetMinDistForCollision()
+        double GetMinDistForCollision() const
         {
             return minDistForCollision_;
         };
@@ -131,7 +121,7 @@ namespace scenarioengine
          * @brief Wrapper for controller::deactivate, to include testMode
          *
          */
-        void Deactivate();
+        void Deactivate() override;
 
         /**
          * @brief Get the Waypoint Status, checks if entity has missed, reached, or passed waypoint.
@@ -142,10 +132,9 @@ namespace scenarioengine
          */
         WaypointStatus GetWaypointStatus(roadmanager::Position vehiclePos, roadmanager::Position waypoint);
 
-        ScenarioEngine                    *scenarioEngine_;
         vehicle::Vehicle                   vehicle_;
-        OSCPrivateAction                  *laneChangeAction_;
-        roadmanager::OpenDrive            *odr_;
+        LatLaneChangeAction               *laneChangeAction_ = nullptr;
+        roadmanager::OpenDrive            *odr_              = nullptr;
         std::vector<roadmanager::Position> waypoints_;
         int                                currentWaypointIndex_;
         int                                scenarioWaypointIndex_;

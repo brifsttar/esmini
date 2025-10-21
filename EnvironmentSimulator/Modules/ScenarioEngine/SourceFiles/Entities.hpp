@@ -18,11 +18,32 @@
 #include "RoadManager.hpp"
 #include "CommonMini.hpp"
 #include "OSCBoundingBox.hpp"
-#include "OSCProperties.hpp"  //todo
+#include "OSCProperties.hpp"
+#include "Controller.hpp"
 #include <algorithm>
 
 namespace scenarioengine
 {
+
+    struct WheelData
+    {
+        double x = 0.0;  // x coordinate in vehicle coordinate system
+        double y = 0.0;  // y coordinate in vehicle coordinate system
+        double z = 0.0;  // z coordinate in vehicle coordinate system
+        double h = 0.0;  // heading/yaw in global coordinate system
+        double p = 0.0;  // pitch in global coordinate system
+        // double r;                     // roll in global coordinate system
+        // double width;                 // median width of the tire
+        double wheel_radius;                // median radius of the wheel measured from the center of the wheel to the outer part of the tire
+        double friction_coefficient = 0.0;  // the value describes the kinetic friction of the tyre's contact point
+        double rotation_rate        = 0.0;  // rotation rate of the wheel
+        // double rim_radius;  // 	median radius of the rim measured from the center to the outer, visible part of the rim
+        int axle  = -1;  // 0=front, 1=next axle from front and so on. -1 indicates wheel is not existing.
+        int index = -1;  // The index of the wheel on the axle, counting in the direction of positive-y, that is, right-to-left. -1 indicates wheel
+                         // not existing.
+        // std::string model_reference; // Opaque reference of an associated 3D model of the wheel
+    };
+
     class Controller;  // Forward declaration
     class OSCPrivateAction;
     class Event;
@@ -50,20 +71,24 @@ namespace scenarioengine
             WHEEL_ANGLE         = (1 << 3),
             WHEEL_ROTATION      = (1 << 4),
             VISIBILITY          = (1 << 5),
-            VELOCITY            = (1 << 6),
-            ANGULAR_RATE        = (1 << 7),
-            ACCELERATION        = (1 << 8),
-            ANGULAR_ACC         = (1 << 9),
-            TELEPORT            = (1 << 10),
-            ROUTE               = (1 << 11),
-            ALIGN_MODE_Z_SET    = (1 << 12),
-            ALIGN_MODE_H_SET    = (1 << 13),
-            ALIGN_MODE_P_SET    = (1 << 14),
-            ALIGN_MODE_R_SET    = (1 << 15),
-            ALIGN_MODE_Z_UPDATE = (1 << 16),
-            ALIGN_MODE_H_UPDATE = (1 << 17),
-            ALIGN_MODE_P_UPDATE = (1 << 18),
-            ALIGN_MODE_R_UPDATE = (1 << 19)
+            FRICTION            = (1 << 6),
+            VELOCITY            = (1 << 7),
+            ANGULAR_RATE        = (1 << 8),
+            ACCELERATION        = (1 << 9),
+            ANGULAR_ACC         = (1 << 10),
+            TELEPORT            = (1 << 11),
+            ROUTE               = (1 << 12),
+            ALIGN_MODE_Z_SET    = (1 << 13),
+            ALIGN_MODE_H_SET    = (1 << 14),
+            ALIGN_MODE_P_SET    = (1 << 15),
+            ALIGN_MODE_R_SET    = (1 << 16),
+            ALIGN_MODE_Z_UPDATE = (1 << 17),
+            ALIGN_MODE_H_UPDATE = (1 << 18),
+            ALIGN_MODE_P_UPDATE = (1 << 19),
+            ALIGN_MODE_R_UPDATE = (1 << 20),
+            CONTROLLER          = (1 << 21),
+            BOUNDING_BOX        = (1 << 22),
+            LANE_TYPE_SNAP_MASK = (1 << 23)
         } DirtyBit;
 
         typedef enum
@@ -86,6 +111,18 @@ namespace scenarioengine
             OVERRIDE_NR_TYPES       = 6,
             OVERRIDE_UNDEFINED      = 7
         } OverrideType;
+
+        enum class Role
+        {
+            NONE             = 0,
+            AMBULANCE        = 1,
+            CIVIL            = 2,
+            FIRE             = 3,
+            MILITARY         = 4,
+            POLICE           = 5,
+            PUBLIC_TRANSPORT = 6,
+            ROAD_ASSISTANCE  = 7
+        };
 
         enum class OverrideGearType
         {
@@ -129,21 +166,20 @@ namespace scenarioengine
         // Allocate vector for all possible override status
         OverrideActionStatus overrideActionList[OverrideType::OVERRIDE_NR_TYPES];
 
-        Type        type_;
-        int         id_;
-        double      speed_;
-        double      wheel_angle_;
-        double      wheel_rot_;
-        std::string model3d_;
-        int         ghost_trail_s_;       // closest point on ghost trail
-        int         trail_follow_index_;  // Index of closest segment
-        double      odometer_;
-        double      end_of_road_timestamp_;
-        double      off_road_timestamp_;
-        double      stand_still_timestamp_;
-        bool        reset_;  // indicate discreet movement, teleporting, no odometer update
+        Type   type_;
+        int    id_;
+        double speed_;
+        double wheel_angle_;
+        double wheel_rot_;
+        int    ghost_trail_s_;       // closest point on ghost trail
+        idx_t  trail_follow_index_;  // Index of closest segment
+        double odometer_;
+        double end_of_road_timestamp_;
+        double off_road_timestamp_;
+        double stand_still_timestamp_;
+        bool   reset_;  // indicate discreet movement, teleporting, no odometer update
 
-        Controller*                                 controller_;  // reference to any assigned controller object
+        std::vector<Controller*>                    controllers_;  // reference to all assigned controller objects
         double                                      headstart_time_;
         Object*                                     ghost_;
         Object*                                     ghost_Ego_;
@@ -170,6 +206,7 @@ namespace scenarioengine
         Performance               performance_;
         Axle                      front_axle_;
         Axle                      rear_axle_;
+        double                    model3d_x_offset_ = 0.0;
 
         // Rel2abs Controller addition
         std::vector<Event*>            objectEvents_;  // Events that contains privateactions applied to this object
@@ -195,33 +232,33 @@ namespace scenarioengine
         {
         }
         void SetEndOfRoad(bool state, double time = 0.0);
-        bool IsEndOfRoad()
+        bool IsEndOfRoad() const
         {
             return end_of_road_timestamp_ > SMALL_NUMBER;
         }
-        double GetEndOfRoadTimestamp()
+        double GetEndOfRoadTimestamp() const
         {
             return end_of_road_timestamp_;
         }
         void SetOffRoad(bool state, double time = 0.0);
-        bool IsOffRoad()
+        bool IsOffRoad() const
         {
             return off_road_timestamp_ > SMALL_NUMBER;
         }
-        double GetOffRoadTimestamp()
+        double GetOffRoadTimestamp() const
         {
             return off_road_timestamp_;
         }
         void SetStandStill(bool state, double time = 0.0);
-        bool IsStandStill()
+        bool IsStandStill() const
         {
             return stand_still_timestamp_ > SMALL_NUMBER;
         }
-        bool IsActive()
+        bool IsActive() const
         {
             return is_active_;
         }
-        Type GetType()
+        Type GetType() const
         {
             return type_;
         }
@@ -238,7 +275,7 @@ namespace scenarioengine
             Returns the timestamp from which the entity has not moved.
                 @return The timestamp in seconds.
         */
-        double GetStandStillTimestamp()
+        double GetStandStillTimestamp() const
         {
             return stand_still_timestamp_;
         }
@@ -286,7 +323,7 @@ namespace scenarioengine
         double FreeSpaceDistancePoint(double x, double y, double* latDist, double* longDist);
 
         int FreeSpaceDistancePointRoadLane(double x, double y, double* latDist, double* longDist, roadmanager::CoordinateSystem cs);
-        int FreeSpaceDistanceObjectRoadLane(Object* target, roadmanager::PositionDiff* diff, roadmanager::CoordinateSystem cs);
+        int FreeSpaceDistanceObjectRoadLane(Object* target, roadmanager::PositionDiff* posDiff, roadmanager::CoordinateSystem cs);
 
         /**
         Measure the distance to provided target object
@@ -322,6 +359,13 @@ namespace scenarioengine
                      double&                           dist,
                      double                            maxDist = LARGE_NUMBER);
 
+        int TimeHeadway(Object*                           target,
+                        roadmanager::CoordinateSystem     cs,
+                        roadmanager::RelativeDistanceType relDistType,
+                        bool                              freeSpace,
+                        double&                           thw,
+                        double                            maxDist = LARGE_NUMBER);
+
         enum class OverlapType
         {
             NONE            = 0,             // object is not overlapping Ego front projection
@@ -344,21 +388,38 @@ namespace scenarioengine
             speed_ = speed;
             SetDirtyBits(Object::DirtyBit::SPEED);
         }
-        double GetSpeed()
+        double GetSpeed() const
         {
             return speed_;
         }
-        void SetAssignedController(Controller* controller)
+
+        void AssignController(Controller* controller);
+        void UnassignController(Controller* controller);
+        void UnassignControllers();
+
+        bool IsControllerActiveOnDomains(unsigned int domainMask, Controller::Type type = Controller::Type::CONTROLLER_TYPE_UNDEFINED);
+        bool IsControllerActiveOnAnyOfDomains(unsigned int domainMask, Controller::Type type = Controller::Type::CONTROLLER_TYPE_UNDEFINED);
+        bool IsControllerModeOnDomains(ControlOperationMode mode,
+                                       unsigned int         domainMask,
+                                       Controller::Type     type = Controller::Type::CONTROLLER_TYPE_UNDEFINED);
+        bool IsControllerModeOnAnyOfDomains(ControlOperationMode mode,
+                                            unsigned int         domainMask,
+                                            Controller::Type     type = Controller::Type::CONTROLLER_TYPE_UNDEFINED);
+
+        Controller*      GetAssignedControllerOftype(Controller::Type type);
+        bool             IsAnyAssignedControllerOfType(Controller::Type type);
+        bool             IsAnyActiveControllerOfType(Controller::Type type);
+        Controller*      GetControllerActiveOnDomainMask(ControlDomainMasks domain_mask);
+        Controller*      GetControllerActiveOnDomain(ControlDomains domain);
+        Controller::Type GetControllerTypeActiveOnDomain(ControlDomains domain);
+        unsigned int     GetNrOfAssignedControllers() const
         {
-            controller_ = controller;
+            return static_cast<unsigned int>(controllers_.size());
         }
-        int  GetAssignedControllerType();
-        int  GetActivatedControllerType();
-        bool IsControllerActiveOnDomains(ControlDomains domainMask);
-        bool IsControllerActiveOnAnyOfDomains(ControlDomains domainMask);
-        bool IsControllerActive();
-        int  GetControllerMode();
-        int  GetId()
+
+        Controller* GetController(std::string name);
+
+        int GetId() const
         {
             return id_;
         }
@@ -366,7 +427,7 @@ namespace scenarioengine
         {
             headstart_time_ = headstartTime;
         }
-        double GetHeadstartTime()
+        double GetHeadstartTime() const
         {
             return headstart_time_;
         }
@@ -379,9 +440,14 @@ namespace scenarioengine
             return ghost_;
         }
         void SetVisibilityMask(int mask);
-        bool IsGhost()
+        bool IsGhost() const
         {
             return isGhost_;
+        }
+
+        double GetWheelAngle() const
+        {
+            return wheel_angle_;
         }
         void SetVel(double x_vel, double y_vel, double z_vel);
         void SetAcc(double x_acc, double y_acc, double z_acc);
@@ -399,7 +465,7 @@ namespace scenarioengine
         {
             performance_.maxAcceleration = maxAcceleration;
         }
-        double GetMaxAcceleration()
+        double GetMaxAcceleration() const
         {
             return performance_.maxAcceleration;
         }
@@ -407,7 +473,7 @@ namespace scenarioengine
         {
             performance_.maxDeceleration = maxDeceleration;
         }
-        double GetMaxDeceleration()
+        double GetMaxDeceleration() const
         {
             return performance_.maxDeceleration;
         }
@@ -415,25 +481,25 @@ namespace scenarioengine
         {
             performance_.maxSpeed = maxSpeed;
         }
-        double GetMaxSpeed()
+        double GetMaxSpeed() const
         {
             return performance_.maxSpeed;
         }
-        std::string GetName()
+        std::string GetName() const
         {
             return name_;
         }
-        std::string GetTypeName()
+        std::string GetTypeName() const
         {
             return typeName_;
         }
         std::string GetModelFileName()
         {
-            return FileNameOf(model3d_);
+            return FileNameOf(model3d_full_path_);
         }
-        std::string GetModelFilePath()
+        std::string GetModelFilePath() const
         {
-            return model3d_;
+            return model3d_full_path_;
         }
 
         /**
@@ -449,7 +515,7 @@ namespace scenarioengine
         Get current strategy how to choose way in next junction
         @return JunctionStrategyType: Use specified angle (SetJunctionSelectorAngle*) or randomize. See roadmanager::Junction::JunctionStrategyType.
         */
-        roadmanager::Junction::JunctionStrategyType GetJunctionSelectorStrategy()
+        roadmanager::Junction::JunctionStrategyType GetJunctionSelectorStrategy() const
         {
             return junctionSelectorStrategy_;
         }
@@ -465,7 +531,7 @@ namespace scenarioengine
         */
         void SetJunctionSelectorAngleRandom();
 
-        double GetJunctionSelectorAngle()
+        double GetJunctionSelectorAngle() const
         {
             return nextJunctionSelectorAngle_;
         }
@@ -487,7 +553,7 @@ namespace scenarioengine
             return objectEvents_;
         }
 
-        bool CheckDirtyBits(int bits)
+        bool CheckDirtyBits(int bits) const
         {
             return bool(dirty_ & bits);
         }
@@ -502,7 +568,7 @@ namespace scenarioengine
             dirty_ = bitmask;
         }
 
-        int GetDirtyBitMask()
+        int GetDirtyBitMask() const
         {
             return dirty_;
         }
@@ -517,18 +583,82 @@ namespace scenarioengine
             dirty_ = 0;
         }
 
-        Object*            TowVehicle();
-        Object*            TrailerVehicle();
-        static std::string Type2String(int type);
-
-    private:
-        int  dirty_;
-        bool is_active_;
+        void SetRole(std::string role)
+        {
+            if (role == "ambulance")
+            {
+                role_ = static_cast<int>(Object::Role::AMBULANCE);
+            }
+            else if (role == "civil")
+            {
+                role_ = static_cast<int>(Object::Role::CIVIL);
+            }
+            else if (role == "fire")
+            {
+                role_ = static_cast<int>(Object::Role::FIRE);
+            }
+            else if (role == "military")
+            {
+                role_ = static_cast<int>(Object::Role::MILITARY);
+            }
+            else if (role == "police")
+            {
+                role_ = static_cast<int>(Object::Role::POLICE);
+            }
+            else if (role == "public_transport")
+            {
+                role_ = static_cast<int>(Object::Role::PUBLIC_TRANSPORT);
+            }
+            else if (role == "road_assistance")
+            {
+                role_ = static_cast<int>(Object::Role::ROAD_ASSISTANCE);
+            }
+            else
+            {
+                role_ = static_cast<int>(Object::Role::NONE);
+            }
+        }
 
         void SetActive(bool active)
         {
             is_active_ = active;
         }
+
+        Object*            TowVehicle();
+        Object*            TrailerVehicle();
+        static std::string Type2String(int type);
+        static std::string Role2String(int role);
+
+        void SetModel3DFullPath(const std::string& path)
+        {
+            model3d_full_path_ = path;
+        }
+
+        const std::string& GetModel3DFullPath() const
+        {
+            return model3d_full_path_;
+        }
+
+        std::string GetModel3DFilename() const
+        {
+            return FileNameOf(model3d_full_path_);
+        }
+
+        void SetSourceReference(const std::string& source_reference)
+        {
+            source_reference_ = source_reference;
+        }
+
+        const std::string& GetSourceReference() const
+        {
+            return source_reference_;
+        }
+
+    private:
+        int         dirty_;
+        bool        is_active_;
+        std::string model3d_full_path_;
+        std::string source_reference_;
     };
 
     class Vehicle : public Object
@@ -576,18 +706,6 @@ namespace scenarioengine
             TRAM        = 9
         } Category;
 
-        typedef enum
-        {
-            NONE             = 0,
-            AMBULANCE        = 1,
-            CIVIL            = 2,
-            FIRE             = 3,
-            MILITARY         = 4,
-            POLICE           = 5,
-            PUBLIC_TRANSPORT = 6,
-            ROAD_ASSISTANCE  = 7
-        } Role;
-
         Vehicle();
         Vehicle(const Vehicle& v);
         Vehicle& operator=(const Vehicle&) = default;
@@ -629,54 +747,53 @@ namespace scenarioengine
             }
             else
             {
-                LOG("Vehicle category %s not supported yet", category.c_str());
+                LOG_ERROR("Vehicle category {} not supported yet", category);
             }
+
+            SetWheelData();
 
             return;
         }
 
-        void SetRole(std::string role)
+        void SetWheelData()
         {
-            if (role == "ambulance")
+            if (category_ == Category::CAR || category_ == Category::VAN || category_ == Category::TRUCK || category_ == Category::SEMITRAILER ||
+                category_ == Category::BUS || category_ == Category::TRAIN || category_ == Category::TRAM)
             {
-                role_ = static_cast<int>(Vehicle::Role::AMBULANCE);
+                WheelData frontrightwheel{front_axle_.positionX, -front_axle_.trackWidth / 2.0, front_axle_.positionZ, 0.0, 0.0, 0.0, 1.0, 0.0, 0, 0};
+                WheelData frontleftwheel{front_axle_.positionX, front_axle_.trackWidth / 2.0, front_axle_.positionZ, 0.0, 0.0, 0.0, 1.0, 0.0, 0, 1};
+                WheelData rearrightwheel{0.0, -rear_axle_.trackWidth / 2.0, rear_axle_.positionZ, 0.0, 0.0, 0.0, 1.0, 0.0, 1, 0};
+                WheelData rearleftwheel{0.0, rear_axle_.trackWidth / 2.0, rear_axle_.positionZ, 0.0, 0.0, 0.0, 1.0, 0.0, 1, 1};
+
+                // order according to OSI, front-to-rear and right-to-left
+                wheel_data = {frontrightwheel, frontleftwheel, rearrightwheel, rearleftwheel};
             }
-            else if (role == "civil")
+            else if (category_ == Category::MOTORBIKE || category_ == Category::BICYCLE)
             {
-                role_ = static_cast<int>(Vehicle::Role::CIVIL);
+                WheelData frontwheel{front_axle_.positionX, 0.0, front_axle_.positionZ, 0.0, 0.0, 0.0, 1.0, 0.0, 0, 0};
+                WheelData rearwheel{0.0, 0.0, rear_axle_.positionZ, 0.0, 0.0, 0.0, 1.0, 0.0, 1, 0};
+                wheel_data = {frontwheel, rearwheel};
             }
-            else if (role == "fire")
+            else if (category_ == Category::TRAILER)
             {
-                role_ = static_cast<int>(Vehicle::Role::FIRE);
-            }
-            else if (role == "military")
-            {
-                role_ = static_cast<int>(Vehicle::Role::MILITARY);
-            }
-            else if (role == "police")
-            {
-                role_ = static_cast<int>(Vehicle::Role::POLICE);
-            }
-            else if (role == "public_transport")
-            {
-                role_ = static_cast<int>(Vehicle::Role::PUBLIC_TRANSPORT);
-            }
-            else if (role == "road_assistance")
-            {
-                role_ = static_cast<int>(Vehicle::Role::ROAD_ASSISTANCE);
-            }
-            else
-            {
-                role_ = static_cast<int>(Vehicle::Role::NONE);
+                WheelData leftwheel{rear_axle_.positionX, -rear_axle_.trackWidth / 2.0, rear_axle_.positionZ, 0.0, 0.0, 0.0, 1.0, 0.0, 0, 1};
+                WheelData rightwheel{rear_axle_.positionX, rear_axle_.trackWidth / 2.0, rear_axle_.positionZ, 0.0, 0.0, 0.0, 1.0, 0.0, 0, 0};
+                wheel_data = {leftwheel, rightwheel};
             }
         }
+
+        std::vector<WheelData>& GetWheelData()
+        {
+            return wheel_data;
+        }
+
         int                             ConnectTrailer(Vehicle* trailer);
         int                             DisconnectTrailer();
         void                            AlignTrailers();
         static std::string              Category2String(int category);
-        static std::string              Role2String(int role);
         std::shared_ptr<TrailerCoupler> trailer_coupler_;  // mounting point to any tow vehicle
         std::shared_ptr<TrailerHitch>   trailer_hitch_;    // mounting point to any tow vehicle
+        std::vector<WheelData>          wheel_data;
     };
 
     class Pedestrian : public Object
@@ -689,12 +806,7 @@ namespace scenarioengine
             ANIMAL     = 2
         } Category;
 
-        double   mass_; /**< The mass of a pedestrian in kg. */
-        Vehicle* veh = new Vehicle();
-        void     setPedRole(std::string role)
-        {
-            veh->SetRole(role);
-        }
+        double mass_; /**< The mass of a pedestrian in kg. */
 
         Pedestrian() : Object(Object::Type::PEDESTRIAN), mass_(0.0)
         {
@@ -723,7 +835,7 @@ namespace scenarioengine
             }
             else
             {
-                LOG("Pedestrian category %s not supported yet", category.c_str());
+                LOG_ERROR("Pedestrian category {} not supported yet", category);
             }
 
             return;
@@ -756,11 +868,12 @@ namespace scenarioengine
             ROADMARK      = 16
         } Category;
 
-        double      mass_;
-        std::string name_;
+        double mass_;
+        // std::string name_;
 
-        MiscObject() : Object(Object::Type::MISC_OBJECT), mass_(0.0), name_("")
+        MiscObject() : Object(Object::Type::MISC_OBJECT), mass_(0.0)
         {
+            name_                        = "";
             performance_.maxAcceleration = 0.0;
             performance_.maxDeceleration = 0.0;
             performance_.maxSpeed        = 0.0;
@@ -838,7 +951,7 @@ namespace scenarioengine
             }
             else
             {
-                LOG("MiscObject category %s not supported yet", category.c_str());
+                LOG_ERROR("MiscObject category {} not supported yet", category);
             }
 
             return;
@@ -876,8 +989,8 @@ namespace scenarioengine
         void    removeObject(std::string name, bool recursive = true);
         void    removeObject(Object* object, bool recursive = true);
         int     getNewId();
-        bool    indexExists(int id);
-        bool    nameExists(std::string name);
+        bool    indexExists(int id) const;
+        bool    nameExists(std::string name) const;
         Object* GetObjectByName(std::string name);
         Object* GetObjectById(int id);
         int     GetObjectIdxById(int id);

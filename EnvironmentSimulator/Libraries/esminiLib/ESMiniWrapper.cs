@@ -23,6 +23,7 @@ namespace ESMini
 {
 
     [StructLayout(LayoutKind.Sequential)]
+    [Serializable]
     public struct ScenarioObjectState
     {
         public int id;          // Automatically generated unique object id
@@ -52,9 +53,11 @@ namespace ESMini
         public int objectCategory; // Sub category within type, according to entities.hpp / Vehicle, Pedestrian, MiscObject / Category
         public float wheel_angle;
         public float wheel_rotation;
+        public int visibilityMask;  // bitmask according to Object::Visibility (1 = Graphics, 2 = Traffic, 4 = Sensors)
     };
 
     [StructLayout(LayoutKind.Sequential)]
+    [Serializable]
     public struct RoadInfo
     {
         public float global_pos_x;     // steering target position, in global coordinate system
@@ -76,9 +79,12 @@ namespace ESMini
         public float laneOffset;       // target position, lane offset (lateral distance from lane center)
         public float s;                // target position, s (longitudinal distance along reference line)
         public float t;                // target position, t (lateral distance from reference line)
+        public int road_type;          // road type given by OpenDRIVE type entry, maps to roadmanager::Road::RoadType
+        public int road_rule;          // road rule given by OpenDRIVE rule entry, maps to roadmanager::Road::RoadRule
     };
 
     [StructLayout(LayoutKind.Sequential)]
+    [Serializable]
     public struct SimpleVehicleState
     {
         public float x;
@@ -92,6 +98,7 @@ namespace ESMini
     };
 
     [StructLayout(LayoutKind.Sequential)]
+    [Serializable]
     public struct LaneBoundaryId
     {
         public int far_left_lb_id;
@@ -101,6 +108,7 @@ namespace ESMini
     };
 
     [StructLayout(LayoutKind.Sequential)]
+    [Serializable]
     public struct PositionDiff
     {
         public float ds;            // delta s (longitudinal distance)
@@ -112,6 +120,7 @@ namespace ESMini
     };
 
     [StructLayout(LayoutKind.Sequential)]
+    [Serializable]
     public struct Center
     {
         public float x_;            // Center offset in x direction.
@@ -120,6 +129,7 @@ namespace ESMini
     };
 
     [StructLayout(LayoutKind.Sequential)]
+    [Serializable]
     public struct Dimensions
     {
         public float width_;            // Width of the entity's bounding box. Unit: m; Range: [0..inf[.
@@ -128,6 +138,7 @@ namespace ESMini
     };
 
     [StructLayout(LayoutKind.Sequential)]
+    [Serializable]
     public struct OSCBoundingBox
     {
         public Center center_;           // Represents the geometrical center of the bounding box
@@ -181,6 +192,16 @@ namespace ESMini
         /// </summary>
         /// <param name="cc">The callback function to be invoked</param>
         public static extern void SE_RegisterConditionCallback(ConditionCallback cc);
+
+	public delegate void StateChangeCallback(string name, int type, int state, string full_path);
+        [DllImport(LIB_NAME, EntryPoint = "SE_RegisterStoryBoardElementStateChangeCallback")]
+        /// <summary>
+        /// Registers a function to be called back from esmini every time a storyboard element state change is triggered.
+        /// The name of the respective condition, the type, state and full path will be returned.
+        /// Registered callbacks will be cleared between SE_Init calls.
+        /// </summary>
+        /// <param name="scc">The callback function to be invoked</param>
+	    public static extern void SE_RegisterStoryBoardElementStateChangeCallback(StateChangeCallback scc);
 
         public delegate void EventCallback(string name, double timeStamp, bool isStart);
         [DllImport(LIB_NAME, EntryPoint = "SE_RegisterEventCallback")]
@@ -305,14 +326,14 @@ namespace ESMini
         [DllImport(LIB_NAME, EntryPoint = "SE_SetSnapLaneTypes")]
         /// <summary>Specify which lane types the position object snaps to (is aware of)</summary>
         /// <param name="object_id">Id of the object (not index, use GetId(index) to find out the id)</param>
-        /// <parameter name="laneTypes">laneTypes A combination (bitmask) of lane types according to roadmanager::Lane::LaneType</parameter>
+        /// <param name="laneTypes">laneTypes A combination (bitmask) of lane types according to roadmanager::Lane::LaneType</parameter>
         /// <return>0 if successful, -1 if not</return>
         public static extern int SE_SetSnapLaneTypes(int object_id, int laneTypes);
 
         [DllImport(LIB_NAME, EntryPoint = "SE_SetLockOnLane")]
         /// <summary>Controls whether to keep lane ID regardless of lateral position or snap to closest lane (default)</summary>
         /// <param name="object_id">Id of the object (not index, use GetId(index) to find out the id)</param>
-        /// <parameter name="mode">True=keep lane False=Snap to closest (default)</parameter>
+        /// <param name="mode">True=keep lane False=Snap to closest (default)</parameter>
         /// <return>0 if successful, -1 if not</return>
         public static extern int SE_SetLockOnLane(int object_id, bool mode);
 
@@ -327,6 +348,20 @@ namespace ESMini
         /// <param name="state">Reference to a ScenarioObjectState struct to be filled in</param>
         /// <return>0 if successful, -1 if not</return>
         public static extern int SE_GetObjectState(int object_id, ref ScenarioObjectState state);
+
+        [DllImport(LIB_NAME, EntryPoint = "SE_GetObjectInLaneType")]
+        /// <summary>
+        /// Find out what lane type object is currently in, reference point projected on road
+        /// Can be used for checking exact lane type or combinations by bitmask.
+        /// See lane type definitions in roadmanager::Lane::LaneType enum.
+        /// Example 1: Check if on border lane: SE_GetObjectLaneType(id) == (1 << 6)
+        /// Example 2: Check if on any drivable lane: SE_GetObjectLaneType(id) & 1966594
+        /// Example 3: Check if on any road lane: SE_GetObjectLaneType(id) & 1966726
+        /// Example 4: Check for no lane(outside defined lanes): SE_GetObjectLaneType(id) == 1
+        /// </summary>
+        /// <param name="object_id">Id of the object (not index, use GetId(index) to find out the id)</param>
+        /// <return>true if off road, else false</return>
+        public static extern int SE_GetObjectInLaneType(int object_id);
 
         [DllImport(LIB_NAME, EntryPoint = "SE_GetObjectTypeName")]
         //[return: MarshalAs(UnmanagedType.LPStr)]
@@ -362,8 +397,14 @@ namespace ESMini
         /// <return>0 if successful, -1 if not</return>
         public static extern int SE_GetObjectGhostState(int object_id, ref ScenarioObjectState state);
 
+        [DllImport(LIB_NAME, EntryPoint = "SE_GetObjectAcceleration")]
+        /// <summary>Get the acceleration magnitude of specified object</summary>
+        /// <param name="object_id">Id of the object to which the ghost is attached</param>
+        /// <returns>the acceleration if successful, std::nanf if not</returns>
+        public static extern float SE_GetObjectAcceleration(int object_id);
+
         [DllImport(LIB_NAME, EntryPoint = "SE_GetSpeedUnit")]
-        /// <summaryGet the unit of specified speed</summary>
+        /// <summary>Get the unit of specified speed</summary>
         /// All roads will be looped in search for such an element. First found will be used.
         /// If speed is specified withouth the optional unit, SI unit m/s is assumed.
         /// If no speed entries is found, undefined will be returned.
@@ -635,6 +676,12 @@ namespace ESMini
         /// <param name="object_id">Id of the object</param>
         /// <param name="ids">Reference to a struct which will be filled with the Ids</param>
         public static extern IntPtr SE_GetOSILaneBoundaryIds(int object_id, ref LaneBoundaryId ids);
-    }
 
+        [DllImport(LIB_NAME, EntryPoint = "SE_ClearOSIGroundTruth")]
+        /// <summary>
+        /// The SE_ClearOSIGroundTruth clears the certain groundtruth data.
+        /// This function should only be used together with SE_UpdateOSIStaticGroundTruth and SE_UpdateOSIDynamicGroundTruth
+        /// </summary>
+        public static extern int SE_ClearOSIGroundTruth();
+    }
 }

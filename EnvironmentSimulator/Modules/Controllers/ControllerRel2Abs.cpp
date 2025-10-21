@@ -22,6 +22,8 @@
 #include "Storyboard.hpp"
 #include "ScenarioEngine.hpp"
 #include "RoadManager.hpp"
+#include "logger.hpp"
+
 #include <ctype.h>
 
 // #define CONTROLLER_REL2ABS_DEBUG
@@ -42,10 +44,10 @@ ControllerRel2Abs::ControllerRel2Abs(InitArgs* args)
       switching_threshold_speed(1.5)
 {
     // ControllerRel2Abs forced into additive mode - will only react on scenario actions
-    if (mode_ != Mode::MODE_ADDITIVE)
+    if (mode_ != ControlOperationMode::MODE_ADDITIVE)
     {
-        LOG("ControllerRel2Abs mode \"%s\" not applicable. Using additive mode instead.", Mode2Str(mode_).c_str());
-        mode_ = Controller::Mode::MODE_ADDITIVE;
+        LOG_WARN("ControllerRel2Abs mode \"{}\" not applicable. Using additive mode instead.", Mode2Str(mode_));
+        mode_ = ControlOperationMode::MODE_ADDITIVE;
     }
     if (args->properties->ValueExists("horizon"))
     {
@@ -70,7 +72,7 @@ void ControllerRel2Abs::findEgo()
 {
     if (ego_obj == -1)
     {
-        LOG("Searching for vehicle named \"Ego\".");
+        LOG_INFO("Searching for vehicle named \"Ego\".");
         for (unsigned int i = 0; i < entities_->object_.size(); i++)
         {
             if (entities_->object_[i]->type_ == Object::Type::VEHICLE)
@@ -80,25 +82,25 @@ void ControllerRel2Abs::findEgo()
                 if (name == "ego")
                 {
                     ego_obj = static_cast<int>(i);
-                    LOG("Object named \"%s\" used as ego vehicle.", entities_->object_[i]->name_.c_str());
+                    LOG_INFO("Object named \"{}\" used as ego vehicle.", entities_->object_[i]->name_);
                     return;
                 }
             }
         }
-        LOG("Ego not found, searching for externally controlled vehicles instead.");
+        LOG_WARN("Ego not found, searching for externally controlled vehicles instead.");
         for (unsigned int i = 0; i < entities_->object_.size(); i++)
         {
             if (entities_->object_[i]->type_ == Object::Type::VEHICLE)
             {
-                if (entities_->object_[i]->GetActivatedControllerType() == Controller::Type::CONTROLLER_TYPE_EXTERNAL)
+                if (entities_->object_[i]->IsAnyActiveControllerOfType(Controller::Type::CONTROLLER_TYPE_EXTERNAL))
                 {
                     ego_obj = static_cast<int>(i);
-                    LOG("Object named \"%s\" used as ego vehicle due to being controlled externally.", entities_->object_[i]->name_.c_str());
+                    LOG_INFO("Object named \"{}\" used as ego vehicle due to being controlled externally.", entities_->object_[i]->name_);
                     return;
                 }
             }
         }
-        LOG("Ego not found, assuming ego is first object added: \"%s\"", entities_->object_[0]->name_.c_str());
+        LOG_WARN("Ego not found, assuming ego is first object added: \"{}\"", entities_->object_[0]->name_);
         ego_obj = 0;
     }
 }
@@ -176,7 +178,8 @@ void ControllerRel2Abs::Step(double timeStep)
                 {
                     OSCPrivateAction* action_copy = activeActions[j]->Copy();
                     action_copy->object_          = entities_->object_[i];
-                    if (std::find(std::begin(action_whitelist), std::end(action_whitelist), activeActions[j]->type_) != std::end(action_whitelist))
+                    if (std::find(std::begin(action_whitelist), std::end(action_whitelist), activeActions[j]->action_type_) !=
+                        std::end(action_whitelist))
                     {
                         activeActionsCopies.push_back(static_cast<OSCAction*>(action_copy));
                     }
@@ -221,23 +224,10 @@ void ControllerRel2Abs::Step(double timeStep)
 
                     if (!object->CheckDirtyBits(Object::DirtyBit::LONGITUDINAL))
                     {
-                        if (object->pos_.GetRoute())
-                        {
-                            object->pos_.MoveRouteDS(steplen);
-                        }
-                        else
-                        {
-                            // Adjustment movement to heading and road direction
-                            if (GetAbsAngleDifference(object->pos_.GetH(), object->pos_.GetDrivingDirection()) > M_PI_2)
-                            {
-                                // If pointing in other direction
-                                steplen *= -1;
-                            }
-                            object->pos_.MoveAlongS(steplen);
-                        }
+                        object->pos_.MoveAlongS(steplen);
                     }
 
-                    // LOG("Object[%d] speed = %lf, y: %lf", object->id_, object->GetSpeed(), object->pos_.GetY());
+                    LOG_DEBUG("Object[{}] speed = {:.2f}, y: {:.2f}", object->id_, object->GetSpeed(), object->pos_.GetY());
 
                     object->ClearDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL | Object::DirtyBit::SPEED |
                                            Object::DirtyBit::WHEEL_ANGLE | Object::DirtyBit::WHEEL_ROTATION);
@@ -284,9 +274,9 @@ void ControllerRel2Abs::Step(double timeStep)
         double t0;
         double x_est;
         double y_est;
-        double errorDist  = 0;
-        double errorSpeed = 0;
-        double v_est      = 0;
+        double errorDist;
+        double errorSpeed;
+        double v_est;
 
         // Loop through data and find time closest to t (ideally do linear interpolation)
         for (unsigned int i = 0; i < data.time.size(); i++)
@@ -303,7 +293,7 @@ void ControllerRel2Abs::Step(double timeStep)
                 if (errorDist > switching_threshold_dist || errorSpeed > switching_threshold_speed)
                 {
                     switchNow = true;
-                    LOG("Switch now, pos error = %lf, speed error = %lf", errorDist, errorSpeed);
+                    LOG_WARN("Switch now, pos error = {:.2f}, speed error = {:.2f}", errorDist, errorSpeed);
                 }
                 break;
             }
@@ -319,7 +309,7 @@ void ControllerRel2Abs::Step(double timeStep)
                 if (errorDist > switching_threshold_dist || errorSpeed > switching_threshold_speed)
                 {
                     switchNow = true;
-                    LOG("Switch now, pos error = %lf, speed error = %lf", errorDist, errorSpeed);
+                    LOG_WARN("Switch now, pos error = {:.2f}, speed error ={:.2f}", errorDist, errorSpeed);
                 }
                 break;
             }
@@ -341,7 +331,7 @@ void ControllerRel2Abs::Step(double timeStep)
     }
     // ----------------------- prediction & switching algorithm - end -----------------------
 
-    if (switchNow && mode_ != Controller::Mode::MODE_OVERRIDE)
+    if (switchNow && mode_ != ControlOperationMode::MODE_OVERRIDE)
     {
         std::vector<OSCPrivateAction*> actions =
             object_->getPrivateActions();  // getActions creates the vector => it's not updated by SE (only event vector is)
@@ -364,7 +354,7 @@ void ControllerRel2Abs::Step(double timeStep)
 
         for (unsigned int i = 0; i < activeActions.size(); i++)
         {
-            if (activeActions[i]->type_ == OSCPrivateAction::ActionType::LONG_SPEED)
+            if (activeActions[i]->action_type_ == OSCPrivateAction::ActionType::LONG_SPEED)
             {
                 LongSpeedAction* lsa = static_cast<LongSpeedAction*>(activeActions[i]);
                 if (lsa->target_->type_ == LongSpeedAction::Target::TargetType::RELATIVE_SPEED)
@@ -375,11 +365,11 @@ void ControllerRel2Abs::Step(double timeStep)
                         double trgSpeed = lsa->target_->GetValue();
                         lsa->target_.reset(new LongSpeedAction::TargetAbsolute);
                         lsa->target_->value_ = trgSpeed;
-                        LOG("LongSpeedAction Target has switched to absolute from relative with the value: %lf", trgSpeed);
+                        LOG_INFO("LongSpeedAction Target has switched to absolute from relative with the value: {:.2f}", trgSpeed);
                     }
                 }
             }
-            else if (activeActions[i]->type_ == OSCPrivateAction::ActionType::LONG_DISTANCE)
+            else if (activeActions[i]->action_type_ == OSCPrivateAction::ActionType::LONG_DISTANCE)
             {
                 LongDistanceAction* lda = static_cast<LongDistanceAction*>(activeActions[i]);
                 if (lda->target_object_ == ego)
@@ -416,23 +406,23 @@ void ControllerRel2Abs::Step(double timeStep)
                     }
                     lda->End();
                     lsa->Start(scenario_engine_->getSimulationTime());
-                    LOG("Replacing the relative target LongDistanceAction with an absolute target LongSpeedAction and target value: %lf",
-                        currentSpeed);
+                    LOG_INFO("Replacing the relative target LongDistanceAction with an absolute target LongSpeedAction and target value: {:.2f}",
+                             currentSpeed);
                 }
             }
-            else if (activeActions[i]->type_ == OSCPrivateAction::ActionType::LAT_LANE_CHANGE)
+            else if (activeActions[i]->action_type_ == OSCPrivateAction::ActionType::LAT_LANE_CHANGE)
             {
                 // Only samples relative lane at start, will not need to be handled
             }
-            else if (activeActions[i]->type_ == OSCPrivateAction::ActionType::LAT_LANE_OFFSET)
+            else if (activeActions[i]->action_type_ == OSCPrivateAction::ActionType::LAT_LANE_OFFSET)
             {
                 // No relative object setup possible, will not need to be handled
             }
-            else if (activeActions[i]->type_ == OSCPrivateAction::ActionType::LAT_DISTANCE)
+            else if (activeActions[i]->action_type_ == OSCPrivateAction::ActionType::LAT_DISTANCE)
             {
                 // Action type not currently implemented in esmini
             }
-            else if (activeActions[i]->type_ == OSCPrivateAction::ActionType::SYNCHRONIZE_ACTION)
+            else if (activeActions[i]->action_type_ == OSCPrivateAction::ActionType::SYNCHRONIZE_ACTION)
             {
                 SynchronizeAction* sa = static_cast<SynchronizeAction*>(activeActions[i]);
                 if (sa->master_object_ == ego)
@@ -456,7 +446,7 @@ void ControllerRel2Abs::Step(double timeStep)
                             double currentDist = sa->lastDist_;
 
                             // decide suitable acceleration
-                            double currentAcc = 0;
+                            // double currentAcc = 0;
                             // Check for true linear movement, if ego moves non-linearly target can get non-linear movement in linear mode
                             // since acceleration updates each timestep
                             bool   linear  = true;
@@ -488,9 +478,9 @@ void ControllerRel2Abs::Step(double timeStep)
                                     }
                                 }
                                 lastAcc = tmp;
-                                currentAcc += tmp;
+                                // currentAcc += tmp;
                             }
-                            currentAcc /= static_cast<double>(speeds.size());
+                            // currentAcc /= static_cast<double>(speeds.size());
                             if (linear || lastAcc > 0.3)
                             {
                                 // if speeds increasing linearly / recently passed a minima with a fairly large current acc.
@@ -526,7 +516,8 @@ void ControllerRel2Abs::Step(double timeStep)
                             }
                             sa->End();
                             lsa->Start(scenario_engine_->getSimulationTime());
-                            LOG("Replacing the SynchronizeAction (with final speed) with an absolute target LongSpeedAction and target value: %lf",
+                            LOG_INFO(
+                                "Replacing the SynchronizeAction (with final speed) with an absolute target LongSpeedAction and target value: {:.2f}",
                                 trgSpeed);
                         }
                         else if (sa->mode_ == SynchronizeAction::SynchMode::MODE_NON_LINEAR)
@@ -572,12 +563,12 @@ void ControllerRel2Abs::Step(double timeStep)
                         }
                         sa->End();
                         lsa->Start(scenario_engine_->getSimulationTime());
-                        LOG("Replacing the SynchronizeAction (no final speed) with an absolute target LongSpeedAction and target value: %lf",
-                            currentSpeed);
+                        LOG_INFO("Replacing the SynchronizeAction (no final speed) with an absolute target LongSpeedAction and target value: {:.2f}",
+                                 currentSpeed);
                     }
                 }
             }
-            else if (activeActions[i]->type_ == OSCPrivateAction::ActionType::FOLLOW_TRAJECTORY)
+            else if (activeActions[i]->action_type_ == OSCPrivateAction::ActionType::FOLLOW_TRAJECTORY)
             {
                 // Trajectory frozen at action start, will not need to be handled
             }
@@ -599,8 +590,8 @@ void ControllerRel2Abs::Step(double timeStep)
                            object_->category_,
                            object_->role_,
                            object_->model_id_,
-                           object_->model3d_,
-                           object_->GetActivatedControllerType(),
+                           object_->GetModel3DFullPath(),
+                           object_->GetControllerTypeActiveOnDomain(ControlDomains::DOMAIN_LONG),
                            object_->boundingbox_,
                            static_cast<int>(object_->scaleMode_),
                            object_->visibilityMask_,
@@ -611,12 +602,13 @@ void ControllerRel2Abs::Step(double timeStep)
                            object_->rear_axle_.positionZ,
                            object_->front_axle_.positionX,
                            object_->front_axle_.positionZ,
-                           &object_->pos_);
+                           &object_->pos_,
+                           object_->GetSourceReference());
 
     Controller::Step(timeStep);
 }
 
-void ControllerRel2Abs::Activate(DomainActivation lateral, DomainActivation longitudinal)
+int ControllerRel2Abs::Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)])
 {
 #ifdef CONTROLLER_REL2ABS_DEBUG
     logData.open("LogData.csv");
@@ -632,7 +624,8 @@ void ControllerRel2Abs::Activate(DomainActivation lateral, DomainActivation long
 
     pred_timestep      = 0.1;
     pred_nbr_timesteps = pred_horizon / pred_timestep;
-    Controller::Activate(lateral, longitudinal);
+
+    return Controller::Activate(mode);
 }
 
 void ControllerRel2Abs::ReportKeyEvent(int key, bool down)

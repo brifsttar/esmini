@@ -43,12 +43,6 @@ namespace scenarioengine
             int                    dirtyBits;
         };
 
-        enum ctrl_mode
-        {
-            RELATIVE,
-            ABSOLUTE
-        };
-
         std::vector<PreSimData> data_vector;
         PreSimData              actualData;
         PreSimData              data;
@@ -76,25 +70,17 @@ namespace scenarioengine
 
         void Init();
         void Step(double timeStep);
-        void Activate(DomainActivation lateral, DomainActivation longitudinal);
+        int  Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)]);
         void ReportKeyEvent(int key, bool down);
         void CopyPosition(Object* object, position_copy* obj_copy);
 
-        static const char* GetTypeNameStatic()
+        virtual const char* GetTypeName()
         {
             return CONTROLLER_REL2ABS_TYPE_NAME;
         }
-        virtual const char* GetTypeName()
-        {
-            return GetTypeNameStatic();
-        }
-        static int GetTypeStatic()
-        {
-            return Controller::Type::CONTROLLER_TYPE_REL2ABS;
-        }
         virtual int GetType()
         {
-            return GetTypeStatic();
+            return Controller::Type::CONTROLLER_TYPE_REL2ABS;
         }
 
     private:

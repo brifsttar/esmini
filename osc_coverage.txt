@@ -4,9 +4,9 @@ OpenSCENARIO
             VehicleCatalog                                                     Yes
             ControllerCatalog                                                  Yes
             PedestrianCatalog                                                  Yes
-            PedestrianControllerCatalog                                        No
-            MiscObjectCatalog                                                  No
-            EnvironmentCatalog                                                 No
+            PedestrianControllerCatalog                                        Yes
+            MiscObjectCatalog                                                  Yes
+            EnvironmentCatalog                                                 Yes
             ManeuverCatalog                                                    Yes
             TrajectoryCatalog                                                  Yes
             RouteCatalog                                                       Yes
@@ -15,7 +15,7 @@ OpenSCENARIO
         Stochastic                                                             No
     ScenarioDefinition
         ParameterDeclaration                                                   Yes
-        VariableDeclaration (1.2)                                              No
+        VariableDeclaration (1.2)                                              Yes
         CatalogLocations                                                       Yes
         RoadNetwork
             LogicFile                                                          Yes
@@ -25,11 +25,13 @@ OpenSCENARIO
         Entities
             ScenarioObject
                 ObjectController                                               Yes
-                    ControllerType (1.2)                                       No
+                    ControllerType (1.2)                                       Partly (long/lat)
+                    Multiple assigned controllers per object (1.2)             Yes
                 EntityObject
                     CatalogReference                                           Yes
                     Vehicle                                                    Yes
-                        Role (1.2)                                             No
+                        Role (1.2)                                             Yes
+                        Trailer (1.3)                                          Yes
                     Pedestrian                                                 Yes
                     MiscObject                                                 Yes
                     ExternalObjectReference (1.1)                              No
@@ -54,10 +56,10 @@ OpenSCENARIO
                                 priority                                       Yes
                                 Action
                                     Global                                     Yes
-                                        Environment                            No
+                                        Environment                            Yes
                                             DomeImage (1.2)                    No
-                                            Weather                            No
-                                            RoadCondition                      No
+                                            Weather                            Yes (with limited visualization)
+                                            RoadCondition                      Yes (frictionScaleFactor only)
                                         Entity                                 Yes
                                             AddEntityAction                    Yes
                                             DeleteEntityAction                 Yes
@@ -66,7 +68,7 @@ OpenSCENARIO
                                             ParameterModifyAction              No
                                         VariableAction (>= 1.2)
                                             VariableSetAction                  Yes
-                                            VariableModifyAction               No
+                                            VariableModifyAction               Yes
                                         Infrastructure                         No
                                         Traffic
                                             TrafficSourceAction                No
@@ -80,7 +82,7 @@ OpenSCENARIO
                                         ActivateController                     Yes
                                             animation (1.2)                    No
                                             lighting (1.2)                     No
-                                            controllerRef                      No
+                                            controllerRef                      Yes
                                         AnimationAction (1.2)                  No
                                         AppearanceAction (1.2)                 No
                                         AssignController                       Yes
@@ -121,7 +123,7 @@ OpenSCENARIO
                                                         value                  Yes
                                                     Absolute
                                                         value                  Yes
-                                            Distance                           No
+                                            Distance                           Yes (road and entity coordinates)
                                         Longitudinal
                                             Speed
                                                 Dynamics
@@ -190,6 +192,7 @@ Common classes
         polyLine                               Yes
         clothoid                               Yes
         nurbs                                  Yes
+        ClothoidSpline (v1.3)                  Yes
     Route
         closed                                 No
         ParameterDeclaration                   No
@@ -279,7 +282,6 @@ Common classes
             Controller                         No
         ByValue
             ParameterCondition                 Yes
-            VariableCondition                  Yes
             TimeOfDayCondition                 No
             SimulationTimeCondition            Yes
             StoryboardElementStateCondition	   yes
@@ -302,7 +304,7 @@ Common classes
 
 Enumerations
     AutomaticGearType (1.2)                    No
-    CloudState                                 No
+    CloudState                                 Yes
     ColorType (1.2)                            No
     ConditionEdge                              Yes
     ControllerType (1.2)                       No
@@ -315,8 +317,8 @@ Enumerations
     DynamicsDimension                          Yes
     DynamicsShape                              Yes
     FollowingMode                              Yes (but only in SpeedProfileAction)
-    FractionalCloudCover (1.2)                 No
-    LateralDisplacement (1.1)                  No
+    FractionalCloudCover (1.2)                 Yes
+    LateralDisplacement (1.1)                  Yes
     LightMode (1.2)                            No
     LongitudinalDisplacement (1.1)             Yes
     MiscObjectCategory                         Yes
@@ -356,16 +358,4 @@ Extensions:
 
     Note: The following features are not part of the OpenSCENARIO standard, and should be regarded as experimental stuff that potentially will be proposed to future versions of the standard.
 
-    Trailer support
-        The Vehicle class has been extended with the following elements:
-            <TrailerCoupler dx/>  # mounting point for any tow vehicle, relative vehicle ref point
-            <TrailerHitch dx/>  # mounting point for optional trailer, relative vehicle ref point
-            <Trailer>  # xor
-                <Vehicle vehicle/>
-                <EntityRef entityRef/>
-                <CatalogReference catalogName entryName/>
-            </Trailer>
-
-            Both EntityRef and CatalogReference will be checked. If EntityRef resolves sucessfully CatalogReference will be ignored.
-
-        [More info](https://docs.google.com/document/u/1/d/e/2PACX-1vR7jXggp_LaEIzNyKsFEpJxWrYdC_W2GEDayQIeeCBU4fzyrEyJ22Ihbq4Ra7JXmbWqgPOydfB6WZ0j/pub)
+    Currently no extensions (previous extensions now covered by OpenSCENARIO standard)

@@ -44,99 +44,62 @@ namespace scenarioengine
             CONTROLLER_TYPE_SUMO,
             CONTROLLER_TYPE_REL2ABS,
             CONTROLLER_TYPE_ACC,
+            CONTROLLER_TYPE_NATURAL_DRIVER,
             CONTROLLER_TYPE_ALKS,
             CONTROLLER_TYPE_UDP_DRIVER,
             CONTROLLER_TYPE_ECE_ALKS_REF_DRIVER,
             CONTROLLER_ALKS_R157SM,
             CONTROLLER_TYPE_LOOMING,
             CONTROLLER_TYPE_OFFROAD_FOLLOWER,
+            CONTROLLER_TYPE_HID,
+            CONTROLLER_TYPE_FOLLOW_REFERENCE,
             N_CONTROLLER_TYPES,
+            CONTROLLER_TYPE_UNDEFINED,
             GHOST_RESERVED_TYPE       = 100,
             USER_CONTROLLER_TYPE_BASE = 1000,
         };
-
-        typedef enum
-        {
-            MODE_NONE,      // Controller not available or it is not active
-            MODE_OVERRIDE,  // Actions from the scenario are not applied, default
-            MODE_ADDITIVE,  // Actions from the scenario are applied
-        } Mode;
 
         typedef struct
         {
             std::string      name;
             std::string      type;
             OSCProperties*   properties;
-            Entities*        entities;
             ScenarioGateway* gateway;
+            ScenarioEngine*  scenario_engine;
             Parameters*      parameters;
         } InitArgs;
 
-        enum class DomainActivation
-        {
-            UNDEFINED = 0,
-            OFF       = 1,
-            ON        = 2
-        };
-
-        Controller() : object_(0), entities_(0), gateway_(0), scenario_engine_(0), player_(0)
-        {
-        }
-        Controller(InitArgs* args);
+        Controller(InitArgs* args = nullptr);
         virtual ~Controller() = default;
 
-        static const char* GetTypeNameStatic()
+        virtual const char* GetTypeName()
         {
             return CONTROLLER_BASE_TYPE_NAME;
         }
-        virtual const char* GetTypeName()
-        {
-            return GetTypeNameStatic();
-        }
-        static int GetTypeStatic()
+        virtual int GetType()
         {
             return CONTROLLER_BASE_TYPE_ID;
         }
-        virtual int GetType()
-        {
-            return GetTypeStatic();
-        }
 
-        virtual void Assign(Object* object);
-        virtual void Activate(DomainActivation lateral, DomainActivation longitudinal)
-        {
-            int domain_mask = static_cast<int>(domain_);
+        virtual void LinkObject(Object* object);
+        virtual void UnlinkObject();
+        virtual int  Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)]);
 
-            if (lateral == DomainActivation::OFF)
-            {
-                domain_mask &= ~static_cast<int>(ControlDomains::DOMAIN_LAT);
-            }
-            else if (lateral == DomainActivation::ON)
-            {
-                domain_mask |= static_cast<int>(ControlDomains::DOMAIN_LAT);
-            }
-
-            if (longitudinal == DomainActivation::OFF)
-            {
-                domain_mask &= ~static_cast<int>(ControlDomains::DOMAIN_LONG);
-            }
-            else if (longitudinal == DomainActivation::ON)
-            {
-                domain_mask |= static_cast<int>(ControlDomains::DOMAIN_LONG);
-            }
-
-            domain_ = static_cast<ControlDomains>(domain_mask);
-        };
         virtual void Deactivate()
         {
-            domain_ = ControlDomains::DOMAIN_NONE;
+            DeactivateDomains(static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_ALL));
         };
+
+        virtual void DeactivateDomains(unsigned int domains);
+
+        // Executed by scenarioengine before first step
         virtual void Init(){};
+
+        // Executed by player after player and viewer intialization
+        virtual void InitPostPlayer(){};
+
         virtual void ReportKeyEvent(int key, bool down);
-        virtual void SetScenarioEngine(ScenarioEngine* scenario_engine)
-        {
-            scenario_engine_ = scenario_engine;
-        };
+
         virtual void SetPlayer(ScenarioPlayer* player)
         {
             player_ = player;
@@ -145,42 +108,66 @@ namespace scenarioengine
         // Base class Step function should be called from derived classes
         virtual void Step(double timeStep);
 
-        bool Active()
+        bool Active() const
         {
-            return static_cast<int>(domain_) != 0;
+            return (active_domains_ != static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_NONE));
         };
-        std::string GetName()
+
+        std::string GetName() const
         {
             return name_;
         }
-        ControlDomains GetDomain()
+
+        void SetName(std::string name)
         {
-            return domain_;
+            name_ = name;
         }
-        int GetMode()
+
+        unsigned int GetOperatingDomains() const
+        {
+            return operating_domains_;
+        }
+
+        unsigned int GetActiveDomains() const
+        {
+            return active_domains_;
+        }
+
+        ControlOperationMode GetMode() const
         {
             return mode_;
         }
-        std::string Mode2Str(int mode);
+        std::string Mode2Str(ControlOperationMode mode);
         Object*     GetRoadObject()
         {
             return object_;
         }
 
-        bool IsActiveOnDomains(ControlDomains domainMask);
-        bool IsActiveOnAnyOfDomains(ControlDomains domainMask);
-        bool IsActive();
+        bool    IsActiveOnDomainsOnly(unsigned int domainMask) const;
+        bool    IsActiveOnDomains(unsigned int domainMask) const;
+        bool    IsNotActiveOnDomains(unsigned int domainMask) const;
+        bool    IsActiveOnAnyOfDomains(unsigned int domainMask) const;
+        bool    IsActive() const;
+        Object* GetLinkedObject()
+        {
+            return object_;
+        }
 
     protected:
-        ControlDomains   domain_;  // bitmask according to ControllerDomain type
-        int              mode_;    // add to scenario actions or replace
-        Object*          object_;  // The object to which the controller is attached and hence controls
-        std::string      name_;
-        std::string      type_name_;
-        Entities*        entities_;
-        ScenarioGateway* gateway_;
-        ScenarioEngine*  scenario_engine_;
-        ScenarioPlayer*  player_;
+        unsigned int         operating_domains_;  // bitmask representing domains controller is operating on
+        unsigned int         active_domains_;     // bitmask representing domains controller is currently active on
+        ControlOperationMode mode_;               // add to scenario actions or replace
+        Object*              object_;             // The object to which the controller is attached and hence controls
+        std::string          name_;
+        std::string          type_name_;
+        Entities*            entities_;
+        ScenarioGateway*     gateway_;
+        ScenarioEngine*      scenario_engine_;
+        ScenarioPlayer*      player_;
+        bool                 align_to_road_heading_on_deactivation_ = false;
+        bool                 align_to_road_heading_on_activation_   = false;
+
+        void AlignToRoadHeading();
     };
 
     typedef Controller* (*ControllerInstantiateFunction)(void* args);

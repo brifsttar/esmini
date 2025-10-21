@@ -36,10 +36,6 @@ foreach(
         ${module_name}
         ${filename})
 
-    target_link_libraries(
-        ${module_name}
-        PRIVATE project_options)
-
     target_include_directories(
         ${module_name}
         PRIVATE ${EXTERNALS_PUGIXML_PATH}
@@ -49,7 +45,16 @@ foreach(
 
     target_link_libraries(
         ${module_name}
-        PRIVATE esminiLib)
+        PRIVATE project_options
+                esminiLib)
+
+    # embed $origin (location of exe file) and link dirs as execution dyn lib search paths
+    set_target_properties(
+        ${module_name}
+        PROPERTIES BUILD_WITH_INSTALL_RPATH
+                   true
+                   INSTALL_RPATH
+                   $ORIGIN:${INSTALL_PATH})
 
     set_folder(
         ${module_name}

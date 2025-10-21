@@ -26,26 +26,19 @@ namespace scenarioengine
     public:
         ControllerACC(InitArgs* args);
 
-        static const char* GetTypeNameStatic()
+        virtual const char* GetTypeName()
         {
             return CONTROLLER_ACC_TYPE_NAME;
         }
-        virtual const char* GetTypeName()
-        {
-            return GetTypeNameStatic();
-        }
-        static int GetTypeStatic()
+        virtual int GetType()
         {
             return CONTROLLER_TYPE_ACC;
         }
-        virtual int GetType()
-        {
-            return GetTypeStatic();
-        }
 
         void Init();
+        void InitPostPlayer();
         void Step(double timeStep);
-        void Activate(DomainActivation lateral, DomainActivation longitudinal);
+        int  Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)]);
         void ReportKeyEvent(int key, bool down);
         void SetSetSpeed(double setSpeed)
         {
@@ -60,6 +53,7 @@ namespace scenarioengine
         double           lateralDist_;
         double           currentSpeed_;
         bool             setSpeedSet_;
+        bool             virtual_;
     };
 
     Controller* InstantiateControllerACC(void* args);

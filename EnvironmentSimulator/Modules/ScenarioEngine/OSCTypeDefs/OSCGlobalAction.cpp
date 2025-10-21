@@ -19,8 +19,10 @@
 #include <random>
 #include <algorithm>
 #include <numeric>
+#include "VehiclePool.hpp"
 #include "ControllerACC.hpp"
 #include "ScenarioReader.hpp"
+#include "ScenarioEngine.hpp"
 
 using namespace scenarioengine;
 using namespace STGeometry;
@@ -42,9 +44,22 @@ using std::vector;
 
 int SwarmTrafficAction::counter_ = 0;
 
+void EnvironmentAction::Start(double simTime)
+{
+    environment_->UpdateEnvironment(new_environment_);
+    OSCAction::Start(simTime);
+}
+
+void EnvironmentAction::Step(double simTime, double dt)
+{
+    (void)simTime;
+    (void)dt;
+    OSCAction::Stop();
+}
+
 void ParameterSetAction::Start(double simTime)
 {
-    LOG("Set parameter %s = %s", name_.c_str(), value_.c_str());
+    LOG_INFO("Set parameter {} = {}", name_, value_);
     parameters_->setParameterValueByString(name_, value_);
     OSCAction::Start(simTime);
 }
@@ -59,7 +74,7 @@ void ParameterSetAction::Step(double simTime, double dt)
 
 void VariableSetAction::Start(double simTime)
 {
-    LOG("Set variable %s = %s", name_.c_str(), value_.c_str());
+    LOG_INFO("Set variable {} = {}", name_, value_);
     variables_->setParameterValueByString(name_, value_);
     OSCAction::Start(simTime);
 }
@@ -72,23 +87,94 @@ void VariableSetAction::Step(double simTime, double dt)
     OSCAction::Stop();
 }
 
+void VariableAddAction::Start(double simTime)
+{
+    OSCParameterDeclarations::ParameterStruct* ps = variables_->getParameterEntry(name_);
+    if (!ps)
+    {
+        return;
+    }
+
+    if (ps->type == OSCParameterDeclarations::ParameterType::PARAM_TYPE_INTEGER)
+    {
+        LOG_INFO("Add variable {} += {:.0f}", name_, value_);
+        int v = 0;
+        variables_->getParameterValueInt(name_, v);
+        v += static_cast<int>(value_);
+        variables_->setParameterValue(name_, v);
+    }
+    else if (ps->type == OSCParameterDeclarations::ParameterType::PARAM_TYPE_DOUBLE)
+    {
+        LOG_INFO("Add variable {} += {}", name_, value_);
+        double v = 0.0;
+        variables_->getParameterValueDouble(name_, v);
+        v += value_;
+        variables_->setParameterValue(name_, v);
+    }
+
+    OSCAction::Start(simTime);
+}
+
+void VariableAddAction::Step(double simTime, double dt)
+{
+    (void)simTime;
+    (void)dt;
+
+    OSCAction::Stop();
+}
+
+void VariableMultiplyByAction::Start(double simTime)
+{
+    OSCParameterDeclarations::ParameterStruct* ps = variables_->getParameterEntry(name_);
+    if (!ps)
+    {
+        return;
+    }
+
+    LOG_INFO("Multiply variable {} *= {}", name_, value_);
+    if (ps->type == OSCParameterDeclarations::ParameterType::PARAM_TYPE_INTEGER)
+    {
+        int v = 0;
+        variables_->getParameterValueInt(name_, v);
+        v = static_cast<int>(v * value_);
+        variables_->setParameterValue(name_, v);
+    }
+    else if (ps->type == OSCParameterDeclarations::ParameterType::PARAM_TYPE_DOUBLE)
+    {
+        double v = 0.0;
+        variables_->getParameterValueDouble(name_, v);
+        v *= value_;
+        variables_->setParameterValue(name_, v);
+    }
+
+    OSCAction::Start(simTime);
+}
+
+void VariableMultiplyByAction::Step(double simTime, double dt)
+{
+    (void)simTime;
+    (void)dt;
+
+    OSCAction::Stop();
+}
+
 void AddEntityAction::Start(double simTime)
 {
     if (entity_ == nullptr)
     {
-        LOG("AddEntityAction missing entity");
+        LOG_ERROR("AddEntityAction missing entity");
         return;
     }
 
     if (entities_->activateObject(entity_) != 0)
     {
-        LOG("AddEntityAction: Entity already active. Skipping action.");
+        LOG_WARN("AddEntityAction: Entity already active. Skipping action.");
         return;
     }
 
     entity_->pos_.TeleportTo(pos_);
 
-    LOG("Added entity %s", entity_->GetName().c_str());
+    LOG_INFO("Added entity {}", entity_->GetName());
 
     OSCAction::Start(simTime);
 }
@@ -105,19 +191,19 @@ void DeleteEntityAction::Start(double simTime)
 {
     if (entity_ == nullptr)
     {
-        LOG("DeleteEntityAction missing entity");
+        LOG_ERROR("DeleteEntityAction missing entity");
         return;
     }
 
     if (entities_->deactivateObject(entity_) != 0)
     {
-        LOG("DeleteEntityAction: Entity already deactivated. Skipping action.");
+        LOG_WARN("DeleteEntityAction: Entity already deactivated. Skipping action.");
         return;
     }
 
     gateway_->removeObject(entity_->name_);
 
-    LOG("Deleted entity %s", entity_->GetName().c_str());
+    LOG_INFO("Deleted entity {}", entity_->GetName());
 
     OSCAction::Start(simTime);
 }
@@ -129,7 +215,7 @@ void DeleteEntityAction::Step(double simTime, double dt)
     OSCAction::Stop();
 }
 
-void print_triangles(BBoxVec& vec, char const filename[])
+void print_triangles(const BBoxVec& vec, char const filename[])
 {
     std::ofstream file;
     file.open(filename);
@@ -144,7 +230,7 @@ void print_triangles(BBoxVec& vec, char const filename[])
     file.close();
 }
 
-void print_bbx(BBoxVec& vec, char const filename[])
+void print_bbx(const BBoxVec& vec, char const filename[])
 {
     std::ofstream file;
     file.open(filename);
@@ -157,7 +243,7 @@ void print_bbx(BBoxVec& vec, char const filename[])
     file.close();
 }
 
-void printTree(aabbTree::Tree& tree, char filename[])
+void printTree(aabbTree::Tree& tree, const char filename[])
 {
     std::ofstream file;
     file.open(filename);
@@ -195,41 +281,20 @@ void printTree(aabbTree::Tree& tree, char filename[])
     file.close();
 }
 
-SwarmTrafficAction::SwarmTrafficAction(StoryBoardElement* parent) : OSCGlobalAction(OSCGlobalAction::Type::SWARM_TRAFFIC, parent), centralObject_(0)
+SwarmTrafficAction::SwarmTrafficAction(StoryBoardElement* parent) : OSCGlobalAction(ActionType::SWARM_TRAFFIC, parent), centralObject_(0)
 {
     spawnedV.clear();
     counter_ = 0;
 }
 
-SwarmTrafficAction::~SwarmTrafficAction()
-{
-    auto RecursiveDeleteTrailers = [](Vehicle* vehicle, auto& recurseLambda) -> void
-    {
-        if (vehicle->trailer_hitch_ && vehicle->trailer_hitch_->trailer_vehicle_)
-        {
-            recurseLambda(static_cast<Vehicle*>(vehicle->trailer_hitch_->trailer_vehicle_), recurseLambda);
-        }
-
-        delete vehicle;
-    };
-
-    for (auto* entry : vehicle_pool_)
-    {
-        if (entry != centralObject_)
-        {
-            if (entry->trailer_hitch_ && entry->trailer_hitch_->trailer_vehicle_)
-            {
-                RecursiveDeleteTrailers(static_cast<Vehicle*>(entry->trailer_hitch_->trailer_vehicle_), RecursiveDeleteTrailers);
-            }
-
-            delete entry;
-        }
-    }
-}
-
 void SwarmTrafficAction::Start(double simTime)
 {
-    LOG("Swarm IR: %.2f, SMjA: %.2f, SMnA: %.2f, maxV: %i vel: %.2f", innerRadius_, semiMajorAxis_, semiMinorAxis_, numberOfVehicles, velocity_);
+    LOG_INFO("Swarm IR: {:.2f}, SMjA: {:.2f}, SMnA: {:.2f}, maxV: {} vel: {:.2f}",
+             innerRadius_,
+             semiMajorAxis_,
+             semiMinorAxis_,
+             numberOfVehicles,
+             velocity_);
     double x0, y0, x1, y1;
 
     midSMjA  = (semiMajorAxis_ + innerRadius_) / 2.0;
@@ -252,39 +317,32 @@ void SwarmTrafficAction::Start(double simTime)
     tree->build(vec);
     rTree = tree;
 
-    // Register model filesnames from first vehicle catalog
+    // Register model filenames from vehicle catalog
     // if no catalog loaded, use same model as central object
-    Catalogs* catalogs = reader_->GetCatalogs();
-    for (size_t i = 0; i < catalogs->catalog_.size(); i++)
-    {
-        if (catalogs->catalog_[i]->GetType() == CatalogType::CATALOG_VEHICLE)
-        {
-            for (size_t j = 0; j < catalogs->catalog_[i]->entry_.size(); j++)
-            {
-                Vehicle* vehicle = reader_->parseOSCVehicle(catalogs->catalog_[i]->entry_[j]->GetNode());
-                if (vehicle->category_ == Vehicle::Category::CAR || vehicle->category_ == Vehicle::Category::BUS ||
-                    vehicle->category_ == Vehicle::Category::TRUCK || vehicle->category_ == Vehicle::Category::VAN ||
-                    vehicle->category_ == Vehicle::Category::MOTORBIKE)
-                {
-                    vehicle_pool_.push_back(vehicle);
-                }
-                else
-                {
-                    delete vehicle;
-                }
-            }
-        }
-    }
+    std::vector<std::pair<int, double>> categories = {{Vehicle::Category::CAR, 5.0},
+                                                      {Vehicle::Category::TRAILER, 0.0},  // allow trailers but no single trailers
+                                                      {Vehicle::Category::VAN, 2.0},
+                                                      {Vehicle::Category::BUS, 1.0},
+                                                      {Vehicle::Category::TRUCK, 2.0},
+                                                      {Vehicle::Category::MOTORBIKE, 1.0}};
 
-    if (vehicle_pool_.size() == 0)
+    vehicle_pool_.Initialize(reader_, &categories, true);
+
+    if (vehicle_pool_.Empty())
     {
-        if (centralObject_->type_ == Object::Type::VEHICLE)
+        if (centralObject_ && centralObject_->type_ == Object::Type::VEHICLE)
         {
-            vehicle_pool_.push_back(static_cast<Vehicle*>(centralObject_));
+            // Create a copy of central object
+            Vehicle* vehicle = new Vehicle(*static_cast<Vehicle*>(centralObject_));
+
+            // remove any duplicate controller references
+            vehicle->controllers_.clear();
+
+            vehicle_pool_.AddVehicle(vehicle);
         }
         else
         {
-            LOG_AND_QUIT("No vehicles available to populate swarm traffic. Vehicle catalog empty?");
+            LOG_ERROR("TrafficSwarmAction: No vehicles available to populate swarm traffic. Missing both Vehicle catalog and central vehicle object");
         }
     }
 
@@ -325,13 +383,19 @@ void SwarmTrafficAction::Step(double simTime, double dt)
     }
 }
 
+void scenarioengine::SwarmTrafficAction::SetScenarioEngine(ScenarioEngine* scenario_engine)
+{
+    scenario_engine_ = scenario_engine;
+    entities_        = scenario_engine_ != nullptr ? &scenario_engine_->entities_ : nullptr;
+}
+
 void SwarmTrafficAction::createRoadSegments(BBoxVec& vec)
 {
-    for (int i = 0; i < odrManager_->GetNumOfRoads(); i++)
+    for (unsigned int i = 0; i < odrManager_->GetNumOfRoads(); i++)
     {
         roadmanager::Road* road = odrManager_->GetRoadByIdx(i);
 
-        for (int j = 0; j < road->GetNumberOfGeometries(); j++)
+        for (unsigned int j = 0; j < road->GetNumberOfGeometries(); j++)
         {
             roadmanager::Geometry* gm = road->GetGeometry(j);
 
@@ -417,21 +481,21 @@ inline void SwarmTrafficAction::sampleRoads(int minN, int maxN, Solutions& sols,
     // Sample the number of cars to spawn
     if (maxN < minN)
     {
-        LOG("Unstable behavior detected (maxN < minN)");
+        LOG_ERROR("Unstable behavior detected (maxN < minN)");
         return;
     }
 
-    int nCarsToSpawn = SE_Env::Inst().GetRand().GetNumberBetween(minN, maxN - 1);
-    if (nCarsToSpawn <= 0)
+    unsigned int nCarsToSpawn = static_cast<unsigned int>(SE_Env::Inst().GetRand().GetNumberBetween(minN, maxN - 1));
+    if (nCarsToSpawn == 0)
     {
         return;
     }
 
-    info.reserve(static_cast<unsigned int>(nCarsToSpawn));
+    info.reserve(nCarsToSpawn);
     info.clear();
     // We have more points than number of vehicles to spawn.
     // We sample the selected number and each point will be assigned a lane
-    if (static_cast<unsigned int>(nCarsToSpawn) <= sols.size() && nCarsToSpawn > 0)
+    if (nCarsToSpawn <= sols.size() && nCarsToSpawn > 0)
     {
         // Shuffle and randomly select the points
         // Solutions selected(nCarsToSpawn);
@@ -439,7 +503,7 @@ inline void SwarmTrafficAction::sampleRoads(int minN, int maxN, Solutions& sols,
         std::shuffle(sols.begin(), sols.end(), SE_Env::Inst().GetRand().GetGenerator());
         sample(sols.begin(), sols.end(), selected, nCarsToSpawn, SE_Env::Inst().GetRand().GetGenerator());
 
-        for (int i = 0; i < nCarsToSpawn; i++)
+        for (unsigned int i = 0; i < nCarsToSpawn; i++)
         {
             Point& pt = selected[i];
             // Find road
@@ -464,24 +528,24 @@ inline void SwarmTrafficAction::sampleRoads(int minN, int maxN, Solutions& sols,
         // We use all the spawnable points and we ensure that each obtains
         // a lane at least. The remaining ones will be randomly distributed.
         // The algorithms does not ensure to saturate the selected number of vehicles.
-        int lanesLeft = nCarsToSpawn - static_cast<int>(sols.size());
+        unsigned int lanesLeft = nCarsToSpawn - static_cast<unsigned int>(sols.size());
         for (Point pt : sols)
         {
             roadmanager::Position pos(pt.x, pt.y, 0.0, pt.h, 0.0, 0.0);
             // pos.XYZH2TrackPos(pt.x, pt.y, 0, pt.h);
 
             roadmanager::Road* road          = odrManager_->GetRoadById(pos.GetTrackId());
-            int                nDrivingLanes = road->GetNumberOfDrivingLanes(pos.GetS());
+            unsigned int       nDrivingLanes = road->GetNumberOfDrivingLanes(pos.GetS());
             if (nDrivingLanes == 0)
             {
                 lanesLeft++;
                 continue;
             }
 
-            int lanesN;
+            unsigned int lanesN;
             if (lanesLeft > 0)
             {
-                std::uniform_int_distribution<int> laneDist(0, std::min(lanesLeft, nDrivingLanes));
+                std::uniform_int_distribution<unsigned int> laneDist(0, std::min(lanesLeft, nDrivingLanes));
                 lanesN = laneDist(SE_Env::Inst().GetRand().GetGenerator());
                 lanesN = (lanesN == 0 ? 0 : lanesN - 1);
             }
@@ -511,22 +575,22 @@ void SwarmTrafficAction::spawn(Solutions sols, int replace, double simTime)
 
     for (SelectInfo inf : info)
     {
-        int        lanesNo = MIN(MAX_LANES, inf.road->GetNumberOfDrivingLanes(inf.pos.GetS()));
-        static int elements[MAX_LANES];
+        unsigned int        lanesNo = MIN(MAX_LANES, inf.road->GetNumberOfDrivingLanes(inf.pos.GetS()));
+        static unsigned int elements[MAX_LANES];
         std::iota(elements, elements + lanesNo, 0);
 
-        static int lanes[MAX_LANES];
+        static idx_t lanes[MAX_LANES];
 
         sample(elements, elements + lanesNo, lanes, MIN(MAX_LANES, inf.nLanes), SE_Env::Inst().GetRand().GetGenerator());
 
-        for (int i = 0; i < MIN(MAX_LANES, inf.nLanes); i++)
+        for (unsigned int i = 0; i < MIN(MAX_LANES, inf.nLanes); i++)
         {
             auto Lane = inf.road->GetDrivingLaneByIdx(inf.pos.GetS(), lanes[i]);
             int  laneID;
 
             if (!Lane)
             {
-                LOG("Warning: invalid lane index");
+                LOG_WARN("Warning: invalid lane index");
                 continue;
             }
             else
@@ -538,12 +602,12 @@ void SwarmTrafficAction::spawn(Solutions sols, int replace, double simTime)
                 continue;  // distance = speed * 2 seconds
 
             Controller::InitArgs args;
-            args.name       = "Swarm ACC controller";
-            args.type       = ControllerACC::GetTypeNameStatic();
-            args.entities   = entities_;
-            args.gateway    = gateway_;
-            args.parameters = 0;
-            args.properties = 0;
+            args.name            = "Swarm ACC controller";
+            args.type            = CONTROLLER_ACC_TYPE_NAME;
+            args.scenario_engine = scenario_engine_;
+            args.gateway         = gateway_;
+            args.parameters      = 0;
+            args.properties      = 0;
 
 #if 0  // This is one way of setting the ACC setSpeed property
             args.properties = new OSCProperties();
@@ -560,13 +624,30 @@ void SwarmTrafficAction::spawn(Solutions sols, int replace, double simTime)
             reader_->AddController(acc);
 
             // Pick random model from vehicle catalog
-            std::uniform_int_distribution<int> dist(0, static_cast<int>((vehicle_pool_.size() - 1)));
-            int                                number = dist(SE_Env::Inst().GetRand().GetGenerator());
-
-            Vehicle* vehicle = new Vehicle(*vehicle_pool_[static_cast<unsigned int>(number)]);
+            Vehicle* vehicle_tmp = vehicle_pool_.GetRandomVehicle();
+            if (vehicle_tmp == nullptr)
+            {
+                LOG_ERROR("No vehicle");
+                continue;
+            }
+            Vehicle* vehicle = new Vehicle(*vehicle_tmp);
             vehicle->pos_.SetLanePos(inf.pos.GetTrackId(), laneID, inf.pos.GetS(), 0.0);
-            vehicle->pos_.SetHeadingRelativeRoadDirection(laneID < 0 ? 0.0 : M_PI);
-            vehicle->controller_ = acc;
+
+            // Set swarm traffic direction based on RHT or LHT
+            if (inf.road->GetRule() == roadmanager::Road::RoadRule::RIGHT_HAND_TRAFFIC)
+            {
+                vehicle->pos_.SetHeadingRelativeRoadDirection(laneID < 0 ? 0.0 : M_PI);
+            }
+            else if (inf.road->GetRule() == roadmanager::Road::RoadRule::LEFT_HAND_TRAFFIC)
+            {
+                vehicle->pos_.SetHeadingRelativeRoadDirection(laneID > 0 ? 0.0 : M_PI);
+            }
+            else
+            {
+                // do something if undefined... maybe default to RHT?
+                vehicle->pos_.SetHeadingRelativeRoadDirection(laneID < 0 ? 0.0 : M_PI);
+            }
+
             vehicle->SetSpeed(velocity_);
             // vehicle->scaleMode_ = EntityScaleMode::BB_TO_MODEL;
             vehicle->name_ = "swarm_" + std::to_string(counter_++);
@@ -579,8 +660,9 @@ void SwarmTrafficAction::spawn(Solutions sols, int replace, double simTime)
                 v->AlignTrailers();
             }
 
-            acc->Assign(entities_->GetObjectById(id));
-            acc->Activate(Controller::DomainActivation::OFF, Controller::DomainActivation::ON);
+            vehicle->AssignController(acc);
+            acc->LinkObject(vehicle);
+            acc->Activate({ControlActivationMode::ON, ControlActivationMode::OFF, ControlActivationMode::OFF, ControlActivationMode::OFF});
 
             SpawnInfo sInfo = {
                 id,                    // Vehicle ID
@@ -665,7 +747,12 @@ int SwarmTrafficAction::despawn(double simTime)
 
         if (deleteVehicle)
         {
-            reader_->RemoveController(vehicle->controller_);
+            for (auto ctrl : vehicle->controllers_)
+            {
+                vehicle->UnassignController(ctrl);
+                ctrl->UnlinkObject();
+                reader_->RemoveController(ctrl);
+            }
 
             if (vehicle->type_ == Object::Type::VEHICLE)
             {

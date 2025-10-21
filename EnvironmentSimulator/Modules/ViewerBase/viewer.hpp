@@ -23,6 +23,9 @@
 #include <osgAnimation/EaseMotion>
 #include <osg/BlendColor>
 #include <osg/ShapeDrawable>
+#include <osg/Point>
+#include <osg/BlendFunc>
+#include <osgGA/StateSetManipulator>
 #include <string>
 
 #include "RubberbandManipulator.hpp"
@@ -31,42 +34,14 @@
 #include "CommonMini.hpp"
 #include "roadgeom.hpp"
 #include "Entities.hpp"
-#include "OSIReporter.hpp"
 #include "OSCParameterDistribution.hpp"
 
-extern float color_green[3];
-extern float color_gray[3];
-extern float color_dark_gray[3];
-extern float color_red[3];
-extern float color_blue[3];
-extern float color_yellow[3];
-extern float color_white[3];
-extern float color_black[3];
-
 using namespace scenarioengine;
+using namespace roadgeom;
 
 namespace viewer
 {
-    typedef enum
-    {
-        NODE_MASK_NONE             = (0),
-        NODE_MASK_OBJECT_SENSORS   = (1 << 0),
-        NODE_MASK_TRAIL_LINES      = (1 << 1),
-        NODE_MASK_TRAIL_DOTS       = (1 << 2),
-        NODE_MASK_ODR_FEATURES     = (1 << 3),
-        NODE_MASK_OSI_POINTS       = (1 << 4),
-        NODE_MASK_OSI_LINES        = (1 << 5),
-        NODE_MASK_ENV_MODEL        = (1 << 6),
-        NODE_MASK_ENTITY_MODEL     = (1 << 7),
-        NODE_MASK_ENTITY_BB        = (1 << 8),
-        NODE_MASK_INFO             = (1 << 9),
-        NODE_MASK_INFO_PER_OBJ     = (1 << 10),
-        NODE_MASK_ROAD_SENSORS     = (1 << 11),
-        NODE_MASK_TRAJECTORY_LINES = (1 << 12),
-        NODE_MASK_ROUTE_WAYPOINTS  = (1 << 13),
-    } NodeMask;
-
-    osg::Vec4 ODR2OSGColor(roadmanager::RoadMarkColor color);
+    class Viewer;  // forward declaration
 
     class PolyLine
     {
@@ -88,7 +63,7 @@ namespace viewer
          * @param dotsize Size of the dots. Set to 0.0 to disable dots. Size unit is meter for 3D dots and pixels for default GL points
          * @param dots3D If true the dots are represented by 3D shape, otherwise just a OpenGL point
          */
-        PolyLine(osg::Group* parent, osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width, double dotsize, bool dots3D);
+        PolyLine(Viewer* viewer, osg::Group* parent, osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width, double dotsize, bool dots3D);
 
         /**
          * Create and visualize a set of connected line segments defined by an array of points.
@@ -99,8 +74,8 @@ namespace viewer
          * @param widh Width of the polyline
          * @param dotsize Size of the dots. Set to 0.0 to disable dots. Size unit is meter for 3D dots and pixel for default GL points
          */
-        PolyLine(osg::Group* parent, osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width, double dotsize)
-            : PolyLine(parent, points, color, width, dotsize, false)
+        PolyLine(Viewer* viewer, osg::Group* parent, osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width, double dotsize)
+            : PolyLine(viewer, parent, points, color, width, dotsize, false)
         {
         }
 
@@ -113,13 +88,13 @@ namespace viewer
          * @param color Red, green, blue and alpha (transparency) of the line segments and optional vertex dots range [0.0:1.0]
          * @param widh Width of the polyline
          */
-        PolyLine(osg::Group* parent, osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width)
-            : PolyLine(parent, points, color, width, 0.0, false)
+        PolyLine(Viewer* viewer, osg::Group* parent, osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width)
+            : PolyLine(viewer, parent, points, color, width, 0.0, false)
         {
         }
 
         void SetPoints(osg::ref_ptr<osg::Vec3Array> points);
-        void AddPoint(osg::Vec3 point);
+        void AddPoint(double x, double y, double z);
         void Reset();
         void Update();
         void Redraw();
@@ -127,6 +102,7 @@ namespace viewer
         void SetNodeMaskDots(unsigned int nodemask);
 
     private:
+        Viewer*                       viewer_;
         bool                          dots3D_;
         void                          Add3DDot(osg::Vec3 pos);
         osg::ref_ptr<osg::DrawArrays> pline_array_;
@@ -141,71 +117,10 @@ namespace viewer
         std::vector<PolyLine*>                       plines_;
         ObjectSensor*                                sensor_;
 
-        SensorViewFrustum(ObjectSensor* sensor, osg::Group* parent);
+        SensorViewFrustum(Viewer* viewer, ObjectSensor* sensor, osg::Group* parent);
         ~SensorViewFrustum();
         void Update();
     };
-
-#ifdef _USE_OSI
-
-    class OSIDetectedPoint
-    {
-    public:
-        osg::ref_ptr<osg::Group>     parent_;
-        osg::ref_ptr<osg::Geometry>  osi_detection_geom_;
-        osg::ref_ptr<osg::Vec3Array> osi_detection_points_;
-        osg::ref_ptr<osg::Vec4Array> osi_detection_color_;
-        bool                         showing_;
-
-        OSIDetectedPoint(const osg::Vec3 point, osg::ref_ptr<osg::Group> parent);
-        ~OSIDetectedPoint();
-        void Show()
-        {
-            osi_detection_geom_->setNodeMask(NodeMask::NODE_MASK_OBJECT_SENSORS);
-            showing_ = true;
-        };
-        void Hide()
-        {
-            osi_detection_geom_->setNodeMask(0x0);
-            showing_ = false;
-        };
-        void Update(const osg::Vec3 point);
-    };
-
-    class OSIDetectedCar
-    {
-    public:
-        osg::ref_ptr<osg::Group>                     parent_;
-        osg::ref_ptr<osg::Group>                     car_;
-        osg::ref_ptr<osg::Geode>                     osi_detection_geode_box_;
-        osg::ref_ptr<osg::Geode>                     osi_detection_geode_center_;
-        osg::ref_ptr<osg::PositionAttitudeTransform> osi_detection_tx_;
-        osg::Vec3                                    bb_dimensions_;
-        bool                                         showing_;
-
-        OSIDetectedCar(const osg::Vec3 point, double h, double w, double l, osg::ref_ptr<osg::Group> parent);
-        ~OSIDetectedCar();
-        void Show();
-        void Hide();
-        void Update(const osg::Vec3 point);
-    };
-
-    class OSISensorDetection
-    {
-    public:
-        osg::ref_ptr<osg::Group> parent_;
-        osg::ref_ptr<osg::Group> detected_points_group_;
-        osg::ref_ptr<osg::Group> detected_bb_group_;
-
-        std::map<uint64_t, OSIDetectedPoint*> detected_points_;
-        std::map<uint64_t, OSIDetectedCar*>   detected_cars_;
-
-        OSISensorDetection(osg::ref_ptr<osg::Group> parent);
-        ~OSISensorDetection();
-        void Update(osi3::SensorView* sv);
-    };
-
-#endif  // _USE_OSI
 
     class Trajectory
     {
@@ -223,7 +138,7 @@ namespace viewer
         osg::Node*                 node_;
         roadmanager::RMTrajectory* activeRMTrajectory_;
 
-        Trajectory(osg::Group* parent, osgViewer::Viewer* viewer);
+        Trajectory(osg::Group* parent, Viewer* viewer);
         ~Trajectory()
         {
         }
@@ -232,7 +147,7 @@ namespace viewer
         void Disable();
 
     private:
-        osgViewer::Viewer*        viewer_;
+        Viewer*                   viewer_;
         std::unique_ptr<PolyLine> pline_;
     };
 
@@ -240,9 +155,12 @@ namespace viewer
     {
     public:
         osg::ref_ptr<osg::Group> parent_;
-        osg::ref_ptr<osg::Group> group_;
+        osg::ref_ptr<osg::Group> group_all_wp_;
+        osg::ref_ptr<osg::Group> group_scenario_wp_;
+        osg::ref_ptr<osg::Group> group_minimal_wp_;
+        Viewer*                  viewer_;
 
-        RouteWayPoints(osg::ref_ptr<osg::Group> parent, osg::Vec4 color);
+        RouteWayPoints(osg::ref_ptr<osg::Group> parent, osg::Vec4 color, Viewer* viewer);
         ~RouteWayPoints();
 
         osg::ref_ptr<osg::Geode> CreateWayPointGeometry(double x, double y, double z, double h, double scale);
@@ -309,10 +227,9 @@ namespace viewer
         osg::ref_ptr<osg::Group>                     bbGroup_;
 
         std::unique_ptr<Trajectory> trajectory_;
-        static const EntityType     entity_type_ = EntityType::ENTITY;
         virtual EntityType          GetType()
         {
-            return entity_type_;
+            return EntityType::ENTITY;
         }
 
         /* Returns true if type is or inherits from MOVING */
@@ -332,7 +249,7 @@ namespace viewer
         osg::ref_ptr<osg::BlendColor> blend_color_;
         osg::ref_ptr<osg::StateSet>   state_set_;
 
-        EntityModel(osgViewer::Viewer*       viewer,
+        EntityModel(Viewer*                  viewer,
                     osg::ref_ptr<osg::Group> group,
                     osg::ref_ptr<osg::Group> parent,
                     osg::ref_ptr<osg::Group> trail_parent,
@@ -342,33 +259,34 @@ namespace viewer
                     osg::Vec4                trail_color,
                     std::string              name);
         virtual ~EntityModel();
-        void SetPosition(double x, double y, double z);
-        void SetRotation(double hRoad, double pRoad, double hRelative, double r);
-        void SetRotation(double h, double p, double r);
+        void              SetPosition(double x, double y, double z);
+        void              SetRotation(double hRoad, double pRoad, double hRelative, double r);
+        void              SetRotation(double h, double p, double r);
+        const osg::Vec3d* GetPosition() const;
 
         void SetTransparency(double factor);
 
         std::unique_ptr<PolyLine>       trail_;
         std::unique_ptr<RouteWayPoints> routewaypoints_;
-        osgViewer::Viewer*              viewer_;
+        Viewer*                         viewer_;
         OnScreenText                    on_screen_info_;
+        osg::ref_ptr<osg::BlendFunc>    blend_func_;
     };
 
     class MovingModel : public EntityModel
     {
     public:
-        PointSensor*            road_sensor_;
-        PointSensor*            lane_sensor_;
-        PointSensor*            route_sensor_;
-        PointSensor*            trail_sensor_;
-        PointSensor*            steering_sensor_;
-        static const EntityType entity_type_ = EntityType::MOVING;
-        virtual EntityType      GetType()
+        PointSensor*       road_sensor_;
+        PointSensor*       lane_sensor_;
+        PointSensor*       route_sensor_;
+        PointSensor*       trail_sensor_;
+        PointSensor*       steering_sensor_;
+        virtual EntityType GetType() override
         {
-            return entity_type_;
+            return EntityType::MOVING;
         }
 
-        MovingModel(osgViewer::Viewer*       viewer,
+        MovingModel(Viewer*                  viewer,
                     osg::ref_ptr<osg::Group> group,
                     osg::ref_ptr<osg::Group> parent,
                     osg::ref_ptr<osg::Group> trail_parent,
@@ -386,17 +304,21 @@ namespace viewer
     class CarModel : public MovingModel
     {
     public:
-        std::vector<osg::ref_ptr<osg::PositionAttitudeTransform>> front_wheel_;
-        std::vector<osg::ref_ptr<osg::PositionAttitudeTransform>> rear_wheel_;
-        double                                                    wheel_angle_;
-        double                                                    wheel_rot_;
-        static const EntityType                                   entity_type_ = EntityType::VEHICLE;
-        virtual EntityType                                        GetType()
+        struct WheelCompound
         {
-            return entity_type_;
+            osg::ref_ptr<osg::MatrixTransform> steering_part;
+            osg::ref_ptr<osg::MatrixTransform> rolling_part;
+        };
+        std::vector<WheelCompound> front_wheel_;
+        std::vector<WheelCompound> rear_wheel_;
+        double                     wheel_angle_;
+        double                     wheel_rot_;
+        virtual EntityType         GetType() override
+        {
+            return EntityType::VEHICLE;
         }
 
-        CarModel(osgViewer::Viewer*       viewer,
+        CarModel(Viewer*                  viewer,
                  osg::ref_ptr<osg::Group> group,
                  osg::ref_ptr<osg::Group> parent,
                  osg::ref_ptr<osg::Group> trail_parent,
@@ -406,9 +328,9 @@ namespace viewer
                  osg::Vec4                trail_color,
                  std::string              name);
         ~CarModel();
-        osg::ref_ptr<osg::PositionAttitudeTransform> AddWheel(osg::ref_ptr<osg::Node> carNode, const char* wheelName);
-        void                                         UpdateWheels(double wheel_angle, double wheel_rotation);
-        void                                         UpdateWheelsDelta(double wheel_angle, double wheel_rotation_delta);
+        int  AddWheel(osg::ref_ptr<osg::Node> carNode, const std::string& wheelName, bool front);
+        void UpdateWheels(double wheel_angle, double wheel_rotation);
+        void UpdateWheelsDelta(double wheel_angle, double wheel_rotation_delta);
     };
 
     class VisibilityCallback : public osg::NodeCallback
@@ -478,22 +400,30 @@ namespace viewer
         osg::ref_ptr<osg::Node> dot_node_;
 
         // Road debug visualization
-        osg::ref_ptr<osg::Group>                     odrLines_;
-        osg::ref_ptr<osg::Group>                     osiFeatures_;
-        osg::ref_ptr<osg::Group>                     trajectoryLines_;
-        osg::ref_ptr<osg::Group>                     routewaypoints_;
-        osg::ref_ptr<osg::PositionAttitudeTransform> envTx_;
-        osg::ref_ptr<osg::Node>                      environment_;
-        osg::ref_ptr<osgGA::RubberbandManipulator>   rubberbandManipulator_;
-        osg::ref_ptr<osgGA::NodeTrackerManipulator>  nodeTrackerManipulator_;
-        std::vector<EntityModel*>                    entities_;
-        float                                        lodScale_;
-        osg::ref_ptr<osgViewer::Viewer>              osgViewer_;
-        osg::MatrixTransform*                        rootnode_;
-        osg::ref_ptr<osg::Group>                     roadSensors_;
-        osg::ref_ptr<osg::Group>                     trails_;
-        roadmanager::OpenDrive*                      odrManager_;
-        std::unique_ptr<RoadGeom>                    roadGeom;
+        osg::ref_ptr<osg::Group>                    odrLines_;
+        osg::ref_ptr<osg::Group>                    osiFeatures_;
+        osg::ref_ptr<osg::Group>                    trajectoryLines_;
+        osg::ref_ptr<osg::Group>                    routewaypoints_;
+        osg::ref_ptr<osg::Group>                    envGroup_;
+        osg::ref_ptr<osg::Node>                     environment_;
+        osg::ref_ptr<osgGA::RubberbandManipulator>  rubberbandManipulator_;
+        osg::ref_ptr<osgGA::NodeTrackerManipulator> nodeTrackerManipulator_;
+        std::vector<EntityModel*>                   entities_;
+        float                                       lodScale_;
+        osg::ref_ptr<osgViewer::Viewer>             osgViewer_;
+        osg::MatrixTransform*                       rootnode_;
+        osg::ref_ptr<osg::Group>                    roadSensors_;
+        osg::ref_ptr<osg::Group>                    trails_;
+        roadmanager::OpenDrive*                     odrManager_;
+        std::unique_ptr<RoadGeom>                   roadGeom;
+        osg::ref_ptr<osg::MatrixTransform>          env_origin2odr_;   // transform the environment to the OpenDRIVE origin
+        osg::ref_ptr<osg::MatrixTransform>          root_origin2odr_;  // transform objects to the OpenDRIVE origin
+
+        // Weather stuff
+        osg::ref_ptr<osg::PositionAttitudeTransform> weatherGroup_;  // parent for all OSC Environment related stuff
+        osg::ref_ptr<osg::PositionAttitudeTransform> fogBoundingBox_;
+        void                                         CreateWeatherGroup(const scenarioengine::OSCEnvironment& environment);
+        void                                         UpdateFrictonScaleFactorInMaterial(const double factor);
 
         std::string                   exe_path_;
         std::vector<KeyEventCallback> callback_;
@@ -512,6 +442,8 @@ namespace viewer
         SE_Semaphore renderSemaphore;
         SE_Mutex     imageMutex;
 
+        osg::Vec3d origin_ = {0.0, 0.0, 0.0};  // origin of the visual model in the OpenDRIVE coordinate system
+
         Viewer(roadmanager::OpenDrive* odrManager,
                const char*             modelFilename,
                const char*             scenarioFilename,
@@ -519,23 +451,23 @@ namespace viewer
                osg::ArgumentParser     arguments,
                SE_Options*             opt = 0);
         ~Viewer();
-        static void PrintUsage();
-        void        AddCustomCamera(double x, double y, double z, double h, double p, bool fixed_pos);
-        void        AddCustomCamera(double x, double y, double z, bool fixed_pos);
-        void        AddCustomFixedTopCamera(double x, double y, double z, double rot);
-        int         GetCameraPosAndRot(osg::Vec3& pos, osg::Vec3& rot);
-        int         GetCameraRelativePos(osg::Vec3& pos);
-        int         AddCustomLightSource(double x, double y, double z, double intensity);
+        void AddCustomCamera(double x, double y, double z, double h, double p, bool fixed_pos);
+        void AddCustomCamera(double x, double y, double z, bool fixed_pos);
+        void AddCustomFixedTopCamera(double x, double y, double z, double rot);
+        int  GetCameraPosAndRot(osg::Vec3& pos, osg::Vec3& rot);
+        int  GetCameraRelativePos(osg::Vec3& pos);
+        int  AddCustomLightSource(double x, double y, double z, double intensity);
 
         /**
          * Set mode of the esmini camera model
          * @param mode According to the RubberbandManipulator::CAMERA_MODE enum, plus any number of custom cameras. Set -1 to select the last.
          */
         void SetCameraMode(int mode);
+        int  GetCameraMode();
         int  GetNumberOfCameraModes();
         void UpdateCameraFOV();
-        void SetVehicleInFocus(int idx);
-        int  GetEntityInFocus()
+        void SetVehicleInFocus(int idx, bool calcDistance = true);
+        int  GetEntityInFocus() const
         {
             return currentCarInFocus_;
         }
@@ -545,6 +477,7 @@ namespace viewer
                                                    bool                    road_sensor,
                                                    std::string             name,
                                                    OSCBoundingBox*         boundingBox,
+                                                   double                  x_offset,
                                                    EntityScaleMode         scaleMode = EntityScaleMode::NONE);
         int                      AddEntityModel(EntityModel* model);
         void                     RemoveCar(int index);
@@ -573,19 +506,19 @@ namespace viewer
         {
             keyRight_ = pressed;
         }
-        bool getKeyUp()
+        bool getKeyUp() const
         {
             return keyUp_;
         }
-        bool getKeyDown()
+        bool getKeyDown() const
         {
             return keyDown_;
         }
-        bool getKeyLeft()
+        bool getKeyLeft() const
         {
             return keyLeft_;
         }
-        bool getKeyRight()
+        bool getKeyRight() const
         {
             return keyRight_;
         }
@@ -593,7 +526,7 @@ namespace viewer
         {
             quit_request_ = value;
         }
-        bool GetQuitRequest()
+        bool GetQuitRequest() const
         {
             return quit_request_;
         }
@@ -604,48 +537,54 @@ namespace viewer
         void         ToggleNodeMaskBits(int bits);
         int          GetNodeMaskBit(int mask);
         void         SetCameraTrackNode(osg::ref_ptr<osg::Node> xform, bool calcDistance = false);
-        PointSensor* CreateSensor(float color[], bool create_ball, bool create_line, double ball_radius, double line_width);
+        PointSensor* CreateSensor(const float (&color)[3], bool create_ball, bool create_line, double ball_radius, double line_width);
         bool         CreateRoadSensors(MovingModel* moving_model);
         void         SetWindowTitle(std::string title);
         void         SetWindowTitleFromArgs(std::vector<std::string>& arg);
         void         SetWindowTitleFromArgs(int argc, char* argv[]);
         void         RegisterKeyEventCallback(KeyEventCallbackFunc func, void* data);
         void         RegisterImageCallback(ImageCallbackFunc func, void* data);
-        PolyLine*    AddPolyLine(osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width, double dotsize = 0);
-        PolyLine*    AddPolyLine(osg::Group* parent, osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width, double dotsize = 0);
+        PolyLine*    AddPolyLine(Viewer* viewer, osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width, double dotsize = 0);
+        PolyLine*    AddPolyLine(Viewer*                      viewer,
+                                 osg::Group*                  parent,
+                                 osg::ref_ptr<osg::Vec3Array> points,
+                                 osg::Vec4                    color,
+                                 double                       width,
+                                 double                       dotsize = 0);
 
         void SaveImagesToFile(int nrOfFrames);
-        int  GetSaveImagesToFile()
+        int  GetSaveImagesToFile() const
         {
             return saveImagesToFile_;
         }
         bool IsOffScreenRequested();
         void UpdateOffScreenStatus();         // Update off-screen activation based on needed or not
         void SetOffScreenActive(bool state);  // true = Activate esmini offscreen, false = Activate osg screen capture handling
-        bool GetOSGScreenShotHandlerActive()
+        bool GetOSGScreenShotHandlerActive() const
         {
             return osg_screenshot_event_handler_;
         }
 
-        void Frame();
+        void   Frame(double time);
+        void   SetFrictionScaleFactor(const double factor);
+        double GetFrictionScaleFactor() const;
 
     private:
-        bool                                         CreateRoadLines(roadmanager::OpenDrive* od);
-        bool                                         CreateRoadMarkLines(roadmanager::OpenDrive* od);
-        int                                          CreateOutlineObject(roadmanager::Outline* outline, osg::Vec4 color);
-        osg::ref_ptr<osg::PositionAttitudeTransform> LoadRoadFeature(roadmanager::Road* road, std::string filename);
-        int                                          CreateRoadSignsAndObjects(roadmanager::OpenDrive* od);
-        int                                          InitTraits(osg::ref_ptr<osg::GraphicsContext::Traits> traits,
-                                                                int                                        x,
-                                                                int                                        y,
-                                                                int                                        w,
-                                                                int                                        h,
-                                                                int                                        samples,
-                                                                bool                                       decoration,
-                                                                int                                        screenNum,
-                                                                bool                                       headless);
+        int  CreateTunnels(roadmanager::OpenDrive* od);
+        int  InitTraits(osg::ref_ptr<osg::GraphicsContext::Traits> traits,
+                        int                                        x,
+                        int                                        y,
+                        int                                        w,
+                        int                                        h,
+                        int                                        samples,
+                        bool                                       decoration,
+                        int                                        screenNum,
+                        bool                                       headless);
+        bool CreateRoadLines(Viewer* viewer, roadmanager::OpenDrive* od);
+        bool CreateRoadMarkLines(roadmanager::OpenDrive* od);
+        void CreateFog(const double range, const double sunIntensityFactor, const double cloudinessFactor);
+        void SetSkyColor(const double sunIntensityFactor, const double fogVisualRangeFactor, const double cloudinessFactor);
 
-        int                                   AddGroundSurface();
         bool                                  keyUp_;
         bool                                  keyDown_;
         bool                                  keyLeft_;
@@ -655,6 +594,10 @@ namespace viewer
         bool                                  osg_screenshot_event_handler_;
         osg::ref_ptr<FetchImage>              fetch_image_;
         osgViewer::ViewerBase::ThreadingModel initialThreadingModel_;
+        double                                time_;
+        double                                frictionScaleFactor_;
+        bool                                  defaultClearColorUsed_;
+        std::vector<float>                    fogColor_;
 
         struct
         {

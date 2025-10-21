@@ -20,6 +20,7 @@
 #include "CommonMini.hpp"
 #include "Entities.hpp"
 #include "ScenarioGateway.hpp"
+#include "logger.hpp"
 
 #include <random>
 
@@ -57,7 +58,7 @@ ControllerUDPDriver::ControllerUDPDriver(InitArgs* args)
         }
         else
         {
-            LOG_AND_QUIT("ControllerExternalDriverModel unexpected arg inputMode %s", args->properties->GetValueStr("inputMode").c_str());
+            LOG_ERROR_AND_QUIT("ControllerExternalDriverModel unexpected arg inputMode {}", args->properties->GetValueStr("inputMode").c_str());
         }
     }
 
@@ -66,7 +67,7 @@ ControllerUDPDriver::ControllerUDPDriver(InitArgs* args)
         int portTmp = strtoi(args->properties->GetValueStr("port"));
         if (portTmp < 0 || portTmp > 65535)
         {
-            LOG_AND_QUIT("Invlaid driver model port: %d (valid range is [0, 65535]", portTmp);
+            LOG_ERROR_AND_QUIT("Invlaid driver model port: {} (valid range is [0, 65535]", portTmp);
         }
         else
         {
@@ -79,11 +80,11 @@ ControllerUDPDriver::ControllerUDPDriver(InitArgs* args)
         int basePortTmp = strtoi(args->properties->GetValueStr("basePort"));
         if (basePortTmp < 0 || basePortTmp > 65535)
         {
-            LOG_AND_QUIT("Invlaid driver model basePort: %d (valid range is [0, 65535]", basePortTmp);
+            LOG_ERROR_AND_QUIT("Invlaid driver model basePort: {} (valid range is [0, 65535]", basePortTmp);
         }
         else if (basePortTmp != basePort_)
         {
-            LOG("Changing base port to %d (from %d)", basePortTmp, basePort_);
+            LOG_INFO("Changing base port to {} (from {})", basePortTmp, basePort_);
             basePort_ = basePortTmp;
         }
     }
@@ -100,7 +101,7 @@ ControllerUDPDriver::ControllerUDPDriver(InitArgs* args)
         }
         else
         {
-            LOG_AND_QUIT("ControllerExternalDriverModel unexpected arg execMode %s", args->properties->GetValueStr("execMode").c_str());
+            LOG_ERROR_AND_QUIT("ControllerExternalDriverModel unexpected arg execMode {}", args->properties->GetValueStr("execMode"));
         }
     }
 
@@ -109,10 +110,10 @@ ControllerUDPDriver::ControllerUDPDriver(InitArgs* args)
     {
         if (args->properties->GetValueStr("intputMode") == "additive")
         {
-            LOG("ExternalDriverModelController only support override mode, ignoring requested additive mode");
+            LOG_WARN("ExternalDriverModelController only support override mode, ignoring requested additive mode");
         }
     }
-    mode_ = Mode::MODE_OVERRIDE;
+    mode_ = ControlOperationMode::MODE_OVERRIDE;
 
     memset(static_cast<void*>(&msg), 0, sizeof(msg));
     memset(static_cast<void*>(&lastMsg), 0, sizeof(lastMsg));
@@ -167,7 +168,7 @@ void ControllerUDPDriver::Init()
     if (basePort_ == -1)
     {
         basePort_ = DEFAULT_UDP_DRIVER_PORT;
-        LOG("ControllerUDPDriver: using default baseport %d", basePort_);
+        LOG_WARN("ControllerUDPDriver: using default baseport {}", basePort_);
     }
     Controller::Init();
 }
@@ -200,6 +201,7 @@ void ControllerUDPDriver::Step(double timeStep)
 
     if (receivedNrOfBytes > 0)
     {
+        // Message received, handle it
         lastMsg = msg;
 
         // printf("version %d objectId %d framenr %d inputMode %d/%s \n",
@@ -211,9 +213,9 @@ void ControllerUDPDriver::Step(double timeStep)
 
         if (msg.header.version != UDP_DRIVER_MESSAGE_VERSION)
         {
-            LOG_ONCE("ControllerUDPDriver: Got unsupported msg version %d (only accepting version %d)",
-                     msg.header.version,
-                     UDP_DRIVER_MESSAGE_VERSION);
+            LOG_ERROR_ONCE("ControllerUDPDriver: Got unsupported msg version {} (only accepting version {})",
+                           msg.header.version,
+                           UDP_DRIVER_MESSAGE_VERSION);
         }
 
         if (msg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_XYZHPR))
@@ -287,66 +289,73 @@ void ControllerUDPDriver::Step(double timeStep)
         }
         else
         {
-            LOG("ControllerExternalDriverModel received %d bytes and unexpected input mode %d", retval, msg.header.inputMode);
+            LOG_ERROR("ControllerExternalDriverModel received {} bytes and unexpected input mode {}", retval, msg.header.inputMode);
         }
     }
-    else if (timeStep > SMALL_NUMBER &&
-             ((lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_H) && lastMsg.message.stateH.deadReckon == 1) ||
-              (lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_XYH) && lastMsg.message.stateXYH.deadReckon == 1) ||
-              (lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_XYZHPR) && lastMsg.message.stateXYZHPR.deadReckon == 1)))
+
+    if (timeStep > SMALL_NUMBER)
     {
-        double speed = 0.0;
-        double h     = 0.0;
-
-        if (lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_H))
+        if (
+            // following states, apply dead reckoning always (when enabled)
+            (lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_H) && lastMsg.message.stateH.deadReckon) ||
+            // following states, only apply dead reckoning when no message has been received
+            (receivedNrOfBytes == 0 &&
+             ((lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_XYH) && lastMsg.message.stateXYH.deadReckon) ||
+              (lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_XYZHPR) && lastMsg.message.stateXYH.deadReckon))))
         {
-            speed = lastMsg.message.stateH.speed;
-            h     = lastMsg.message.stateH.h;
+            // No message received, but dead reckoning enabled. Update position based on speed and heading
+            double speed = 0.0;
+            double h     = 0.0;
+
+            if (lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_H))
+            {
+                speed = lastMsg.message.stateH.speed;
+                h     = lastMsg.message.stateH.h;
+            }
+            else if (lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_XYH))
+            {
+                speed = lastMsg.message.stateXYH.speed;
+                h     = lastMsg.message.stateXYH.h;
+            }
+            else if (lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_XYZHPR))
+            {
+                speed = lastMsg.message.stateXYZHPR.speed;
+                h     = lastMsg.message.stateXYZHPR.h;
+            }
+            else
+            {
+                LOG_ERROR_AND_QUIT("Unexpected msg type {}", lastMsg.header.inputMode);
+            }
+
+            double ds = speed * timeStep;
+            double dx = ds * cos(h);
+            double dy = ds * sin(h);
+
+            gateway_->updateObjectWorldPosXYH(object_->id_, 0.0, object_->pos_.GetX() + dx, object_->pos_.GetY() + dy, vehicle_.heading_);
         }
-        else if (lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_XYH))
+        else if (lastMsg.header.inputMode == static_cast<int>(InputMode::DRIVER_INPUT))
         {
-            speed = lastMsg.message.stateXYH.speed;
-            h     = lastMsg.message.stateXYH.h;
+            // In driver input mode the vehicle is updated continuously wrt latest input
+            vehicle_.DrivingControlAnalog(timeStep,
+                                          lastMsg.message.driverInput.throttle - lastMsg.message.driverInput.brake,
+                                          lastMsg.message.driverInput.steeringAngle);
+
+            // Register updated vehicle position
+            gateway_->updateObjectWorldPosXYH(object_->id_, 0.0, vehicle_.posX_, vehicle_.posY_, vehicle_.heading_);
+            gateway_->updateObjectSpeed(object_->id_, 0.0, vehicle_.speed_);
+            gateway_->updateObjectWheelAngle(object_->id_, 0.0, msg.message.driverInput.steeringAngle);
+
+            // Fetch Z and Pitch from OpenDRIVE position
+            roadmanager::Position* pos = &gateway_->getObjectStatePtrById(static_cast<int>(msg.header.objectId))->state_.pos;
+            vehicle_.SetZ(pos->GetZ());
+            vehicle_.SetPitch(pos->GetP());
         }
-        else if (lastMsg.header.inputMode == static_cast<int>(InputMode::VEHICLE_STATE_XYZHPR))
-        {
-            speed = lastMsg.message.stateXYZHPR.speed;
-            h     = lastMsg.message.stateXYZHPR.h;
-        }
-        else
-        {
-            LOG_AND_QUIT("Unexpected msg type %d", lastMsg.header.inputMode);
-        }
-
-        double ds = speed * timeStep;
-        double dx = ds * cos(h);
-        double dy = ds * sin(h);
-
-        gateway_->updateObjectWorldPosXYH(object_->id_, 0.0, object_->pos_.GetX() + dx, object_->pos_.GetY() + dy, vehicle_.heading_);
-    }
-
-    if (lastMsg.header.inputMode == static_cast<int>(InputMode::DRIVER_INPUT))
-    {
-        // In driver input mode the vehicle is updated continuously wrt latest input
-        vehicle_.DrivingControlAnalog(timeStep,
-                                      lastMsg.message.driverInput.throttle - lastMsg.message.driverInput.brake,
-                                      lastMsg.message.driverInput.steeringAngle);
-
-        // Register updated vehicle position
-        gateway_->updateObjectWorldPosXYH(object_->id_, 0.0, vehicle_.posX_, vehicle_.posY_, vehicle_.heading_);
-        gateway_->updateObjectSpeed(object_->id_, 0.0, vehicle_.speed_);
-        gateway_->updateObjectWheelAngle(object_->id_, 0.0, msg.message.driverInput.steeringAngle);
-
-        // Fetch Z and Pitch from OpenDRIVE position
-        roadmanager::Position* pos = &gateway_->getObjectStatePtrById(static_cast<int>(msg.header.objectId))->state_.pos;
-        vehicle_.SetZ(pos->GetZ());
-        vehicle_.SetPitch(pos->GetP());
     }
 
     Controller::Step(timeStep);
 }
 
-void ControllerUDPDriver::Activate(DomainActivation lateral, DomainActivation longitudinal)
+int ControllerUDPDriver::Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)])
 {
     if (object_)
     {
@@ -355,8 +364,8 @@ void ControllerUDPDriver::Activate(DomainActivation lateral, DomainActivation lo
             port_ = basePort_ + object_->GetId();
         }
 
-        if (udpServer_ == nullptr ||                                    // not created yet
-            (udpServer_ != nullptr && udpServer_->GetPort() != port_))  // port nr changed. Need to recreate the socket.
+        if (udpServer_ == nullptr ||         // not created yet
+            udpServer_->GetPort() != port_)  // port nr changed. Need to recreate the socket.
         {
             // Close socket in case the controller is assigned again with different port
             if (udpServer_ != nullptr)
@@ -371,7 +380,7 @@ void ControllerUDPDriver::Activate(DomainActivation lateral, DomainActivation lo
             {
                 udpServer_ = new UDPServer(static_cast<unsigned short>(port_), UDP_SYNCHRONOUS_MODE_TIMEOUT_MS);
             }
-            LOG("ExternalDriverModel server listening on port %d execMode: %s", port_, ExecMode2Str(execMode_).c_str());
+            LOG_INFO("ExternalDriverModel server listening on port {} execMode: {}", port_, ExecMode2Str(execMode_));
         }
 
         vehicle_.Reset();
@@ -385,7 +394,7 @@ void ControllerUDPDriver::Activate(DomainActivation lateral, DomainActivation lo
     steer      = vehicle::STEERING_NONE;
     accelerate = vehicle::THROTTLE_NONE;
 
-    Controller::Activate(lateral, longitudinal);
+    return Controller::Activate(mode);
 }
 
 void ControllerUDPDriver::ReportKeyEvent(int key, bool down)

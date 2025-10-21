@@ -2,6 +2,7 @@
 
 #include "CommonMini.hpp"
 #include "esminiLib.hpp"
+#include "Config.hpp"
 
 struct Coordinate2D
 {
@@ -115,6 +116,50 @@ TEST(VectorOperations, TestProjectPointOnVector)
     EXPECT_NEAR(v_result[1], -8.45588, 1E-5);
 }
 
+TEST(VectorOperations, TestProjectPointOnVectorSignedLength)
+{
+    // https://www.desmos.com/calculator/wu0xiyqcnj
+
+    double v_result[2]   = {0.0, 0.0};
+    double signed_length = 0.0;
+
+    signed_length = ProjectPointOnVector2DSignedLength(5.0, 1.0, 0.1, 0.0, v_result[0], v_result[1]);
+    EXPECT_NEAR(v_result[0], 5.0, 1E-5);
+    EXPECT_NEAR(v_result[1], 0.0, 1E-5);
+    EXPECT_NEAR(signed_length, 5.0, 1E-5);
+
+    signed_length = ProjectPointOnVector2DSignedLength(0.1, -1.0, 4.0, 0.0, v_result[0], v_result[1]);
+    EXPECT_NEAR(v_result[0], 0.1, 1E-5);
+    EXPECT_NEAR(v_result[1], 0.0, 1E-5);
+    EXPECT_NEAR(signed_length, 0.1, 1E-5);
+
+    signed_length = ProjectPointOnVector2DSignedLength(-1.0, -1.0, 2.0, 0.0, v_result[0], v_result[1]);
+    EXPECT_NEAR(v_result[0], -1.0, 1E-5);
+    EXPECT_NEAR(v_result[1], 0.0, 1E-5);
+    EXPECT_NEAR(signed_length, -1.0, 1E-5);
+
+    // zero vector, undefined
+    signed_length = ProjectPointOnVector2DSignedLength(-1.0, -1.0, 0.0, 0.0, v_result[0], v_result[1]);
+    EXPECT_NEAR(v_result[0], 0.0, 1E-5);
+    EXPECT_NEAR(v_result[1], 0.0, 1E-5);
+    EXPECT_NEAR(signed_length, 0.0, 1E-5);
+
+    signed_length = ProjectPointOnVector2DSignedLength(1.0, 0.0, 5.0, 5.0, v_result[0], v_result[1]);
+    EXPECT_NEAR(v_result[0], 0.5, 1E-5);
+    EXPECT_NEAR(v_result[1], 0.5, 1E-5);
+    EXPECT_NEAR(signed_length, 0.70711, 1E-5);
+
+    signed_length = ProjectPointOnVector2DSignedLength(1.0, 0.0, -5.0, 5.0, v_result[0], v_result[1]);
+    EXPECT_NEAR(v_result[0], 0.5, 1E-5);
+    EXPECT_NEAR(v_result[1], -0.5, 1E-5);
+    EXPECT_NEAR(signed_length, -0.70711, 1E-5);
+
+    signed_length = ProjectPointOnVector2DSignedLength(2.5, -10.0, -3.0, 5.0, v_result[0], v_result[1]);
+    EXPECT_NEAR(v_result[0], 5.07353, 1E-5);
+    EXPECT_NEAR(v_result[1], -8.45588, 1E-5);
+    EXPECT_NEAR(signed_length, -9.86117, 1E-5);
+}
+
 TEST(MatrixOperations, TestMatrixInvert)
 {
     double m[3][3] = {{1.0, 0.0, 2.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}}, m_out[3][3];
@@ -157,11 +202,153 @@ TEST(MatrixOperations, TestMatrixInvert)
     EXPECT_NEAR(m3[2][2], 1.0, 1E-5);
 }
 
-int main(int argc, char **argv)
+TEST(LinearAlgebra, TestAngleBetweenVectors)
+{
+    double v1[2] = {1.0, 0.0};
+    double v2[2] = {1.0, 0.2};
+    EXPECT_NEAR(GetAngleBetweenVectors(v1[0], v1[1], v2[0], v2[1]), 0.197, 1E-3);
+
+    v1[0] = 0.0;
+    v1[1] = 10.0;
+    v2[0] = 0.0;
+    v2[1] = -10.0;
+    EXPECT_NEAR(GetAngleBetweenVectors(v1[0], v1[1], v2[0], v2[1]), M_PI, 1E-3);
+
+    v1[0] = -3.0;
+    v1[1] = 1.0;
+    v2[0] = 1.0;
+    v2[1] = 3.0;
+    EXPECT_NEAR(GetAngleBetweenVectors(v1[0], v1[1], v2[0], v2[1]), M_PI_2, 1E-3);
+
+    v1[0] = 1.0;
+    v1[1] = 3.0;
+    v2[0] = -3.0;
+    v2[1] = 1.0;
+    EXPECT_NEAR(GetAngleBetweenVectors(v1[0], v1[1], v2[0], v2[1]), M_PI_2, 1E-3);
+
+    v1[0] = -5.0;
+    v1[1] = 1.0;
+    v2[0] = 1.0;
+    v2[1] = -0.6;
+    EXPECT_NEAR(GetAngleBetweenVectors(v1[0], v1[1], v2[0], v2[1]), 2.798, 1E-3);
+}
+
+TEST(ProgramOptions, TestConfigOptionPostprocessing)
+{
+    {
+        const char*            args[] = {"esmini", "--osc", "../../../resources/xosc/cut-in_simple.xosc", "--osc_str", "osc_str_value"};
+        esmini::common::Config config("esmini", sizeof(args) / sizeof(char*), const_cast<char**>(args));
+        auto [argc, argv] = config.Load();
+        EXPECT_EQ(argc, 3);
+        EXPECT_EQ(strcmp(argv[0], "esmini"), 0);
+        EXPECT_EQ(strcmp(argv[1], "--osc_str"), 0);
+        EXPECT_EQ(strcmp(argv[2], "osc_str_value"), 0);
+    }
+    {
+        const char*            args[] = {"esmini", "--osc_str", "osc_str_value", "--osc", "../../../resources/xosc/cut-in_simple.xosc"};
+        esmini::common::Config config("esmini", sizeof(args) / sizeof(char*), const_cast<char**>(args));
+        auto [argc, argv] = config.Load();
+        EXPECT_EQ(argc, 3);
+        EXPECT_EQ(strcmp(argv[0], "esmini"), 0);
+        EXPECT_EQ(strcmp(argv[1], "--osc"), 0);
+        EXPECT_EQ(strcmp(argv[2], "../../../resources/xosc/cut-in_simple.xosc"), 0);
+    }
+    {
+        const char* args[] = {"esmini", "--window", "60", "60", "800", "400", "--headless", "--osc", "../../../resources/xosc/cut-in_simple.xosc"};
+        esmini::common::Config config("esmini", sizeof(args) / sizeof(char*), const_cast<char**>(args));
+        auto [argc, argv] = config.Load();
+        EXPECT_EQ(argc, 4);
+        EXPECT_EQ(strcmp(argv[0], "esmini"), 0);
+        EXPECT_EQ(strcmp(argv[1], "--headless"), 0);
+        EXPECT_EQ(strcmp(argv[2], "--osc"), 0);
+        EXPECT_EQ(strcmp(argv[3], "../../../resources/xosc/cut-in_simple.xosc"), 0);
+    }
+    {
+        // this is special case where we dont want to remove window argument if its found after headless
+        const char* args[] = {"esmini", "--headless", "--window", "60", "60", "800", "400", "--osc", "../../../resources/xosc/cut-in_simple.xosc"};
+        esmini::common::Config config("esmini", sizeof(args) / sizeof(char*), const_cast<char**>(args));
+        auto [argc, argv] = config.Load();
+        EXPECT_EQ(argc, 9);
+        EXPECT_EQ(strcmp(argv[0], "esmini"), 0);
+        EXPECT_EQ(strcmp(argv[1], "--headless"), 0);
+        EXPECT_EQ(strcmp(argv[2], "--window"), 0);
+        EXPECT_EQ(strcmp(argv[3], "60"), 0);
+        EXPECT_EQ(strcmp(argv[4], "60"), 0);
+        EXPECT_EQ(strcmp(argv[5], "800"), 0);
+        EXPECT_EQ(strcmp(argv[6], "400"), 0);
+        EXPECT_EQ(strcmp(argv[7], "--osc"), 0);
+        EXPECT_EQ(strcmp(argv[8], "../../../resources/xosc/cut-in_simple.xosc"), 0);
+    }
+}
+
+TEST(MathFunctions, TestGetAbsAngleDifference)
+{
+    EXPECT_NEAR(GetAbsAngleDifference(1.0, 2.0), 1.0, 1e-3);
+    EXPECT_NEAR(GetAbsAngleDifference(1.0, 5.0), 2.2831, 1e-3);
+    EXPECT_NEAR(GetAbsAngleDifference(5.0, 1.0), 2.2831, 1e-3);
+    EXPECT_NEAR(GetAbsAngleDifference(-1.0, 2.0), 3.0, 1e-3);
+}
+
+TEST(CommonUtilityFunctions, TestCombineDirectoryPathAndFilepath)
+{
+    EXPECT_EQ(CombineDirectoryPathAndFilepath("/home/kalle", "my_file.txt"), "/home/kalle/./my_file.txt");
+    EXPECT_EQ(CombineDirectoryPathAndFilepath("/home/Kalle", "my_File.txt"), "/home/Kalle/./my_File.txt");
+    EXPECT_EQ(CombineDirectoryPathAndFilepath("../home/Kalle", "my_File.txt"), "../home/Kalle/./my_File.txt");
+    EXPECT_EQ(CombineDirectoryPathAndFilepath("", "my_File.txt"), "./my_File.txt");
+}
+
+TEST(MathFunctions, TestGetAngleDifference)
+{
+    EXPECT_NEAR(GetAngleDifference(-0.4, 0.0), -0.4, 1e-5);
+    EXPECT_NEAR(GetAngleDifference(0.1, 6.2), 0.183185, 1e-5);
+    EXPECT_NEAR(GetAngleDifference(6.2, 0.1), -0.183185, 1e-5);
+}
+
+TEST(MathFunctions, TestGetIntersectionsOfLineAndCircle)
+{
+    double i0[2], i1[2];  // intersection points
+
+    // some edge cases
+    EXPECT_EQ(GetIntersectionsOfLineAndCircle({0.0, 0.0}, {1.0, 0.0}, {0.0, 2.0}, 1.0, i0, i1), 0);     // circle above the line
+    EXPECT_EQ(GetIntersectionsOfLineAndCircle({0.0, 0.0}, {1.0, 0.0}, {0.0, -2.0}, 1.0, i0, i1), 0);    // circle below the line
+    EXPECT_EQ(GetIntersectionsOfLineAndCircle({0.0, 0.0}, {1.0, 0.0}, {10.0, 1.0}, 1.0, i0, i1), 1);    // tangent/one intersection point
+    EXPECT_EQ(GetIntersectionsOfLineAndCircle({0.0, 0.0}, {1.0, 0.0}, {10.0, -1.0}, 1.0, i0, i1), 1);   // tangent/one intersection point
+    EXPECT_EQ(GetIntersectionsOfLineAndCircle({0.0, 0.0}, {1.0, 0.0}, {10.0, -1.0}, 1.1, i0, i1), 2);   // two intersection points
+    EXPECT_EQ(GetIntersectionsOfLineAndCircle({0.0, 0.0}, {1.0, 0.0}, {10.0, -1.0}, 0.99, i0, i1), 0);  // no intersection point, but very close to it
+    EXPECT_EQ(GetIntersectionsOfLineAndCircle({-1.0, 0.0}, {-1.0, 5.0}, {1.0, 1.0}, 1.99, i0, i1), 0);  // no intersection point, but very close to it
+    EXPECT_EQ(GetIntersectionsOfLineAndCircle({-1.0, 0.0}, {-1.0, 5.0}, {1.0, 1.0}, 2.0, i0, i1), 1);   // one intersection
+    EXPECT_EQ(GetIntersectionsOfLineAndCircle({-1.0, 0.0}, {-1.0, 5.0}, {1.0, 1.0}, 2.01, i0, i1), 2);  // two intersection points
+}
+
+TEST(MathFunctions, TestGetDistanceFromPointToLine2DWithAngle)
+{
+    EXPECT_NEAR(DistanceFromPointToLine2DWithAngle(0.1, 0.9, 10.0, 10.0, M_PI_4), -0.5656, 1e-3);
+    EXPECT_NEAR(DistanceFromPointToLine2DWithAngle(0.1, 0.1, 10.0, 10.0, M_PI_4), 0.0, 1e-3);
+    EXPECT_NEAR(DistanceFromPointToLine2DWithAngle(0.9, 0.1, 10.0, 10.0, M_PI_4), 0.5656, 1e-3);
+
+    EXPECT_NEAR(DistanceFromPointToLine2DWithAngle(-0.1, 0.9, -10.0, 10.0, 3 * M_PI_4), 0.5656, 1e-3);
+    EXPECT_NEAR(DistanceFromPointToLine2DWithAngle(-0.1, 0.1, -10.0, 10.0, 3 * M_PI_4), 0.0, 1e-3);
+    EXPECT_NEAR(DistanceFromPointToLine2DWithAngle(-0.9, 0.1, -10.0, 10.0, 3 * M_PI_4), -0.5656, 1e-3);
+}
+
+int main(int argc, char** argv)
 {
     // testing::GTEST_FLAG(filter) = "*TestIsPointWithinSectorBetweenTwoLines*";
-
     testing::InitGoogleTest(&argc, argv);
+
+    if (argc > 1)
+    {
+        if (!strcmp(argv[1], "--disable_stdout"))
+        {
+            // disable logging to stdout from the test cases
+            SE_Env::Inst().GetOptions().SetOptionValue("disable_stdout", "", false, true);
+        }
+        else
+        {
+            printf("Usage: %s [--disable_stout] [google test options...]\n", argv[0]);
+            return -1;
+        }
+    }
 
     return RUN_ALL_TESTS();
 }

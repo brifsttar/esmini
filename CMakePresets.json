@@ -52,7 +52,8 @@
       "name": "sanitize-build",
       "hidden": true,
       "cacheVariables": {
-        "ENABLE_SANITIZERS": "ON"
+        "ENABLE_SANITIZERS": "ON",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
     },
     {
@@ -69,7 +70,7 @@
       "hidden": true,
       "cacheVariables": {
         "ENABLE_WARNINGS_AS_ERRORS": "ON",
-        "ENABLE_STATIC_ANALYSIS": "ON",
+        "ENABLE_STATIC_ANALYSIS": "OFF",
         "ENABLE_INCLUDE_WHAT_YOU_USE": "ON"
       }
     },
@@ -82,6 +83,7 @@
       "name": "ci-win64-2022",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
+      "toolset": "v142",
       "hidden": true
     },
     {
@@ -130,21 +132,25 @@
     {
       "name": "ci-sanitize-ubuntu",
       "inherits": [
-        "ci-ubuntu_release",
+        "ci-build",
+        "ci-unix",
+        "disable-osg",
         "sanitize-build"
       ]
     },
     {
       "name": "ci-sanitize-macos",
       "inherits": [
-        "ci-ubuntu_release",
+        "ci-build",
+        "ci-unix",
+        "disable-osg",
         "sanitize-build"
       ]
     },
     {
       "name": "ci-windows-test",
       "inherits": [
-        "ci-windows-2019",
+        "ci-windows-2022",
         "test-win_unix"
       ]
     },

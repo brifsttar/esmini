@@ -20,6 +20,7 @@
 #include "pugixml.hpp"
 #include "OSCGlobalAction.hpp"
 #include "OSCBoundingBox.hpp"
+#include "OSCEnvironment.hpp"
 #include "Parameters.hpp"
 #include "Controller.hpp"
 #include "ScenarioGateway.hpp"
@@ -70,13 +71,17 @@ namespace scenarioengine
     class ScenarioReader
     {
     public:
-        ScenarioReader(Entities* entities, Catalogs* catalogs, bool disable_controllers = false);
+        ScenarioReader(Entities* entities, Catalogs* catalogs, OSCEnvironment* environment, bool disable_controllers = false);
         ~ScenarioReader();
         int  loadOSCFile(const char* path);
-        int  loadOSCMem(const pugi::xml_document& xml_doch);
+        int  loadOSCMem(const pugi::xml_document& xml_doc);
         void SetGateway(ScenarioGateway* gateway)
         {
             gateway_ = gateway;
+        }
+        void SetScenarioEngine(ScenarioEngine* scenarioEngine)
+        {
+            scenarioEngine_ = scenarioEngine;
         }
         int RegisterCatalogDirectory(pugi::xml_node catalogDirChild);
 
@@ -97,33 +102,42 @@ namespace scenarioengine
         roadmanager::Route*               parseOSCRoute(pugi::xml_node routeNode);
         roadmanager::RMTrajectory*        parseTrajectoryRef(pugi::xml_node trajNode);
         void                              ParseOSCProperties(OSCProperties& properties, pugi::xml_node& xml_node);
-        roadmanager::CoordinateSystem     ParseCoordinateSystem(pugi::xml_node node, roadmanager::CoordinateSystem defaultValue);
-        roadmanager::RelativeDistanceType ParseRelativeDistanceType(pugi::xml_node node, roadmanager::RelativeDistanceType defaultValue);
+        roadmanager::CoordinateSystem     ParseCoordinateSystem(pugi::xml_node node, roadmanager::CoordinateSystem defaultValue) const;
+        roadmanager::RelativeDistanceType ParseRelativeDistanceType(pugi::xml_node node, roadmanager::RelativeDistanceType defaultValue) const;
         void                              ParseOSCBoundingBox(OSCBoundingBox& boundingbox, pugi::xml_node& xml_node);
         Vehicle*                          parseOSCVehicle(pugi::xml_node vehicleNode);
         Pedestrian*                       parseOSCPedestrian(pugi::xml_node pedestrianNode);
         MiscObject*                       parseOSCMiscObject(pugi::xml_node miscObjectNode);
         Vehicle*                          createRandomOSCVehicle(std::string name);
-        Controller*                       parseOSCObjectController(pugi::xml_node vehicleNode);
+        Controller*                       parseOSCObjectController(pugi::xml_node controllerNode);
         void                              parseGlobalParameterDeclarations()
         {
             parameters.parseGlobalParameterDeclarations(osc_root_.child("ParameterDeclarations"));
+        }
+        void parseGlobalVariableDeclarations()
+        {
             variables.parseGlobalParameterDeclarations(osc_root_.child("VariableDeclarations"));
         }
 
         // Enitites
         int    parseEntities();
         Entry* ResolveCatalogReference(pugi::xml_node node);
+        bool   CheckModelId(Object* object);
 
         // Storyboard - Init
         void                      parseInit(Init& init);
         ActivateControllerAction* parseActivateControllerAction(pugi::xml_node actionNode, Event* parent);
-        int                       parseDynamicConstraints(pugi::xml_node dynamics_node, DynamicConstraints& dc, Object* obj);
-        OSCPrivateAction*         parseOSCPrivateAction(pugi::xml_node actionNode, Object* object, Event* parent);
-        OSCGlobalAction*          parseOSCGlobalAction(pugi::xml_node actionNode, Event* parent);
-        OSCUserDefinedAction*     parseOSCUserDefinedAction(pugi::xml_node actionNode, Event* parent);
-        void                      parseOSCOrientation(OSCOrientation& orientation, pugi::xml_node orientationNode);
-        OSCPosition*              parseOSCPosition(pugi::xml_node positionNode, OSCPosition* base_on_pos = nullptr);
+
+        /**
+        Parse dynamic constraints. Skip obj to ignore entity settings.
+        */
+        int                   parseDynamicConstraints(pugi::xml_node dynamics_node, DynamicConstraints& dc, Object* obj = nullptr);
+        OSCPrivateAction*     parseOSCPrivateAction(pugi::xml_node actionNode, Object* object, Event* parent);
+        OSCGlobalAction*      parseOSCGlobalAction(pugi::xml_node actionNode, Event* parent);
+        OSCUserDefinedAction* parseOSCUserDefinedAction(pugi::xml_node actionNode, Event* parent);
+        void                  parseOSCOrientation(OSCOrientation& orientation, pugi::xml_node orientationNode);
+        OSCPosition*          parseOSCPosition(pugi::xml_node positionNode, OSCPosition* base_on_pos = nullptr);
+        void                  parseOSCEnvironment(const pugi::xml_node& xml_node, OSCEnvironment& env);
 
         // Storyboard - Story
         OSCCondition* parseOSCCondition(pugi::xml_node conditionNode);
@@ -132,7 +146,7 @@ namespace scenarioengine
         int  parseStoryBoard(StoryBoard& storyBoard);
         void parseOSCManeuver(Maneuver* maneuver, pugi::xml_node maneuverNode, ManeuverGroup* mGroup);
 
-        std::string getScenarioFilename()
+        std::string getScenarioFilename() const
         {
             return oscFilename_;
         }
@@ -149,15 +163,15 @@ namespace scenarioengine
         void LoadControllers();
         void UnloadControllers();
 
-        std::string GetDescription()
+        std::string GetDescription() const
         {
             return description_;
         }
-        int GetVersionMajor()
+        int GetVersionMajor() const
         {
             return versionMajor_;
         }
-        int GetVersionMinor()
+        int GetVersionMinor() const
         {
             return versionMinor_;
         }
@@ -184,6 +198,8 @@ namespace scenarioengine
         Entities*             entities_;
         Catalogs*             catalogs_;
         ScenarioGateway*      gateway_;
+        ScenarioEngine*       scenarioEngine_;
+        OSCEnvironment*       environment_;
         bool                  disable_controllers_;
         static ControllerPool controllerPool_;
         int                   versionMajor_;

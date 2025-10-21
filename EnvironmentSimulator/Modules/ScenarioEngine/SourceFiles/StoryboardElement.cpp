@@ -12,16 +12,21 @@
 
 #include "CommonMini.hpp"
 #include "StoryboardElement.hpp"
-#include "OSIReporter.hpp"
-#include "OSITrafficCommand.hpp"
 #include "OSCCondition.hpp"
 #include "Action.hpp"
+
+#ifdef _USE_OSI
+#include "OSIReporter.hpp"
+#include "OSITrafficCommand.hpp"
+#endif  // _USE_OSI
 
 using namespace scenarioengine;
 
 void (*StoryBoardElement::stateChangeCallback)(const char* name, int type, int state, const char* full_path) = nullptr;
 
+#ifdef _USE_OSI
 OSIReporter* StoryBoardElement::osi_reporter_ = nullptr;
+#endif  // _USE_OSI
 
 std::string StoryBoardElement::state2str(StoryBoardElement::State state)
 {
@@ -43,7 +48,7 @@ std::string StoryBoardElement::state2str(StoryBoardElement::State state)
     }
     else
     {
-        LOG("Undefined element state: %d", state);
+        LOG_ERROR("Undefined element state: {}", state);
     }
 
     return "Undefined";
@@ -77,7 +82,7 @@ std::string StoryBoardElement::transition2str(StoryBoardElement::Transition tran
     }
     else
     {
-        LOG("Unexpected transition: %d", transition);
+        LOG_ERROR("Unexpected transition: {}", transition);
     }
 
     return "Undefined";
@@ -85,7 +90,7 @@ std::string StoryBoardElement::transition2str(StoryBoardElement::Transition tran
 
 void StoryBoardElement::PropagateStateFromChildren()
 {
-    if (type_ != StoryBoardElement::ElementType::STORY_BOARD && GetCurrentState() != State::COMPLETE)
+    if (element_type_ != StoryBoardElement::ElementType::STORY_BOARD && GetCurrentState() != State::COMPLETE)
     {
         if (AllChildrenComplete())
         {
@@ -96,27 +101,26 @@ void StoryBoardElement::PropagateStateFromChildren()
 
 bool StoryBoardElement::AllChildrenComplete()
 {
-    for (auto child : *GetChildren())
+    std::vector<StoryBoardElement*>*                children = GetChildren();
+    std::vector<StoryBoardElement*>::const_iterator itr =
+        std::find_if(children->begin(), children->end(), [](StoryBoardElement* child) { return child->GetCurrentState() != State::COMPLETE; });
+    if (itr != children->end())
     {
-        if (child->GetCurrentState() != State::COMPLETE)
-        {
-            return false;
-        }
+        return false;
     }
-
     return true;
 }
 
 bool StoryBoardElement::AnyChildRunning()
 {
-    for (auto child : *GetChildren())
-    {
-        if (child->GetCurrentState() == State::RUNNING)
-        {
-            return true;
-        }
-    }
+    std::vector<StoryBoardElement*>*                children = GetChildren();
+    std::vector<StoryBoardElement*>::const_iterator itr =
+        std::find_if(children->begin(), children->end(), [](StoryBoardElement* child) { return child->GetCurrentState() == State::RUNNING; });
 
+    if (itr != children->end())
+    {
+        return true;
+    }
     return false;
 }
 
@@ -135,16 +139,16 @@ void StoryBoardElement::Start(double simTime)
     }
     else
     {
-        LOG("%s Invalid Start transition request from %s to %s, %sstart_trigger",
-            name_.c_str(),
-            state2str(GetCurrentState()).c_str(),
-            state2str(State::RUNNING).c_str(),
-            start_trigger_ ? "" : "no ");
+        LOG_ERROR("{} Invalid Start transition request from {} to {}, {}start_trigger",
+                  name_,
+                  state2str(GetCurrentState()),
+                  state2str(State::RUNNING),
+                  start_trigger_ ? "" : "no ");
     }
 
     // Start children for all element types except events
     // which will handle execution of actions based on domain and priority
-    if (type_ != ElementType::EVENT && GetCurrentState() == State::RUNNING)
+    if (element_type_ != ElementType::EVENT && GetCurrentState() == State::RUNNING)
     {
         // Start chilren
 
@@ -174,7 +178,7 @@ void StoryBoardElement::EvalTriggers(double simTime)
         {
             Stop();
 
-            if (type_ == ElementType::STORY_BOARD)
+            if (element_type_ == ElementType::STORY_BOARD)
             {
                 // states are not propagated from children to story board, stop explicitly
                 StoryBoardElement::Stop();
@@ -206,6 +210,11 @@ void StoryBoardElement::Stop()
         child->Stop();
     }
 
+    if (GetCurrentState() == State::INIT)
+    {
+        return;  // not even standby yet
+    }
+
     if (GetCurrentState() == State::COMPLETE)
     {
         return;  // already complete
@@ -218,10 +227,7 @@ void StoryBoardElement::Stop()
     }
     else
     {
-        LOG("%s Invalid Stop transition requested from %s to %s",
-            name_.c_str(),
-            state2str(GetCurrentState()).c_str(),
-            state2str(State::COMPLETE).c_str());
+        LOG_ERROR("{} Invalid Stop transition requested from {} to {}", name_, state2str(GetCurrentState()), state2str(State::COMPLETE));
     }
 
     if (parent_)
@@ -255,11 +261,11 @@ void StoryBoardElement::End()
     //   some actions are atomic, and don't need run time
     if (GetCurrentState() == State::RUNNING || GetCurrentState() == State::STANDBY)
     {
-        if (type_ == ElementType::MANEUVER_GROUP || type_ == ElementType::EVENT)
+        if (element_type_ == ElementType::MANEUVER_GROUP || element_type_ == ElementType::EVENT)
         {
             if (max_num_executions_ != -1 && num_executions_ >= max_num_executions_)
             {
-                LOG("%s complete after %d execution%s", name_.c_str(), num_executions_, num_executions_ > 1 ? "s" : "");
+                LOG_INFO("{} complete after {} execution{}", name_, num_executions_, num_executions_ > 1 ? "s" : "");
                 SetTransition(Transition::END_TRANSITION);
                 SetState(State::COMPLETE);
             }
@@ -276,7 +282,7 @@ void StoryBoardElement::End()
                     stop_trigger_->Reset();
                 }
 
-                LOG("%s completed run %d (of max %d)", name_.c_str(), num_executions_, max_num_executions_);
+                LOG_INFO("{} completed run {} (of max {})", name_, num_executions_, max_num_executions_);
                 SetTransition(Transition::END_TRANSITION);
                 SetState(State::STANDBY);
 
@@ -295,11 +301,11 @@ void StoryBoardElement::End()
     }
     else
     {
-        LOG("%s Invalid End transition requested from %s to %s or %s",
-            name_.c_str(),
-            state2str(GetCurrentState()).c_str(),
-            state2str(State::STANDBY).c_str(),
-            state2str(State::COMPLETE).c_str());
+        LOG_ERROR("{} Invalid End transition requested from {} to {} or {}",
+                  name_,
+                  state2str(GetCurrentState()),
+                  state2str(State::STANDBY),
+                  state2str(State::COMPLETE));
     }
 
     if (parent_)
@@ -325,15 +331,11 @@ void StoryBoardElement::SetState(StoryBoardElement::State state)
 {
     if (GetCurrentState() != state)
     {
-        LOG("%s %s -> %s -> %s",
-            name_.c_str(),
-            state2str(GetCurrentState()).c_str(),
-            transition2str(GetCurrentTransition()).c_str(),
-            state2str(state).c_str());
+        LOG_INFO("{} {} -> {} -> {}", name_, state2str(GetCurrentState()), transition2str(GetCurrentTransition()), state2str(state));
 
         if (stateChangeCallback != nullptr)
         {
-            stateChangeCallback(GetName().c_str(), static_cast<int>(type_), static_cast<int>(state), GetFullPath().c_str());
+            stateChangeCallback(GetName().c_str(), static_cast<int>(element_type_), static_cast<int>(state), GetFullPath().c_str());
         }
 
         for (size_t i = 0; i < trigger_ref_.size(); i++)
@@ -344,8 +346,8 @@ void StoryBoardElement::SetState(StoryBoardElement::State state)
 
 #ifdef _USE_OSI
         // register all events for private actions to OSI reporter
-        if (osi_reporter_ != nullptr && this->type_ == StoryBoardElement::ElementType::ACTION &&
-            (reinterpret_cast<OSCAction*>(this))->base_type_ == OSCAction::BaseType::PRIVATE)
+        if (osi_reporter_ != nullptr && this->element_type_ == StoryBoardElement::ElementType::ACTION &&
+            (reinterpret_cast<OSCAction*>(this))->GetBaseType() == OSCAction::BaseType::PRIVATE)
         {
             osi_reporter_->RegisterTrafficCommandStateChange(reinterpret_cast<OSCPrivateAction*>(this), state, GetCurrentTransition());
         }
@@ -364,14 +366,24 @@ void StoryBoardElement::Reset(State state)
 
     ResetState(state);
     ResetTransition();
+
+    if (start_trigger_ != nullptr)
+    {
+        start_trigger_->Reset();
+    }
+
+    if (stop_trigger_ != nullptr)
+    {
+        stop_trigger_->Reset();
+    }
 }
 
 void StoryBoardElement::SetName(std::string name)
 {
     name_ = name;
-    if (type_ == STORY_BOARD)
+    if (element_type_ == STORY_BOARD)
     {
-        full_path_ = "/";
+        full_path_ = "";
     }
     else if (parent_ == nullptr)
     {
@@ -379,13 +391,13 @@ void StoryBoardElement::SetName(std::string name)
     }
     else
     {
-        if (parent_->type_ == STORY_BOARD)
+        if (parent_->element_type_ == STORY_BOARD)
         {
-            full_path_ = "/" + name;
+            full_path_ = name;  // skip storyboard level
         }
         else
         {
-            full_path_ = parent_->GetFullPath() + "/" + name;
+            full_path_ = parent_->GetFullPath() + "::" + name;
         }
     }
 }

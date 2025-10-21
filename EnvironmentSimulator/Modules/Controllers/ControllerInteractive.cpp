@@ -40,6 +40,8 @@ ControllerInteractive::ControllerInteractive(InitArgs* args) : Controller(args),
             speed_factor_ = strtod(args->properties->GetValueStr("speedFactor"));
         }
     }
+    align_to_road_heading_on_deactivation_ = true;
+    align_to_road_heading_on_activation_   = true;
 }
 
 void ControllerInteractive::Init()
@@ -66,18 +68,19 @@ void ControllerInteractive::Step(double timeStep)
     }
     vehicle_.SetMaxSpeed(MIN(speed_factor_ * speed_limit, object_->GetMaxSpeed()));
 
-    if (!(IsActiveOnDomains(ControlDomains::DOMAIN_LONG)))
+    if (!(IsActiveOnDomains(static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LONG))))
     {
         // Fetch speed from Default Controller
         vehicle_.speed_ = object_->GetSpeed();
     }
 
     // Update vehicle motion
-    vehicle_.SetThrottleDisabled(!IsActiveOnDomains(ControlDomains::DOMAIN_LONG));
-    vehicle_.SetSteeringDisabled(!IsActiveOnDomains(ControlDomains::DOMAIN_LAT));
+    vehicle_.SetThrottleDisabled(!IsActiveOnDomains(static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LONG)));
+    vehicle_.SetSteeringDisabled(!IsActiveOnDomains(static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LAT)));
     vehicle_.DrivingControlBinary(timeStep, accelerate, steer);
 
-    if (domain_ == ControlDomains::DOMAIN_LONG)
+    if (IsActiveOnDomains(static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LONG)) &&
+        IsNotActiveOnDomains(static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LAT)))
     {
         // Only longitudinal control, move along road
         double steplen = vehicle_.speed_ * timeStep;
@@ -96,12 +99,12 @@ void ControllerInteractive::Step(double timeStep)
     vehicle_.posZ_  = object_->pos_.GetZRoad();
     vehicle_.pitch_ = object_->pos_.GetPRoad();
 
-    if (IsActiveOnDomains(ControlDomains::DOMAIN_LONG))
+    if (IsActiveOnDomains(static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LONG)))
     {
         gateway_->updateObjectSpeed(object_->id_, 0.0, vehicle_.speed_);
     }
 
-    if (IsActiveOnDomains(ControlDomains::DOMAIN_LAT))
+    if (IsActiveOnDomains(static_cast<unsigned int>(ControlDomainMasks::DOMAIN_MASK_LAT)))
     {
         gateway_->updateObjectWheelAngle(object_->id_, 0.0, vehicle_.wheelAngle_);
     }
@@ -109,7 +112,7 @@ void ControllerInteractive::Step(double timeStep)
     Controller::Step(timeStep);
 }
 
-void ControllerInteractive::Activate(DomainActivation lateral, DomainActivation longitudinal)
+int ControllerInteractive::Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)])
 {
     if (object_)
     {
@@ -120,15 +123,14 @@ void ControllerInteractive::Activate(DomainActivation lateral, DomainActivation 
         vehicle_.SetMaxAcc(object_->GetMaxAcceleration());
         vehicle_.SetMaxDec(object_->GetMaxDeceleration());
         vehicle_.SetSteeringRate(steering_rate_);
+        object_->SetJunctionSelectorStrategy(roadmanager::Junction::JunctionStrategyType::SELECTOR_ANGLE);
+        object_->SetJunctionSelectorAngle(0.0);
     }
 
     steer      = vehicle::STEERING_NONE;
     accelerate = vehicle::THROTTLE_NONE;
 
-    object_->SetJunctionSelectorStrategy(roadmanager::Junction::JunctionStrategyType::SELECTOR_ANGLE);
-    object_->SetJunctionSelectorAngle(0.0);
-
-    Controller::Activate(lateral, longitudinal);
+    return Controller::Activate(mode);
 }
 
 void ControllerInteractive::ReportKeyEvent(int key, bool down)

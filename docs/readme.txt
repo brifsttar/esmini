@@ -8,13 +8,14 @@ Run esmini demo:
 
 Key shortcuts
 
-    H (shift + h): This help text
+    H (shift + h): Print this help text to console
     Space:         Toggle pause/play simulation
     Return:        Step simulation (one timestep) then pause
-    TAB:           Move camera to next vehicle
-    Shift + TAB:   Move camera to previoius vehicle
+    TAB:           Move camera to next vehicle (0, 1, 2..., ALL, ROAD)
+    Shift + TAB:   Move camera to previous vehicle
     Delete:        Same as above (Shift + TAB)
-    o:             Toggle show/hide OpenDRIVE road feature lines
+    o:             Toggle show / hide OpenDRIVE road feature lines
+    O:             Toggle show / hide odr signal bounding boxes
     u:             Toggle show / hide OSI road lines
     y:             Toggle show / hide OSI road points
     p:             Toggle show / hide environment 3D model
@@ -24,6 +25,7 @@ Key shortcuts
     j:             Toggle show trails after vehicles(4 modes: none / dots / lines / both)
     n:             Toggle show active trajectories
     , (comma):     Switch entity view : Model only / Bounding box / Model + Bounding box / None
+    K:             Print current camera position and orientation to console
     ESC:           quit
 
     Arrow keys is used to drive externally controlled Ego vehicle:
@@ -32,7 +34,7 @@ Key shortcuts
         Left:  Steer left
         Right: Steer right
 
-    1 - 9: Camera models acording to :
+    1 - 9: Camera models according to :
         1: Custom camera model
         2: Flight
         3: Drive
@@ -48,7 +50,7 @@ Key shortcuts
            - Orbit        (camera facing vehicle, rotating around it)
            - Fixed        (fix rotation, always straight behind vehicle)
            - Flex         (imagine the camera attached to vehicle via an elastic string)
-           - Flex - orbit (Like flex but allows for roatation around vehicle)
+           - Flex - orbit (Like flex but allows for rotation around vehicle)
            - Top          (top view, fixed rotation, always straight above vehicle)
            - Driver       ("driver" view, fixed at center of vehicle)
 
