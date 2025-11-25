@@ -1529,8 +1529,8 @@ namespace roadmanager
             TYPE_GUIDING_PLATE_WEDGES                                             = 105,
             TYPE_PARKING_HAZARD                                                   = 99,
             TYPE_TRAFFIC_LIGHT_GREEN_ARROW                                        = 92,
-            TrafficSign_MainSign_Classification_Type_INT_MIN_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::min(),
-            TrafficSign_MainSign_Classification_Type_INT_MAX_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::max()
+            //TrafficSign_MainSign_Classification_Type_INT_MIN_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::min(),
+            //TrafficSign_MainSign_Classification_Type_INT_MAX_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::max()
         };
 
         Signal(double      s,
