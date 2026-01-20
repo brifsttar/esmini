@@ -124,18 +124,20 @@ set_property(
 
 include(support/cmake/rule/project_options.cmake)
 
-if(${CMAKE_SYSTEM_NAME}
-   MATCHES
-   "Linux")
-    set(LINUX
-        true)
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    set (ANDROID TRUE)
+    set (LINUX TRUE)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(LINUX TRUE)
+    set(ANDROID FALSE)
 else()
-    set(LINUX
-        false)
+    set(LINUX FALSE)
+    set(ANDROID FALSE)
 endif()
 
 if(NOT
    (LINUX
+    OR ANDROID
     OR APPLE
     OR MINGW
     OR MSVC))
@@ -195,7 +197,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE
 set(FMT_SHARED
     OFF)
 
-if(LINUX)
+if(LINUX AND NOT ANDROID)
     set(FMT_LIBRARIES
         ${FMT_LIBRARIES}
         "-lstdc++fs")

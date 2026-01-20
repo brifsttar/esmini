@@ -187,7 +187,7 @@ void __LOG_ERROR__AND__QUIT__(char const* function, char const* file, long line,
 {
     txtLogger.Log(EsLogLevel::error, "error", function, file, line, log, args...);
     txtLogger.SetLoggerTime(nullptr);  // stop logging time since pointer will be dangling with throw
-    throw std::runtime_error(fmt::format(txtLogger.AddTimeAndMetaData(function, file, line, "error", log), args...));
+    //throw std::runtime_error(fmt::format(txtLogger.AddTimeAndMetaData(function, file, line, "error", log), args...));
 }
 
 #define LOG_ERROR_AND_QUIT(...) __LOG_ERROR__AND__QUIT__(__func__, __FILE__, __LINE__, ##__VA_ARGS__)

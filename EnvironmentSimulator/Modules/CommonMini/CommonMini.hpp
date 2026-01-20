@@ -49,7 +49,9 @@ using idx_t = uint32_t;
 #define ID_MAX                        0xfffffffe
 #define IDX_UNDEFINED                 0xffffffff
 #define IDX_MAX                       0xfffffffe
-#define SMALL_NUMBER                  (1E-6)
+#ifndef SMALL_NUMBER
+#define SMALL_NUMBER (1E-6)
+#endif
 #define SMALL_NUMBERF                 (1E-6f)
 #define LARGE_NUMBER                  (1E+10)
 #define LARGE_NUMBERF                 (1E+10f)
@@ -741,7 +743,7 @@ double GetSecondsToFactor(int seconds);
 class SE_Thread
 {
 public:
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || defined(__MINGW32__))
     SE_Thread() : thread_()
     {
     }
@@ -756,7 +758,7 @@ public:
     void Start(void (*func_ptr)(void*), void* arg);
 
 private:
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || defined(__MINGW32__))
     void* thread_;
 #else
     std::thread thread_;
@@ -772,7 +774,7 @@ public:
     void Unlock();
 
 private:
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || defined(__MINGW32__))
     void* mutex_;
 #else
     std::mutex  mutex_;
@@ -806,7 +808,7 @@ public:
 
     inline void Release()
     {
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || defined(__MINGW32__))
         flag = false;
 #else
         std::unique_lock<std::mutex> lock(mtx);
@@ -817,7 +819,7 @@ public:
 
     inline void Wait()
     {
-#if !(defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
+#if !(defined WINVER && WINVER == _WIN32_WINNT_WIN7 || defined(__MINGW32__))
         std::unique_lock<std::mutex> lock(mtx);
         if (flag == true)
         {
@@ -827,7 +829,7 @@ public:
     }
 
 private:
-#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || __MINGW32__)
+#if (defined WINVER && WINVER == _WIN32_WINNT_WIN7 || defined(__MINGW32__))
 #else
     std::mutex              mtx;
     std::condition_variable cv;

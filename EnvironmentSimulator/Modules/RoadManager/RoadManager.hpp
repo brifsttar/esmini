@@ -22,10 +22,18 @@
 #include "CommonMini.hpp"
 #include "logger.hpp"
 
-#ifdef ROADMANAGER_EXPORT
-#define ROADMANAGER_API __declspec(dllexport)
+#pragma once
+
+#if defined(_WIN32)
+    #if defined(ROADMANAGER_EXPORT)
+        #define ROADMANAGER_API __declspec(dllexport)
+    #else
+        #define ROADMANAGER_API __declspec(dllimport)
+    #endif
+#elif defined(__ANDROID__) || defined(__linux__)
+    #define ROADMANAGER_API __attribute__((visibility("default")))
 #else
-#define ROADMANAGER_API __declspec(dllimport)
+    #define ROADMANAGER_API
 #endif
 
 #define PARAMPOLY3_STEPS 100
